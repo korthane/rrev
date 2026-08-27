@@ -389,14 +389,14 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 11: Review phases
 
-- [ ] implement the comprehensive review phase running its agents concurrently and iterating until the review-done signal
-- [ ] implement the external review loop alternating the external tool and the primary executor, carrying prior findings and dispositions forward
-- [ ] implement the skip of the external phase when the primary executor and external tool would be the same model, reporting it as skipped
-- [ ] implement loop termination on signal, iteration limit, stalemate, executor failure, and user break, reporting which condition ended the loop
-- [ ] implement stalemate detection over consecutive iterations with no new commit and no working-tree change, honouring a disabled patience setting
-- [ ] implement the final review phase including its skip when the external loop converged on the first pass with no fixes applied
-- [ ] write tests for new functionality using mock executors across converging and non-converging outputs, with a case per termination condition
-- [ ] run project tests - must pass before next task
+- [x] implement the comprehensive review phase running its agents concurrently and iterating until the review-done signal
+- [x] implement the external review loop alternating the external tool and the primary executor, carrying prior findings and dispositions forward
+- [x] implement the skip of the external phase when the primary executor and external tool would be the same model, reporting it as skipped
+- [x] implement loop termination on signal, iteration limit, stalemate, executor failure, and user break, reporting which condition ended the loop
+- [x] implement stalemate detection over consecutive iterations with no new commit and no working-tree change, honouring a disabled patience setting
+- [x] implement the final review phase including its skip when the external loop converged on the first pass with no fixes applied
+- [x] write tests for new functionality using mock executors across converging and non-converging outputs, with a case per termination condition
+- [x] run project tests - must pass before next task
 
 ### Task 12: Pipeline modes, reporting, and runner
 
