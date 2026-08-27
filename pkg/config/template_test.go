@@ -71,22 +71,6 @@ func TestExpandRejectsUnterminatedDirective(t *testing.T) {
 	}
 }
 
-func TestExpandExtraOverridesBuiltins(t *testing.T) {
-	exp, projectDir := expanderFor(t, ExecutorClaude, Vars{
-		Change: "c",
-		Extra:  map[string]string{"findings": "three findings", "base_ref": "custom-ref"},
-	})
-	writeAsset(t, projectDir, KindPrompt, "external_eval", "{{FINDINGS}} on {{BASE_REF}}")
-
-	got, err := exp.Prompt("external_eval")
-	if err != nil {
-		t.Fatalf("expand external_eval: %v", err)
-	}
-	if got != "three findings on custom-ref" {
-		t.Errorf("expanded prompt = %q", got)
-	}
-}
-
 func TestChecklistTruncationStatesThatItTruncated(t *testing.T) {
 	entries := []string{"1. first requirement\n", "2. second requirement\n", "3. third requirement\n"}
 

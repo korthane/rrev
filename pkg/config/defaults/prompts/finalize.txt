@@ -16,12 +16,12 @@ Change directory: {{CHANGE_DIR}}
 
 1. Fetch the latest state: `git fetch origin`
 
-2. Rebase onto the base ref: `git rebase origin/{{BASE_REF}}`
+2. Rebase onto the base ref: `git rebase {{BASE_REF}}`
    - Resolve conflicts and continue the rebase.
    - If the rebase cannot be completed, run `git rebase --abort`, report why, and
      leave the branch as it was.
 
-3. Review the history: `git log origin/{{BASE_REF}}..HEAD --oneline`
+3. Review the history: `git log {{BASE_REF}}..HEAD --oneline`
    - Squash the review-fix commits into the commits they fix, keeping meaningful
      feature boundaries separate.
    - Only reorganize when it makes the history easier to read; a clean history

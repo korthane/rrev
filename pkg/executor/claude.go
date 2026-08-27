@@ -17,9 +17,6 @@ const DefaultClaudeBin = "claude"
 type Claude struct {
 	// Command overrides the executable name or path.
 	Command string
-	// ExtraArgs are appended to the invocation for a project that needs to pass
-	// further claude flags.
-	ExtraArgs []string
 	// Limits bound one call; every bound is disabled at zero.
 	Limits Limits
 	// Debug records the resolved command line and the full prompt.
@@ -49,7 +46,6 @@ func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
 	if spec.Effort != "" {
 		args = append(args, "--effort", spec.Effort)
 	}
-	args = append(args, c.ExtraArgs...)
 
 	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, limits: c.Limits, debug: c.Debug}
 	col := &collector{stream: out}

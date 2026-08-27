@@ -130,6 +130,9 @@ func discoverFromDisk(root Root) Discovery {
 // ResolveChange finds the named change. An archived change resolves only when
 // named explicitly, which is why this does not go through Discovery.
 func ResolveChange(root Root, name string, disc Discovery) (Change, error) {
+	if name != filepath.Base(name) || name == ".." || name == "." {
+		return Change{}, fmt.Errorf("%w %q: a change name is a directory name, not a path", ErrUnknownChange, name)
+	}
 	for _, dir := range []string{root.ChangesDir(), root.ArchiveDir()} {
 		path := filepath.Join(dir, name)
 		if info, err := os.Stat(path); err == nil && info.IsDir() {

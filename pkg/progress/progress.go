@@ -19,16 +19,15 @@ const ignoreBody = "# rrev progress logs are run artifacts, not source.\n*\n"
 
 // Entry kinds, one per thing a later reader must be able to reconstruct.
 const (
-	kindRun        = "run"
-	kindPhase      = "phase"
-	kindIteration  = "iteration"
-	kindFinding    = "finding"
-	kindConfirmed  = "confirmed"
-	kindRejected   = "rejected"
-	kindValidation = "validation"
-	kindCommit     = "commit"
-	kindEnd        = "end"
-	kindNote       = "note"
+	kindRun       = "run"
+	kindPhase     = "phase"
+	kindIteration = "iteration"
+	kindFinding   = "finding"
+	kindConfirmed = "confirmed"
+	kindRejected  = "rejected"
+	kindCommit    = "commit"
+	kindEnd       = "end"
+	kindNote      = "note"
 )
 
 // indent prefixes the continuation lines of an entry, so every entry starts at
@@ -175,14 +174,6 @@ func (l *Log) Confirmed(f Finding, action string) {
 // argue with it instead of re-reporting the finding unchanged.
 func (l *Log) Rejected(f Finding, reason string) {
 	l.append(kindRejected, f.fields(), reason)
-}
-
-// Validation records the outcome of the project's validation command.
-func (l *Log) Validation(command string, ok bool, detail string) {
-	l.append(kindValidation, []kv{
-		{"result", outcome(ok)},
-		{"command", command},
-	}, detail)
 }
 
 // Commit records a commit the pipeline made.
@@ -336,11 +327,4 @@ func iterationCount(n, limit int) string {
 		return fmt.Sprintf("%d/%d", n, limit)
 	}
 	return strconv.Itoa(n)
-}
-
-func outcome(ok bool) string {
-	if ok {
-		return "passed"
-	}
-	return "failed"
 }

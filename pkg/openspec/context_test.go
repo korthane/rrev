@@ -48,8 +48,9 @@ func TestResolveViaCLI(t *testing.T) {
 	if rc.Requirements[2].Operation != openspec.OperationModified {
 		t.Errorf("operation = %s, want MODIFIED", rc.Requirements[2].Operation)
 	}
-	if !strings.Contains(rc.Checklist(), "[REMOVED] auth:") {
-		t.Errorf("checklist does not label the removed requirement:\n%s", rc.Checklist())
+	checklist := strings.Join(openspec.ChecklistEntries(rc.Requirements), "")
+	if !strings.Contains(checklist, "[REMOVED] auth:") {
+		t.Errorf("checklist does not label the removed requirement:\n%s", checklist)
 	}
 }
 
@@ -170,19 +171,30 @@ func TestResolveKeepsUnparseableSpecRawText(t *testing.T) {
 // phase cannot pick up an artifact edited on disk mid-run.
 func TestContextIsResolvedOnce(t *testing.T) {
 	rc := resolveFixture(t, stubCLI(t))
-	snapshot := rc
+	goal, change := rc.Goal, rc.Change
+	requirements := len(rc.Requirements)
+	specs := len(rc.Artifacts.Specs)
 
-	perPhase := func(c openspec.Context) openspec.Context {
+	// A phase takes the context by value and reassigns fields on its own copy,
+	// which is what keeps a later phase from seeing the earlier one's edits.
+	// The artifacts a copy points at are read-only by contract, not by type.
+	perPhase := func(c openspec.Context) {
 		c.Goal = "mutated"
 		c.Change.Name = "mutated"
-		return c
+		c.Artifacts.Proposal = nil
+		c.Requirements = nil
+		c.Artifacts.Specs = nil
 	}
 	perPhase(rc)
 
-	if !reflect.DeepEqual(rc.Change, snapshot.Change) || rc.Goal != snapshot.Goal {
-		t.Error("a phase mutated the shared review context")
+	if rc.Goal != goal || !reflect.DeepEqual(rc.Change, change) {
+		t.Errorf("a phase mutated the shared review context: goal %q, change %+v", rc.Goal, rc.Change)
 	}
-	if rc.Artifacts.Proposal.Content != snapshot.Artifacts.Proposal.Content {
-		t.Error("artifact content changed after resolution")
+	if rc.Artifacts.Proposal == nil {
+		t.Error("a phase dropping its own proposal reference cleared the shared one")
+	}
+	if len(rc.Requirements) != requirements || len(rc.Artifacts.Specs) != specs {
+		t.Errorf("requirements = %d and specs = %d, want %d and %d left alone",
+			len(rc.Requirements), len(rc.Artifacts.Specs), requirements, specs)
 	}
 }

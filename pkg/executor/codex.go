@@ -15,12 +15,6 @@ const DefaultCodexBin = "codex"
 type Codex struct {
 	// Command overrides the executable name or path.
 	Command string
-	// ConfigOverrides are codex `-c key=value` settings applied to the run,
-	// which is how reasoning effort and sandbox behaviour are selected.
-	ConfigOverrides []string
-	// ExtraArgs are appended to the invocation for a project that needs to pass
-	// further codex flags.
-	ExtraArgs []string
 	// Limits bound one call; every bound is disabled at zero.
 	Limits Limits
 	// Debug records the resolved command line and the full prompt.
@@ -51,16 +45,9 @@ func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
 	if spec.Model != "" {
 		args = append(args, "--model", spec.Model)
 	}
-	overrides := c.ConfigOverrides
 	if spec.Effort != "" {
-		overrides = append(overrides, "model_reasoning_effort="+spec.Effort)
+		args = append(args, "-c", "model_reasoning_effort="+spec.Effort)
 	}
-	for _, override := range overrides {
-		if override = strings.TrimSpace(override); override != "" {
-			args = append(args, "-c", override)
-		}
-	}
-	args = append(args, c.ExtraArgs...)
 	args = append(args, "-")
 
 	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, limits: c.Limits, debug: c.Debug}

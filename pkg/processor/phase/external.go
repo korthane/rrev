@@ -25,8 +25,7 @@ func External(ctx context.Context, e *Env) Result {
 		limit: e.Config.ExternalMaxIterations,
 		brk:   e.Break,
 		run: func(ctx context.Context, n, limit int) (stepResult, error) {
-			step, err := e.externalRound(ctx, n, limit, &rounds)
-			return step, err
+			return e.externalRound(ctx, n, limit, &rounds)
 		},
 	})
 }

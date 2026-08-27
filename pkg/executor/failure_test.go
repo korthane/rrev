@@ -72,3 +72,35 @@ func TestQuotedLimitTextIsNotAFailure(t *testing.T) {
 		t.Errorf("signal = %q, want the review-done signal", result.Signal)
 	}
 }
+
+// A review that ends on its done signal reviewed something; limit wording it
+// quotes from the code under review must not abort the run.
+func TestReportedLimitWordingIsNotARefusal(t *testing.T) {
+	report := strings.Join([]string{
+		"FINDING: major | pkg/api/handler.go:12 | quality | - | returns Internal Server Error instead of 400 on a nil body",
+		"REJECTED: pkg/api/retry.go:8 | quality | the quota exceeded branch is already covered",
+		executor.SignalReviewDone.Marker(),
+		"",
+	}, "\n")
+	tool := newFakeTool(t, fakeToolOpts{stdout: report})
+
+	result, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"})
+	if err != nil {
+		t.Fatalf("a reported finding was mistaken for a provider refusal: %v", err)
+	}
+	if result.Signal != executor.SignalReviewDone {
+		t.Errorf("signal = %q, want the review-done signal", result.Signal)
+	}
+}
+
+// A finding reported without a done signal is still a review, not a refusal:
+// an unconverged iteration is the common case.
+func TestReportLineWithoutSignalIsNotARefusal(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: "FINDING: minor | pkg/api/client.go:42 | quality | - | retries on rate limit exceeded forever\n",
+	})
+
+	if _, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"}); err != nil {
+		t.Fatalf("a reported finding was mistaken for a provider refusal: %v", err)
+	}
+}

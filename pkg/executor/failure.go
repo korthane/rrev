@@ -62,6 +62,11 @@ var retryablePatterns = []string{
 // classify upgrades a finished call to a rate-limit or transient failure when
 // the tool said so, and otherwise leaves the original error alone.
 func classify(tool string, result Result, err error) error {
+	// A call that ended on a signal reviewed something; limit wording in its
+	// output is the reviewer quoting the code under review, not a refusal.
+	if err == nil && result.Signal != "" {
+		return nil
+	}
 	lines := diagnostics(result, err)
 	if reason, ok := match(lines, rateLimitPatterns); ok {
 		return &LimitError{Tool: tool, Reason: reason}
@@ -82,9 +87,10 @@ func diagnostics(result Result, err error) []string {
 	return lines
 }
 
-// spoken drops fenced blocks and markdown list, quote, and heading lines: a
-// reviewer citing "rate limit exceeded" from the code under review must not be
-// mistaken for the provider refusing the call.
+// spoken drops fenced blocks, markdown list, quote and heading lines, and the
+// pipe-delimited report lines the prompts mandate: a reviewer citing "rate limit
+// exceeded" from the code under review must not be mistaken for the provider
+// refusing the call.
 func spoken(output string) []string {
 	var lines []string
 	fenced := false
@@ -94,7 +100,7 @@ func spoken(output string) []string {
 			fenced = !fenced
 			continue
 		}
-		if fenced || isQuotedLine(line) {
+		if fenced || isQuotedLine(line) || isReportLine(line) {
 			continue
 		}
 		lines = append(lines, line)
@@ -105,6 +111,10 @@ func spoken(output string) []string {
 func isQuotedLine(line string) bool {
 	return line != "" && strings.ContainsRune("-*>#|", rune(line[0]))
 }
+
+// isReportLine spots the pipe-delimited FINDING/REJECTED lines a review speaks
+// in. A provider refusing a call never writes one.
+func isReportLine(line string) bool { return strings.Contains(line, " | ") }
 
 func match(lines, patterns []string) (string, bool) {
 	for _, line := range lines {

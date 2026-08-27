@@ -24,17 +24,6 @@ const (
 	CodeUnconverged Code = 2
 )
 
-func (c Code) String() string {
-	switch c {
-	case CodeOK:
-		return "converged"
-	case CodeUnconverged:
-		return "not converged"
-	default:
-		return "failed"
-	}
-}
-
 // Outcome classifies a finished run. A read-only run converges nothing, so it
 // is judged on whether it found anything instead: a report with findings in it
 // is what a caller gating on rrev wants to hear about.
@@ -58,11 +47,14 @@ func Outcome(res processor.Result) Code {
 // outstanding and why, then the one line stating the run's outcome.
 func Summary(res processor.Result) string {
 	var lines []string
+	if len(res.Phases) > 0 && len(res.Executed()) == 0 {
+		lines = append(lines, "no review phase ran: every phase this mode selects was skipped")
+	}
 	for _, p := range res.Phases {
 		if p.Skipped || p.OK() {
 			continue
 		}
-		line := fmt.Sprintf("%s did not converge: %s", label(p.Name), p.Reason)
+		line := fmt.Sprintf("%s did not converge: %s", phase.Label(p.Name), p.Reason)
 		if p.Err != nil {
 			line += ": " + p.Err.Error()
 		}
@@ -85,19 +77,11 @@ func Summary(res processor.Result) string {
 func failedIn(res processor.Result) string {
 	for _, p := range res.Phases {
 		if p.Err != nil {
-			return " during the " + label(p.Name)
+			return " during the " + phase.Label(p.Name)
 		}
 	}
 	if res.Err != nil {
 		return ": " + res.Err.Error()
 	}
 	return ""
-}
-
-// label names a step the way phase output already describes it.
-func label(name string) string {
-	if name == phase.NameFinalize {
-		return name + " step"
-	}
-	return name + " review"
 }

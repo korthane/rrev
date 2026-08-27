@@ -164,3 +164,22 @@ func assertLogged(t *testing.T, repo, text string) {
 		t.Errorf("progress log is missing %q:\n%s", text, body)
 	}
 }
+
+// TestRunEmptyDiffReviewsNothing covers the empty-diff precondition: a branch
+// identical to its base ref has nothing for a reviewer to look at, so the run
+// says so and exits successfully without spending an executor.
+func TestRunEmptyDiffReviewsNothing(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	marker := fakeBin(t, "claude", "codex")
+	t.Chdir(repo)
+
+	var out strings.Builder
+	code := run(context.Background(), []string{"--base-ref", "feature"}, &out, io.Discard)
+	if code != status.CodeOK {
+		t.Fatalf("code = %d, want %d; output:\n%s", code, status.CodeOK, out.String())
+	}
+	if !strings.Contains(out.String(), "nothing to review") {
+		t.Errorf("output does not report an empty diff:\n%s", out.String())
+	}
+	assertNoExecutorRan(t, marker)
+}

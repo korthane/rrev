@@ -6,11 +6,24 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/korthane/rrev/pkg/executor"
 )
+
+// signalWriter closes seen on the tool's first output, so a test can act on
+// the tool having started rather than on a sleep.
+type signalWriter struct {
+	once sync.Once
+	seen chan struct{}
+}
+
+func (w *signalWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.seen) })
+	return len(p), nil
+}
 
 // newScript writes an executable shell script, for a test that needs a tool
 // doing more than replaying a recorded stream.
@@ -25,7 +38,9 @@ func newScript(t *testing.T, body string) string {
 
 func TestSessionTimeoutTerminatesAndKeepsOutput(t *testing.T) {
 	tool := newScript(t, "echo partial finding\nsleep 30\n")
-	custom := executor.Custom{Command: tool, Limits: executor.Limits{Session: 200 * time.Millisecond}}
+	// The bound has to clear process start plus the first write, which under a
+	// loaded parallel run is far slower than the bound itself needs to be.
+	custom := executor.Custom{Command: tool, Limits: executor.Limits{Session: 2 * time.Second}}
 
 	start := time.Now()
 	result, err := custom.Run(t.Context(), executor.Request{Prompt: "p"})
@@ -59,7 +74,7 @@ func TestIdleTimeoutResetsOnOutput(t *testing.T) {
 
 func TestIdleTimeoutFires(t *testing.T) {
 	tool := newScript(t, "echo first line\nsleep 30\n")
-	custom := executor.Custom{Command: tool, Limits: executor.Limits{Idle: 200 * time.Millisecond}}
+	custom := executor.Custom{Command: tool, Limits: executor.Limits{Idle: 2 * time.Second}}
 
 	result, err := custom.Run(t.Context(), executor.Request{Prompt: "p"})
 
@@ -105,11 +120,14 @@ func TestCancellationReturnsCapturedOutput(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
+	// Cancel once the tool has actually spoken, so the assertion tests what
+	// survives cancellation rather than how fast the machine forks a shell.
+	spoke := &signalWriter{seen: make(chan struct{})}
 	go func() {
-		time.Sleep(200 * time.Millisecond)
+		<-spoke.seen
 		cancel()
 	}()
-	result, err := (executor.Custom{Command: tool}).Run(ctx, executor.Request{Prompt: "p"})
+	result, err := (executor.Custom{Command: tool}).Run(ctx, executor.Request{Prompt: "p", Stream: spoke})
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want the cancellation", err)

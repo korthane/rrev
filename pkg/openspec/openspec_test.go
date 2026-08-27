@@ -148,3 +148,14 @@ func TestResolveChangeFindsArchivedByName(t *testing.T) {
 		t.Error("Archived = false, want true for a change under the archive directory")
 	}
 }
+
+// A change name is a directory name under the changes tree; a path escapes it
+// and would load artifacts from anywhere on disk into a reviewer's prompt.
+func TestResolveChangeRejectsAPath(t *testing.T) {
+	root := fixtureRoot(t)
+	for _, name := range []string{"..", "../archive/old-thing", "a/b", "."} {
+		if _, err := openspec.ResolveChange(root, name, openspec.Discovery{}); !errors.Is(err, openspec.ErrUnknownChange) {
+			t.Errorf("ResolveChange(%q) = %v, want it refused", name, err)
+		}
+	}
+}

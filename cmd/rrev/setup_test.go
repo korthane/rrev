@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -146,12 +147,31 @@ func TestPrepareConflictingFlags(t *testing.T) {
 	marker := fakeBin(t, "claude", "codex")
 
 	// codex reviewing its own work is the conflict the config layer rejects
-	// outright when a flag caused it.
-	_, err := prepareIn(t, repo, "--executor", "codex")
+	// outright when the user asked for both sides of it.
+	_, err := prepareIn(t, repo, "--executor", "codex", "--external-review-tool", "codex")
 	if err == nil {
 		t.Fatal("prepare: want an error when codex is both executor and external reviewer")
 	}
 	assertNoExecutorRan(t, marker)
+}
+
+// Selecting codex as the primary executor must skip the external phase, not
+// abort the run: the default external tool is codex, and rrev's own default is
+// not a contradiction the user typed.
+func TestPrepareCodexPrimarySkipsExternalReview(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	fakeBin(t, "claude", "codex")
+
+	start, err := prepareIn(t, repo, "--executor", "codex")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	if start.External != nil {
+		t.Errorf("external reviewer = %q, want the external phase disabled", start.External.Name())
+	}
+	if !slices.ContainsFunc(start.Warnings, func(w string) bool { return strings.Contains(w, "external_review_tool") }) {
+		t.Errorf("warnings = %v, want the overridden setting named", start.Warnings)
+	}
 }
 
 func TestPrepareNotAGitRepository(t *testing.T) {

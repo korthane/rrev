@@ -29,6 +29,7 @@ make coverage # test with coverage report
 
 ## Prerequisites
 
+- Go 1.27 or newer to build or `go install` rrev.
 - `git`, and a working directory inside a git repository.
 - An OpenSpec-driven repository: an `openspec/` directory with the change under
   `openspec/changes/<change>/`.
@@ -42,7 +43,26 @@ make coverage # test with coverage report
 
 Startup preflight checks all of this before the first phase runs: a missing
 binary, an unresolvable base ref, or an unreadable change fails immediately
-rather than part-way through a review.
+rather than part-way through a review. A branch with no changes relative to the
+base ref reports that there is nothing to review and exits zero without
+invoking an executor.
+
+## What a run is allowed to do
+
+A review loop cannot answer approval prompts, so rrev invokes each tool with its
+own approval and sandbox checks turned off:
+
+```sh
+claude --print --dangerously-skip-permissions ...
+codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check ...
+```
+
+The executor can therefore edit files, run commands, and commit in your
+repository without asking. Run rrev only on repositories and branches you are
+willing to have modified.
+
+`--report-only` tells the executor to change nothing, but that instruction
+travels in the prompt; it is not enforced by a sandbox.
 
 ## Usage
 
@@ -61,12 +81,17 @@ Modes are mutually exclusive; combining two is a startup error.
 | Mode | Flag | What runs |
 | --- | --- | --- |
 | Full pipeline | *(default)* | comprehensive review, external review loop, final review, finalize when enabled |
-| External only | `--external-only` | external review loop, then final review |
-| First phase only | `--phase1-only` | comprehensive review, then exit |
+| External only | `--external-only` | external review loop, final review, finalize when enabled |
+| First phase only | `--phase1-only` | comprehensive review, then exit; finalize never runs |
 | Report only | `--report-only` | every phase as a single read-only pass, writing a findings report |
 
-Report-only mode never edits a file, stages, or commits: the working tree and
-the commit history are exactly as they were found when the run ends.
+Report-only mode never edits a tracked file, stages, or commits: no tracked file
+and no commit changes. It does write its own artifacts — the findings report at
+`report_file` and the run's progress log under `progress_dir`.
+
+A mode whose whole phase sequence is skipped — `--external-only` with external
+review disabled, for instance — reviewed nothing, and says so rather than
+reporting convergence.
 
 ### What a phase does
 
@@ -164,10 +189,22 @@ A model specification is `model[:effort]`. Either part may be omitted and
 inherits the configured default; an effort level the selected tool does not
 accept is reported and dropped rather than passed through.
 
-rrev rejects configurations that contradict each other. Selecting codex as both
-the primary executor and the external review tool by flag is a startup error;
-the same contradiction coming only from configuration files disables the
-external phase with a warning on stderr.
+rrev rejects configurations that contradict each other. Asking by flag for codex
+as both the primary executor and the external review tool is a startup error;
+the same contradiction reached any other way disables the external phase with a
+warning on stderr. `--executor codex` alone is therefore not an error: the
+default external tool is codex, so rrev skips the external phase rather than
+having codex review its own work. The same applies to selecting `custom` as the
+external review tool with no `external_review_command` to run.
+
+`external_review_command` is split on whitespace and executed directly, not
+through a shell: quotes and shell operators are not interpreted, and preflight
+checks the first field is on `PATH`. Wrap anything needing a shell in a script
+file. rrev writes the review prompt to the script's stdin and treats its stdout
+as the findings.
+
+Colour is disabled by `no_color`, by a non-empty `NO_COLOR`, by `TERM=dumb`, and
+whenever output is not a terminal.
 
 ## Prompts and agents
 
@@ -242,6 +279,22 @@ done, iterate again" and runs another iteration, up to the phase's limit. This
 is the load-bearing property of the protocol: silence never ends a loop as
 converged.
 
+### Report lines
+
+Signals decide whether a loop ends; these lines are what rrev reads findings out
+of. Both are recognised only at the start of a line outside a code fence.
+
+```
+FINDING:  <critical|major|minor> | <file>:<line> | <reviewer> | <requirement or -> | <summary>
+REJECTED: <file>:<line> | <reviewer> | why it is not a real finding
+```
+
+A `-` stands in for a field the finding does not carry. Findings feed the
+findings report and the progress log; rejections are what later external rounds
+are shown, so a dismissed finding does not come back unchanged. A replacement
+prompt or an `external_review_command` script that emits neither produces an
+empty report and an empty log.
+
 ## Progress log
 
 Each run appends to `.rrev/progress/progress-<change>.md`, creating the directory and an
@@ -250,7 +303,8 @@ run against the same change appends to the same file, preserving history.
 
 The log records the change and goal, the base ref, every phase and iteration
 boundary, the findings reported, which were confirmed and fixed, which were
-rejected and why, and each loop's termination reason. Every phase prompt is
+rejected and why, the commits each iteration produced, and each loop's
+termination reason. Every phase prompt is
 given the log's path and told to read it before reporting, so a finding already
 rejected with a stated reason is not re-reported unchanged.
 

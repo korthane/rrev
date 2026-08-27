@@ -90,12 +90,16 @@ func TestParseOperationUnknownIsUnspecified(t *testing.T) {
 	}
 }
 
-func TestRenderChecklist(t *testing.T) {
+func TestChecklistEntries(t *testing.T) {
 	reqs, err := openspec.ParseDeltaSpec("auth", readFixtureSpec(t, "auth"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	checklist := openspec.RenderChecklist(reqs)
+	entries := openspec.ChecklistEntries(reqs)
+	if len(entries) != len(reqs) {
+		t.Fatalf("entries = %d, want one per requirement (%d)", len(entries), len(reqs))
+	}
+	checklist := strings.Join(entries, "")
 	for _, want := range []string{
 		"[ADDED] auth: TOTP enrollment",
 		"[MODIFIED] auth: Sign-in",
@@ -107,7 +111,7 @@ func TestRenderChecklist(t *testing.T) {
 			t.Errorf("checklist missing %q:\n%s", want, checklist)
 		}
 	}
-	if got := openspec.RenderChecklist(nil); !strings.Contains(got, "no requirements") {
-		t.Errorf("empty checklist = %q", got)
+	if got := openspec.ChecklistEntries(nil); len(got) != 0 {
+		t.Errorf("empty checklist = %v, want no entries", got)
 	}
 }

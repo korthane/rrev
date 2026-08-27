@@ -13,6 +13,7 @@ import (
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
+	"github.com/korthane/rrev/pkg/git"
 	"github.com/korthane/rrev/pkg/processor/phase"
 	"github.com/korthane/rrev/pkg/progress"
 )
@@ -39,6 +40,17 @@ func (r *fakeRepo) WorkingTreeFingerprint(context.Context) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.tree, nil
+}
+
+// Commits reports one commit per hash the branch moved to, which is all the
+// progress log needs to name what an iteration produced.
+func (r *fakeRepo) Commits(_ context.Context, baseRef string) ([]git.Commit, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.head == baseRef {
+		return nil, nil
+	}
+	return []git.Commit{{Hash: r.head, Subject: "fix " + r.head}}, nil
 }
 
 func (r *fakeRepo) commit(hash string) {
@@ -278,4 +290,22 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(body)
+}
+
+// A mode whose whole sequence is skipped reviewed nothing. Reporting that as
+// convergence would be indistinguishable from a review that passed, which is
+// what anything gating on rrev's exit status reads it as.
+func TestRunnerAllPhasesSkippedDoesNotConverge(t *testing.T) {
+	primary := mock("claude", reviewDone)
+	env, _ := newEnv(t, primary, nil, nil)
+	runner := &Runner{Env: env, Mode: ModeExternalOnly}
+
+	res := runner.Run(context.Background())
+
+	if got := res.Executed(); len(got) != 0 {
+		t.Fatalf("executed phases = %v, want none with external review disabled", got)
+	}
+	if res.Converged {
+		t.Error("a run that never invoked an executor reported convergence")
+	}
 }

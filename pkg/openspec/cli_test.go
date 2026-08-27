@@ -11,15 +11,6 @@ import (
 	"github.com/korthane/rrev/pkg/openspec"
 )
 
-func TestCLIAvailable(t *testing.T) {
-	if (openspec.CLI{Disabled: true}).Available() {
-		t.Error("Available = true for a disabled CLI")
-	}
-	if (openspec.CLI{Bin: filepath.Join(t.TempDir(), "absent")}).Available() {
-		t.Error("Available = true for a missing binary")
-	}
-}
-
 func TestCLIErrorsCarryDiagnostics(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("stub CLI relies on a POSIX shell")

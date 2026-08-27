@@ -53,7 +53,7 @@ func TestOutcome(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := Outcome(tt.res); got != tt.want {
-				t.Errorf("Outcome = %d (%s), want %d (%s)", got, got, tt.want, tt.want)
+				t.Errorf("Outcome = %d, want %d", got, tt.want)
 			}
 		})
 	}

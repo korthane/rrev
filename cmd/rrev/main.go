@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/korthane/rrev/pkg/git"
 	"github.com/korthane/rrev/pkg/status"
 )
 
@@ -49,6 +50,12 @@ func execute(ctx context.Context, args []string, out, errOut io.Writer) (status.
 		return status.CodeFailed, err
 	}
 	start, err := prepare(ctx, opts, dir)
+	if errors.Is(err, git.ErrNoChanges) {
+		// An unchanged branch is a successful no-op, not a failure: there is
+		// nothing for a reviewer to look at.
+		_, _ = fmt.Fprintf(out, "nothing to review: %v\n", err)
+		return status.CodeOK, nil
+	}
 	if err != nil {
 		return status.CodeFailed, err
 	}

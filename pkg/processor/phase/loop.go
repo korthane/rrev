@@ -82,6 +82,7 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 		}
 
 		after := e.snapshot(runCtx)
+		e.recordCommits(runCtx, before, after)
 		if after.same(before) {
 			stale++
 		} else {
@@ -112,9 +113,9 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 // terminal and in the progress log.
 func (e *Env) report(res Result) {
 	e.Log.LoopEnd(res.Name, string(res.Reason), res.Iterations)
-	e.say("%s ended after %s: %s", label(res.Name), plural(res.Iterations, "iteration"), res.Reason)
+	e.say("%s ended after %s: %s", Label(res.Name), plural(res.Iterations, "iteration"), res.Reason)
 	if res.Err != nil {
-		e.note("%s error: %v", label(res.Name), res.Err)
+		e.note("%s error: %v", Label(res.Name), res.Err)
 	}
 }
 
@@ -128,7 +129,7 @@ func (e *Env) review(ctx context.Context, call reviewCall) (stepResult, error) {
 
 	spec, warning := executor.Select(e.Config, call.model, call.exec.Name())
 	if warning != "" {
-		e.note("%s: %s", label(call.phase), warning)
+		e.note("%s: %s", Label(call.phase), warning)
 	}
 
 	out, runErr := call.exec.Run(ctx, executor.Request{
@@ -218,6 +219,22 @@ type treeState struct {
 // produces a false stalemate.
 func (s treeState) same(o treeState) bool {
 	return s.known && o.known && s.head == o.head && s.tree == o.tree
+}
+
+// recordCommits logs the commits an iteration produced. It is the only part of
+// an iteration's outcome rrev can observe for itself; everything else the
+// executor did it has to say in its own report.
+func (e *Env) recordCommits(ctx context.Context, before, after treeState) {
+	if e.Repo == nil || !before.known || !after.known || before.head == after.head {
+		return
+	}
+	commits, err := e.Repo.Commits(ctx, before.head)
+	if err != nil {
+		return
+	}
+	for _, c := range commits {
+		e.Log.Commit(c.Hash, c.Subject)
+	}
 }
 
 func (e *Env) snapshot(ctx context.Context) treeState {

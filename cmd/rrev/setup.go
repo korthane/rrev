@@ -62,6 +62,9 @@ func prepare(ctx context.Context, opts *options, dir string) (*startup, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := repo.EnsureChanges(ctx, baseRef); err != nil {
+		return nil, err
+	}
 
 	review, err := resolveReview(dir, opts.Change)
 	if err != nil {

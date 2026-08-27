@@ -91,10 +91,6 @@ type Vars struct {
 
 	Iteration     int
 	MaxIterations int
-
-	// Extra carries per-phase values. Its keys are matched case-insensitively
-	// and take precedence over the fields above.
-	Extra map[string]string
 }
 
 // Expander turns a prompt file into the text handed to one executor, resolving
@@ -252,9 +248,6 @@ func (v Vars) values() map[string]string {
 		"REQUIREMENT_COUNT":  strconv.Itoa(len(v.Requirements)),
 		"ITERATION":          strconv.Itoa(v.Iteration),
 		"MAX_ITERATIONS":     strconv.Itoa(v.MaxIterations),
-	}
-	for key, value := range v.Extra {
-		values[strings.ToUpper(strings.TrimSpace(key))] = value
 	}
 	return values
 }

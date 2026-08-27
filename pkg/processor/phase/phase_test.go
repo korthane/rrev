@@ -13,6 +13,7 @@ import (
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
+	"github.com/korthane/rrev/pkg/git"
 	"github.com/korthane/rrev/pkg/progress"
 )
 
@@ -35,6 +36,17 @@ func (r *fakeRepo) WorkingTreeFingerprint(context.Context) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.tree, r.err
+}
+
+// Commits reports one commit per hash the branch moved to, which is all the
+// progress log needs to name what an iteration produced.
+func (r *fakeRepo) Commits(_ context.Context, baseRef string) ([]git.Commit, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.head == baseRef {
+		return nil, r.err
+	}
+	return []git.Commit{{Hash: r.head, Subject: "fix " + r.head}}, r.err
 }
 
 func (r *fakeRepo) commit(hash string) {
@@ -402,5 +414,37 @@ func TestStreamIsAttributedToItsPhase(t *testing.T) {
 	}
 	if got := streams.text(NameExternal); got != "" {
 		t.Errorf("a phase that never ran got output: %q", got)
+	}
+}
+
+// The commits an iteration produced are the one part of its outcome rrev can
+// observe for itself, so the progress log must name them.
+func TestIterationCommitsRecorded(t *testing.T) {
+	dir := t.TempDir()
+	log, err := progress.Open(dir, "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+
+	primary := mock("claude", "FINDING: major | a.go:3 | quality | - | leaks a handle", reviewDone)
+	env, repo := newEnv(t, primary, nil, func(c *config.Config) { c.MaxIterations = 2 })
+	env.Log = log
+	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
+		if primary.CallCount() == 1 {
+			repo.commit("head1")
+			out := "FINDING: major | a.go:3 | quality | - | leaks a handle"
+			return executor.Result{Output: out, Signal: executor.Detect(out)}, nil
+		}
+		return executor.Result{Output: reviewDone, Signal: executor.SignalReviewDone}, nil
+	}
+
+	Comprehensive(context.Background(), env)
+
+	logged, err := os.ReadFile(filepath.Join(dir, "progress-add-user-auth.md"))
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	if !strings.Contains(string(logged), `commit: hash=head1`) {
+		t.Errorf("progress log does not name the commit the iteration produced:\n%s", logged)
 	}
 }

@@ -1,4 +1,3 @@
-// Package phase implements the individual review phases the processor runs.
 package phase
 
 import (
@@ -8,6 +7,7 @@ import (
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
+	"github.com/korthane/rrev/pkg/git"
 	"github.com/korthane/rrev/pkg/progress"
 )
 
@@ -45,10 +45,12 @@ const (
 )
 
 // Repo is the part of the repository a phase needs: enough to tell an iteration
-// that changed something from one that spun in place.
+// that changed something from one that spun in place, and to name the commits
+// it produced.
 type Repo interface {
 	HeadHash(ctx context.Context) (string, error)
 	WorkingTreeFingerprint(ctx context.Context) (string, error)
+	Commits(ctx context.Context, baseRef string) ([]git.Commit, error)
 }
 
 // Result is what one phase did, and why it stopped.
@@ -142,13 +144,14 @@ func (e *Env) note(format string, args ...any) {
 // skip builds the result for a phase that never ran, reporting why.
 func (e *Env) skip(name, format string, args ...any) Result {
 	reason := fmt.Sprintf(format, args...)
-	e.note("%s skipped: %s", label(name), reason)
+	e.note("%s skipped: %s", Label(name), reason)
 	return Result{Name: name, Reason: ReasonSkipped, Skipped: true, SkipReason: reason}
 }
 
-// label names a step the way it is described to the user: the review phases
-// are loops, the finalize step is not.
-func label(name string) string {
+// Label names a step the way it is described to the user: the review phases are
+// loops, the finalize step is not. The run summary uses it too, so the closing
+// report and the narration that preceded it cannot drift apart.
+func Label(name string) string {
 	if name == NameFinalize {
 		return NameFinalize + " step"
 	}

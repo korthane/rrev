@@ -4,8 +4,10 @@ import (
 	"strings"
 )
 
-// Context is the immutable review context resolved once per run and reused by
-// every phase, so each reviewer judges the diff against identical criteria.
+// Context is the review context resolved once per run and reused by every
+// phase, so each reviewer judges the diff against identical criteria. Phases
+// take it by value; the artifacts and requirements it points at are shared and
+// must be treated as read-only.
 type Context struct {
 	Root         Root
 	Change       Change
@@ -66,9 +68,6 @@ func (c Context) GoalLine() string {
 	}
 	return c.Change.Name + ": " + c.Goal
 }
-
-// Checklist renders the requirements as explicit conformance criteria.
-func (c Context) Checklist() string { return RenderChecklist(c.Requirements) }
 
 // parseAllSpecs parses every delta spec, keeping going past a spec it cannot
 // parse and reporting that file instead.

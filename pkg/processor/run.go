@@ -134,6 +134,11 @@ func (r *Runner) Run(ctx context.Context) Result {
 		}
 	}
 
+	if len(res.Phases) > 0 && len(res.Executed()) == 0 {
+		// A mode whose whole sequence was skipped reviewed nothing; reporting
+		// convergence would be indistinguishable from a review that passed.
+		res.Converged = false
+	}
 	if fin := r.runFinalize(ctx, res); fin != nil {
 		res.Finalize = fin
 		res.Findings = addFindings(res.Findings, fin.Findings)

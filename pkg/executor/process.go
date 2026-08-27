@@ -73,6 +73,12 @@ func (c command) run(ctx context.Context, stream io.Writer, onLine func(string) 
 		}
 	}
 	scanErr := scanner.Err()
+	if scanErr != nil {
+		// The scanner stops for good on a line over maxLineBytes; without a
+		// drain the tool blocks writing into a pipe nobody reads and Wait
+		// never returns.
+		_, _ = io.Copy(io.Discard, stdout)
+	}
 
 	waitErr := cmd.Wait()
 	guard.stop()

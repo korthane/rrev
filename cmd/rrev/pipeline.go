@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
@@ -193,7 +194,7 @@ func diffInstruction(baseRef string) string { return "git diff " + baseRef + "..
 // repository root, or absolute when it lies outside.
 func repoPath(root, path string) string {
 	rel, err := filepath.Rel(root, path)
-	if err != nil || rel == ".." || filepath.IsAbs(rel) {
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return path
 	}
 	return filepath.ToSlash(rel)

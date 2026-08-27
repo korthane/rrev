@@ -58,20 +58,6 @@ func (r Requirement) Title() string {
 	return name
 }
 
-// RenderChecklist formats requirements as the conformance checklist handed to
-// reviewers, so no reviewer has to reparse the spec files.
-func RenderChecklist(reqs []Requirement) string {
-	entries := ChecklistEntries(reqs)
-	if len(entries) == 0 {
-		return NoRequirements
-	}
-	return strings.Join(entries, "\n")
-}
-
-// NoRequirements stands in for an empty checklist, so a prompt says the specs
-// yielded nothing rather than showing a blank section.
-const NoRequirements = "(no requirements extracted)"
-
 // ChecklistEntries renders the checklist one requirement at a time, so a
 // consumer working to a size budget can drop whole requirements instead of
 // cutting one in half.

@@ -31,15 +31,6 @@ func (c CLI) bin() string {
 	return DefaultCLIBin
 }
 
-// Available reports whether the openspec CLI can be invoked.
-func (c CLI) Available() bool {
-	if c.Disabled {
-		return false
-	}
-	_, err := exec.LookPath(c.bin())
-	return err == nil
-}
-
 func (c CLI) run(dir string, args ...string) ([]byte, error) {
 	if c.Disabled {
 		return nil, fmt.Errorf("%w: disabled", ErrCLIUnavailable)

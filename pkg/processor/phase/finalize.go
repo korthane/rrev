@@ -23,7 +23,7 @@ func Finalize(ctx context.Context, e *Env, prior ...Result) Result {
 		return e.skip(NameFinalize, "the run may not modify the repository")
 	}
 	if name, ok := unconverged(prior); ok {
-		return e.skip(NameFinalize, "the %s ended without converging", label(name))
+		return e.skip(NameFinalize, "the %s ended without converging", Label(name))
 	}
 
 	e.Log.PhaseStart(NameFinalize)

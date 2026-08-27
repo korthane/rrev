@@ -53,13 +53,13 @@ func TestClaudeRunReadsStreamJSON(t *testing.T) {
 func TestClaudeRunInvocation(t *testing.T) {
 	tool := newFakeTool(t, fakeToolOpts{stdout: `{"type":"result","subtype":"success","result":"ok"}`})
 
-	claude := executor.Claude{Command: tool.path, ExtraArgs: []string{"--add-dir", "/tmp"}}
+	claude := executor.Claude{Command: tool.path}
 	if _, err := claude.Run(t.Context(), executor.Request{Prompt: "check the diff", Model: "claude-opus-5"}); err != nil {
 		t.Fatalf("run claude: %v", err)
 	}
 
 	args := tool.args(t)
-	for _, want := range [][2]string{{"--output-format", "stream-json"}, {"--model", "claude-opus-5"}, {"--add-dir", "/tmp"}} {
+	for _, want := range [][2]string{{"--output-format", "stream-json"}, {"--model", "claude-opus-5"}} {
 		if !hasArg(args, want[0], want[1]) {
 			t.Errorf("args %v missing %s %s", args, want[0], want[1])
 		}

@@ -57,11 +57,8 @@ func TestCodexRunReadsItemEvents(t *testing.T) {
 func TestCodexRunInvocation(t *testing.T) {
 	tool := newFakeTool(t, fakeToolOpts{stdout: "{}"})
 
-	codex := executor.Codex{
-		Command:         tool.path,
-		ConfigOverrides: []string{"model_reasoning_effort=high", "  ", "sandbox_mode=danger-full-access"},
-	}
-	if _, err := codex.Run(t.Context(), executor.Request{Prompt: "check the diff", Model: "gpt-5"}); err != nil {
+	codex := executor.Codex{Command: tool.path}
+	if _, err := codex.Run(t.Context(), executor.Request{Prompt: "check the diff", Model: "gpt-5", Effort: "high"}); err != nil {
 		t.Fatalf("run codex: %v", err)
 	}
 
@@ -75,7 +72,6 @@ func TestCodexRunInvocation(t *testing.T) {
 	for _, want := range [][2]string{
 		{"--model", "gpt-5"},
 		{"-c", "model_reasoning_effort=high"},
-		{"-c", "sandbox_mode=danger-full-access"},
 	} {
 		if !hasArg(args, want[0], want[1]) {
 			t.Errorf("args %v missing %s %s", args, want[0], want[1])
@@ -131,7 +127,7 @@ func TestCodexDefaults(t *testing.T) {
 func TestCodexRunPassesEffortAsConfigOverride(t *testing.T) {
 	tool := newFakeTool(t, fakeToolOpts{stdout: "{}"})
 
-	codex := executor.Codex{Command: tool.path, ConfigOverrides: []string{"model_provider=openai"}}
+	codex := executor.Codex{Command: tool.path}
 	if _, err := codex.Run(t.Context(), executor.Request{Prompt: "p", Effort: "high"}); err != nil {
 		t.Fatalf("run codex: %v", err)
 	}
@@ -139,9 +135,6 @@ func TestCodexRunPassesEffortAsConfigOverride(t *testing.T) {
 	args := tool.args(t)
 	if !slices.Contains(args, "model_reasoning_effort=high") {
 		t.Errorf("args %v missing the reasoning effort override", args)
-	}
-	if !slices.Contains(args, "model_provider=openai") {
-		t.Errorf("args %v dropped the configured override", args)
 	}
 }
 

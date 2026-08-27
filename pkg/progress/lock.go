@@ -31,7 +31,13 @@ func (l fileLock) acquire(wait time.Duration) error {
 	for {
 		f, err := os.OpenFile(l.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
-			return f.Close()
+			if err := f.Close(); err != nil {
+				// The caller reads any error as "lock not held" and will not
+				// release it, so the file must not outlive this attempt.
+				l.release()
+				return err
+			}
+			return nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return err

@@ -143,8 +143,6 @@ func TestEntriesRecordEveryReconstructableEvent(t *testing.T) {
 	log.Finding(finding)
 	log.Confirmed(finding, "fixed")
 	log.Rejected(progress.Finding{Reviewer: "testing", Severity: "minor", File: "a.go"}, "covered by TestResolve")
-	log.Validation("go test ./...", false, "FAIL pkg/config")
-	log.Validation("go test ./...", true, "")
 	log.Commit("deadbee", "Fix the flag layer")
 	log.LoopEnd("comprehensive review", "review-done signal", 3)
 
@@ -157,9 +155,6 @@ func TestEntriesRecordEveryReconstructableEvent(t *testing.T) {
 		`confirmed: reviewer=conformance severity=major location=pkg/config/resolve.go:42 requirement="Layered resolution" action=fixed`,
 		`rejected: reviewer=testing severity=minor location=a.go`,
 		"  covered by TestResolve",
-		`validation: result=failed command="go test ./..."`,
-		"  FAIL pkg/config",
-		`validation: result=passed command="go test ./..."`,
 		`commit: hash=deadbee subject="Fix the flag layer"`,
 		`end: phase="comprehensive review" reason="review-done signal" iterations=3`,
 	} {
