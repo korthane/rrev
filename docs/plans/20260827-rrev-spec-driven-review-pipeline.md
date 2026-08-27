@@ -330,12 +330,12 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 5: Configuration templating and conflict detection
 
-- [ ] implement template variable expansion for change name, artifact paths, goal, requirement checklist, progress log path, base ref, and diff instruction, erroring with the filename on an unknown variable
-- [ ] implement requirement-checklist truncation at a configured budget that states in the prompt that truncation occurred
-- [ ] implement executor-aware agent reference expansion producing claude subagent invocations and codex spawn calls from one prompt file, erroring on an unresolvable agent name
-- [ ] implement incompatible-option detection: a hard startup error for conflicting flags, and a warn-and-override path for a conflict present only in config files
-- [ ] write tests for new functionality
-- [ ] run project tests - must pass before next task
+- [x] implement template variable expansion for change name, artifact paths, goal, requirement checklist, progress log path, base ref, and diff instruction, erroring with the filename on an unknown variable
+- [x] implement requirement-checklist truncation at a configured budget that states in the prompt that truncation occurred
+- [x] implement executor-aware agent reference expansion producing claude subagent invocations and codex spawn calls from one prompt file, erroring on an unresolvable agent name
+- [x] implement incompatible-option detection: a hard startup error for conflicting flags, and a warn-and-override path for a conflict present only in config files
+- [x] write tests for new functionality
+- [x] run project tests - must pass before next task
 
 ### Task 6: Executor contract and implementations
 

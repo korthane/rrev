@@ -61,21 +61,30 @@ func (r Requirement) Title() string {
 // RenderChecklist formats requirements as the conformance checklist handed to
 // reviewers, so no reviewer has to reparse the spec files.
 func RenderChecklist(reqs []Requirement) string {
-	if len(reqs) == 0 {
-		return "(no requirements extracted)"
+	entries := ChecklistEntries(reqs)
+	if len(entries) == 0 {
+		return NoRequirements
 	}
-	var b strings.Builder
+	return strings.Join(entries, "\n")
+}
+
+// NoRequirements stands in for an empty checklist, so a prompt says the specs
+// yielded nothing rather than showing a blank section.
+const NoRequirements = "(no requirements extracted)"
+
+// ChecklistEntries renders the checklist one requirement at a time, so a
+// consumer working to a size budget can drop whole requirements instead of
+// cutting one in half.
+func ChecklistEntries(reqs []Requirement) []string {
+	entries := make([]string, 0, len(reqs))
 	for i, req := range reqs {
-		if i > 0 {
-			b.WriteString("\n")
-		}
+		var b strings.Builder
 		fmt.Fprintf(&b, "%d. [%s] %s: %s\n", i+1, req.Operation, req.Capability, req.Title())
 		if req.Text != "" {
 			fmt.Fprintf(&b, "   %s\n", collapseSpace(req.Text))
 		}
 		if len(req.Scenarios) == 0 {
 			b.WriteString("   (no scenarios declared - not verifiable as written)\n")
-			continue
 		}
 		for _, scenario := range req.Scenarios {
 			name := scenario.Name
@@ -84,8 +93,9 @@ func RenderChecklist(reqs []Requirement) string {
 			}
 			fmt.Fprintf(&b, "   - %s: %s\n", name, collapseSpace(scenario.Text))
 		}
+		entries = append(entries, b.String())
 	}
-	return b.String()
+	return entries
 }
 
 // summarize reduces text to its first sentence, capped at maxLen runes.
