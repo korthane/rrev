@@ -370,11 +370,11 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 9: Reviewer agents
 
-- [ ] write the conformance agent that classifies the diff against each requirement scenario as satisfying, partially satisfying, contradicting, or not addressing it, requiring a file and line citation for every satisfied verdict and treating an uncited one as not addressed
-- [ ] write the tasks agent that cross-checks task-list checkboxes against the diff and reports any marked complete without corresponding implementation
-- [ ] adapt the quality, implementation, testing, simplification, and documentation agents from ralphex defaults, recording attribution
-- [ ] write tests asserting every shipped agent definition is discoverable and non-empty
-- [ ] run project tests - must pass before next task
+- [x] write the conformance agent that classifies the diff against each requirement scenario as satisfying, partially satisfying, contradicting, or not addressing it, requiring a file and line citation for every satisfied verdict and treating an uncited one as not addressed
+- [x] write the tasks agent that cross-checks task-list checkboxes against the diff and reports any marked complete without corresponding implementation
+- [x] adapt the quality, implementation, testing, simplification, and documentation agents from ralphex defaults, recording attribution
+- [x] write tests asserting every shipped agent definition is discoverable and non-empty
+- [x] run project tests - must pass before next task
 
 ### Task 10: Phase prompts
 

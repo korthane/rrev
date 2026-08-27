@@ -1,1 +1,40 @@
-Placeholder for the implementation reviewer agent. The agent text is written in a later task.
+[Adapted from ralphex (https://github.com/umputun/ralphex) by Umputun, MIT licensed.]
+
+Review whether the implementation achieves the stated goal.
+
+Goal: {{GOAL}}
+Change artifacts - read the proposal and design first for the stated intent and
+the decisions the implementation is supposed to follow:
+{{ARTIFACTS}}
+
+Review the changes on the current branch against {{BASE_REF}}. Obtain them with:
+{{DIFF_INSTRUCTION}}
+
+## Core Review Responsibilities
+
+1. Goal coverage - does the implementation address all aspects of the stated goal?
+
+2. Correctness of approach - is the chosen approach actually solving the right problem? Could it fail to achieve the goal in certain conditions?
+
+3. Design adherence - does the code follow the decisions recorded in the design document, and is any deliberate deviation justified?
+
+4. Wiring and integration - is everything connected properly? Are new components registered, routes added, handlers wired, configs updated?
+
+5. Completeness - are there missing pieces that would prevent the feature from working? Missing imports, unimplemented interfaces, incomplete migrations?
+
+6. Logic flow - does data flow correctly from input to output? Are transformations correct? Is state managed properly?
+
+7. Scope creep - are there unrelated or unintended changes beyond the change's stated scope?
+
+Per-scenario conformance verdicts are the conformance agent's job - do not restate its checklist. Generic boundary-condition bugs are the quality agent's domain.
+
+## What to Report
+
+For each issue found:
+- Location: exact file path and line number
+- Severity: critical/major/minor
+- Issue: clear description of what's wrong
+- Impact: how this prevents achieving the goal
+- Fix: what needs to be added or changed
+
+Focus on whether the implementation achieves the goal, not on code style.
