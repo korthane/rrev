@@ -84,22 +84,46 @@ func (r *Repo) DefaultBranch(ctx context.Context) (string, error) {
 		if err != nil || head == "" {
 			continue
 		}
-		if local := strings.TrimPrefix(head, remote+"/"); r.RefExists(ctx, local) {
-			return local, nil
-		}
-		if r.RefExists(ctx, head) {
-			return head, nil
+		if ref, ok := r.pickBase(ctx, strings.TrimPrefix(head, remote+"/"), head); ok {
+			return ref, nil
 		}
 	}
-	if configured, err := r.git(ctx, "config", "--get", "init.defaultBranch"); err == nil && r.RefExists(ctx, configured) {
-		return configured, nil
+	if configured, err := r.git(ctx, "config", "--get", "init.defaultBranch"); err == nil {
+		if ref, ok := r.pickBase(ctx, configured, "origin/"+configured); ok {
+			return ref, nil
+		}
 	}
-	for _, candidate := range []string{"main", "master", "origin/main", "origin/master"} {
-		if r.RefExists(ctx, candidate) {
-			return candidate, nil
+	for _, name := range []string{"main", "master"} {
+		if ref, ok := r.pickBase(ctx, name, "origin/"+name); ok {
+			return ref, nil
 		}
 	}
 	return "", ErrNoDefaultBranch
+}
+
+// pickBase chooses between a default branch and its remote-tracking counterpart,
+// reporting false when neither resolves. A local branch left behind its remote
+// keeps commits the branch under review already contains out of its merge base,
+// so the three-dot diff would present upstream work as part of the review; the
+// remote-tracking ref wins in that case, and the friendlier local name otherwise.
+func (r *Repo) pickBase(ctx context.Context, local, remote string) (string, bool) {
+	switch {
+	case !r.RefExists(ctx, local):
+		return remote, r.RefExists(ctx, remote)
+	case r.RefExists(ctx, remote) && r.strictlyBehind(ctx, local, remote):
+		return remote, true
+	default:
+		return local, true
+	}
+}
+
+// strictlyBehind reports whether ref is an ancestor of other and not the same commit.
+func (r *Repo) strictlyBehind(ctx context.Context, ref, other string) bool {
+	if _, err := r.git(ctx, "merge-base", "--is-ancestor", ref, other); err != nil {
+		return false
+	}
+	_, err := r.git(ctx, "merge-base", "--is-ancestor", other, ref)
+	return err != nil
 }
 
 // RefExists reports whether ref resolves to a commit in this repository.

@@ -404,3 +404,59 @@ func TestChangedFilesFromSubdirectoryWithRelativeDiff(t *testing.T) {
 		t.Errorf("EnsureChanges: %v", err)
 	}
 }
+
+// TestDefaultBranchPrefersRemoteWhenLocalIsBehind covers the everyday state of a
+// fetched-but-not-pulled clone: diffing against the stale local branch would put
+// the upstream commits the branch was rebased onto into the review.
+func TestDefaultBranchPrefersRemoteWhenLocalIsBehind(t *testing.T) {
+	origin := newRepo(t, "main")
+	clone := t.TempDir()
+	runGit(t, clone, "clone", origin, ".")
+	runGit(t, clone, "config", "user.name", "rrev test")
+	runGit(t, clone, "config", "user.email", "rrev-test@example.com")
+	runGit(t, clone, "checkout", "-b", "feature")
+	writeFile(t, clone, "feature.txt", "feature\n")
+	commit(t, clone, "add feature")
+
+	writeFile(t, origin, "upstream.txt", "upstream\n")
+	commit(t, origin, "upstream work")
+	runGit(t, clone, "fetch", "origin")
+	runGit(t, clone, "rebase", "origin/main")
+
+	repo := open(t, clone)
+	got, err := repo.DefaultBranch(t.Context())
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if got != "origin/main" {
+		t.Fatalf("DefaultBranch() = %q, want %q", got, "origin/main")
+	}
+	files, err := repo.ChangedFiles(t.Context(), got)
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	if !slices.Equal(files, []string{"feature.txt"}) {
+		t.Errorf("review diff leaked upstream work: %v", files)
+	}
+}
+
+// TestDefaultBranchPrefersLocalWhenAhead guards the other direction: unpushed
+// work on the default branch must not be reviewed as if it were the branch's.
+func TestDefaultBranchPrefersLocalWhenAhead(t *testing.T) {
+	origin := newRepo(t, "main")
+	clone := t.TempDir()
+	runGit(t, clone, "clone", origin, ".")
+	runGit(t, clone, "config", "user.name", "rrev test")
+	runGit(t, clone, "config", "user.email", "rrev-test@example.com")
+	writeFile(t, clone, "local.txt", "local\n")
+	commit(t, clone, "unpushed work on main")
+	runGit(t, clone, "checkout", "-b", "feature")
+
+	got, err := open(t, clone).DefaultBranch(t.Context())
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if got != "main" {
+		t.Errorf("DefaultBranch() = %q, want %q", got, "main")
+	}
+}
