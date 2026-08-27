@@ -1,0 +1,1 @@
+Placeholder for the external_eval prompt. The prompt text is written in a later task.

@@ -321,12 +321,12 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 4: Configuration resolution and defaults
 
-- [ ] implement layered config resolution across flags, project directory, user directory, and embedded defaults, ensuring a partially populated source never zeroes a lower-precedence value
-- [ ] implement the INI-style parser that rejects malformed input with file and line in the error and never silently falls back to defaults
-- [ ] embed the default config, prompts, and agents into the binary so a run with no config files on disk resolves every setting
-- [ ] implement per-file prompt and agent override lookup across the three sources, so overriding one file leaves the rest on embedded defaults
-- [ ] write tests for new functionality
-- [ ] run project tests - must pass before next task
+- [x] implement layered config resolution across flags, project directory, user directory, and embedded defaults, ensuring a partially populated source never zeroes a lower-precedence value
+- [x] implement the INI-style parser that rejects malformed input with file and line in the error and never silently falls back to defaults
+- [x] embed the default config, prompts, and agents into the binary so a run with no config files on disk resolves every setting
+- [x] implement per-file prompt and agent override lookup across the three sources, so overriding one file leaves the rest on embedded defaults
+- [x] write tests for new functionality
+- [x] run project tests - must pass before next task
 
 ### Task 5: Configuration templating and conflict detection
 

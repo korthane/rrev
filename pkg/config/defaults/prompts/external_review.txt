@@ -1,0 +1,1 @@
+Placeholder for the external_review prompt. The prompt text is written in a later task.
