@@ -291,13 +291,13 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 1: Project bootstrap
 
-- [ ] initialize the Go module as `github.com/korthane/rrev` with the current stable toolchain and create the `cmd/rrev/` and `pkg/` skeleton (openspec, config, executor, processor, processor/phase, progress, git, status)
-- [ ] add Makefile targets for build, test, lint, and coverage
-- [ ] add the linter configuration and confirm it runs clean on the skeleton
-- [ ] add a CI workflow running build, test, and lint on push, and validate the workflow file with a workflow linter
-- [ ] add LICENSE, .gitignore, and a README stub crediting ralphex (MIT, Umputun) as the origin of the pipeline mechanic, naming the derived prompt and agent files
-- [ ] write a placeholder test proving the test target executes
-- [ ] run project tests - must pass before next task
+- [x] initialize the Go module as `github.com/korthane/rrev` with the current stable toolchain and create the `cmd/rrev/` and `pkg/` skeleton (openspec, config, executor, processor, processor/phase, progress, git, status)
+- [x] add Makefile targets for build, test, lint, and coverage
+- [x] add the linter configuration and confirm it runs clean on the skeleton
+- [x] add a CI workflow running build, test, and lint on push, and validate the workflow file with a workflow linter
+- [x] add LICENSE, .gitignore, and a README stub crediting ralphex (MIT, Umputun) as the origin of the pipeline mechanic, naming the derived prompt and agent files
+- [x] write a placeholder test proving the test target executes
+- [x] run project tests - must pass before next task
 
 ### Task 2: Git integration
 
