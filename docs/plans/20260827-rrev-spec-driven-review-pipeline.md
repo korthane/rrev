@@ -409,12 +409,12 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 13: CLI flags, change selection, and preflight
 
-- [ ] implement flag parsing for the positional change name, run modes, and per-run overrides, with an invalid value failing before any phase
-- [ ] implement change selection with single-change auto-detection, an ambiguity error listing candidates, and an unknown-name error
-- [ ] implement mutual exclusion of run modes as a startup error naming both conflicting flags
-- [ ] implement startup preflight for git repository, base ref resolution, change readability, and presence of every executable to be invoked
-- [ ] write tests for new functionality, including a case per preflight failure asserting no phase runs
-- [ ] run project tests - must pass before next task
+- [x] implement flag parsing for the positional change name, run modes, and per-run overrides, with an invalid value failing before any phase
+- [x] implement change selection with single-change auto-detection, an ambiguity error listing candidates, and an unknown-name error
+- [x] implement mutual exclusion of run modes as a startup error naming both conflicting flags
+- [x] implement startup preflight for git repository, base ref resolution, change readability, and presence of every executable to be invoked
+- [x] write tests for new functionality, including a case per preflight failure asserting no phase runs
+- [x] run project tests - must pass before next task
 
 ### Task 14: CLI output, exit status, and signal handling
 

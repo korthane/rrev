@@ -2,6 +2,9 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -11,17 +14,39 @@ import (
 var version = "dev"
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout); err != nil {
+	if err := run(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "rrev:", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, out io.Writer) error {
-	if len(args) > 0 && (args[0] == "-version" || args[0] == "--version") {
+func run(ctx context.Context, args []string, out, errOut io.Writer) error {
+	opts, err := parseArgs(args, errOut)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if opts.Version {
 		_, err := fmt.Fprintf(out, "rrev %s\n", version)
 		return err
 	}
-	_, err := fmt.Fprintf(out, "rrev %s: not implemented yet\n", version)
+
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	start, err := prepare(ctx, opts, dir)
+	if err != nil {
+		return err
+	}
+
+	for _, warning := range start.Warnings {
+		// A terminal that cannot be written to is not worth failing a run for.
+		_, _ = fmt.Fprintln(errOut, "rrev:", warning)
+	}
+	_, err = fmt.Fprintf(out, "rrev %s: reviewing %s against %s in %s mode\n",
+		version, start.Review.GoalLine(), start.BaseRef, start.Mode)
 	return err
 }
