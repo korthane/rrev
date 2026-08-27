@@ -359,14 +359,14 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 8: Progress log
 
-- [ ] implement progress log creation under the project progress directory, named per change, creating the directory and its ignore rule when missing
-- [ ] implement append-and-reuse so a second run against the same change preserves prior history
-- [ ] implement structured entry writing for phase and iteration boundaries, findings, confirmations, rejections with reason, validation and commit outcomes, and termination reasons
-- [ ] implement file locking so concurrent appends interleave whole entries
-- [ ] implement graceful degradation when the progress directory is unwritable, continuing the review with logging disabled
-- [ ] implement a bounded lock wait that reports contention and continues rather than blocking indefinitely
-- [ ] write tests for new functionality, including a concurrent-writer test asserting no partial entry
-- [ ] run project tests - must pass before next task
+- [x] implement progress log creation under the project progress directory, named per change, creating the directory and its ignore rule when missing
+- [x] implement append-and-reuse so a second run against the same change preserves prior history
+- [x] implement structured entry writing for phase and iteration boundaries, findings, confirmations, rejections with reason, validation and commit outcomes, and termination reasons
+- [x] implement file locking so concurrent appends interleave whole entries
+- [x] implement graceful degradation when the progress directory is unwritable, continuing the review with logging disabled
+- [x] implement a bounded lock wait that reports contention and continues rather than blocking indefinitely
+- [x] write tests for new functionality, including a concurrent-writer test asserting no partial entry
+- [x] run project tests - must pass before next task
 
 ### Task 9: Reviewer agents
 
