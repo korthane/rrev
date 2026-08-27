@@ -428,12 +428,12 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 15: Integration and documentation
 
-- [ ] add an end-to-end test running the full pipeline against a fixture OpenSpec repository with scripted mock executors, asserting the phase sequence, commits, and exit status
-- [ ] add an end-to-end test for report-only mode asserting a report is produced and the repository is unmodified
-- [ ] add an end-to-end test asserting a conformance gap in the fixture is reported against the specific requirement it violates
-- [ ] write the README covering installation, prerequisites, run modes, configuration, prompt and agent customization, and the signal contract
-- [ ] verify every flag documented in the README exists in the CLI and every CLI flag is documented
-- [ ] run project tests - must pass before next task
+- [x] add an end-to-end test running the full pipeline against a fixture OpenSpec repository with scripted mock executors, asserting the phase sequence, commits, and exit status
+- [x] add an end-to-end test for report-only mode asserting a report is produced and the repository is unmodified
+- [x] add an end-to-end test asserting a conformance gap in the fixture is reported against the specific requirement it violates
+- [x] write the README covering installation, prerequisites, run modes, configuration, prompt and agent customization, and the signal contract
+- [x] verify every flag documented in the README exists in the CLI and every CLI flag is documented
+- [x] run project tests - must pass before next task
 
 ### Task 16: Verify acceptance criteria
 

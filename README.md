@@ -12,10 +12,13 @@ A run alternates independent reviewer agents with a fixing executor across three
 phases — comprehensive review, cross-model external review, and a final
 regression pass — iterating until the reviewers go quiet.
 
-> **Status: in development.** The CLI is a stub; see
-> `docs/plans/20260827-rrev-spec-driven-review-pipeline.md` for the build order.
+## Installation
 
-## Build
+```sh
+go install github.com/korthane/rrev/cmd/rrev@latest
+```
+
+Or from a clone:
 
 ```sh
 make build    # build ./rrev
@@ -23,6 +26,243 @@ make test     # run tests
 make lint     # run golangci-lint
 make coverage # test with coverage report
 ```
+
+## Prerequisites
+
+- `git`, and a working directory inside a git repository.
+- An OpenSpec-driven repository: an `openspec/` directory with the change under
+  `openspec/changes/<change>/`.
+- The `claude` CLI — the default primary executor.
+- The `codex` CLI — the default external review tool. Not needed when external
+  review is set to `none` or to a custom script.
+- The `openspec` CLI is optional. When it is present rrev discovers changes and
+  extracts requirements through it; when it is not, rrev reads
+  `openspec/changes/` and parses the delta specs itself, and says so in its
+  output.
+
+Startup preflight checks all of this before the first phase runs: a missing
+binary, an unresolvable base ref, or an unreadable change fails immediately
+rather than part-way through a review.
+
+## Usage
+
+```sh
+rrev add-user-auth   # review the branch against a named change
+rrev                 # review against the single active change
+```
+
+With no positional argument rrev auto-detects the change. If more than one is
+active it exits with a usage error listing them rather than guessing.
+
+## Run modes
+
+Modes are mutually exclusive; combining two is a startup error.
+
+| Mode | Flag | What runs |
+| --- | --- | --- |
+| Full pipeline | *(default)* | comprehensive review, external review loop, final review, finalize when enabled |
+| External only | `--external-only` | external review loop, then final review |
+| First phase only | `--phase1-only` | comprehensive review, then exit |
+| Report only | `--report-only` | every phase as a single read-only pass, writing a findings report |
+
+Report-only mode never edits a file, stages, or commits: the working tree and
+the commit history are exactly as they were found when the run ends.
+
+### What a phase does
+
+1. **Comprehensive review** — launches every reviewer agent concurrently against
+   the branch diff, then deduplicates their findings, verifies each against the
+   real code, fixes the confirmed ones, runs the validation command, and commits.
+   Repeats until an iteration finds nothing.
+2. **External review loop** — an independent tool reviews the same diff against
+   the same requirement checklist; the primary executor then evaluates what it
+   reported, fixes what it confirms, and records why it rejected the rest. Later
+   rounds carry the earlier rounds' dispositions, so a rejected finding does not
+   come back unchanged. Skipped when the primary executor and the external tool
+   would be the same model reading its own work.
+3. **Final review** — a narrow regression pass restricted to critical and major
+   issues, to catch what the earlier fixes broke. Skipped when nothing was
+   changed that could have regressed.
+4. **Finalize** — optional, disabled by default, driven by an overridable
+   prompt, run once after every review phase converged. Its failure never
+   changes the run's outcome.
+
+Every phase reviews `git diff <base ref>...HEAD` together with the branch's
+commit log. The diff is never expanded into a prompt: reviewers are told the
+commands that produce it.
+
+## Exit status
+
+| Status | Meaning |
+| --- | --- |
+| 0 | the pipeline converged, or report-only found nothing |
+| 1 | the run failed to start, aborted, or a phase could not complete |
+| 2 | the run ended with findings outstanding — a loop hit its iteration limit, ended on a stalemate, or a report-only run reported findings |
+
+## Interrupting a run
+
+- **Ctrl+C** aborts: rrev cancels the running executor, terminates its process
+  group, writes what it has to the progress log, and exits non-zero.
+- **Ctrl+\\** ends only the external review loop and lets the pipeline continue
+  with the final review phase. On platforms with no break signal the hint is
+  omitted from the banner and the loop ends only on its own conditions.
+
+## Configuration
+
+Every setting resolves from four sources, highest precedence first:
+
+1. command-line flags
+2. project configuration — `.rrev/config.ini` in the repository
+3. user configuration — `~/.config/rrev/config.ini`, or `$XDG_CONFIG_HOME/rrev`
+4. embedded defaults
+
+A source that omits a setting leaves the next source's value alone; it never
+contributes a zero. With no configuration files at all rrev runs entirely on its
+embedded defaults. A file that cannot be parsed is an error naming the file and
+the offending line — rrev does not silently fall back to defaults.
+
+The format is INI-style `key = value`. Inline comments are not supported, so a
+`#` inside a value is part of the value. A line whose first non-space character
+is `#` is a comment.
+
+### Settings
+
+Each setting has a flag named after it, with underscores written as hyphens.
+
+| Setting | Flag | Default | Meaning |
+| --- | --- | --- | --- |
+| `executor` | `--executor` | `claude` | primary executor running the review phases and the fixes: `claude` or `codex` |
+| `claude_command` | `--claude-command` | `claude` | claude executable to invoke |
+| `codex_command` | `--codex-command` | `codex` | codex executable to invoke |
+| `external_review_tool` | `--external-review-tool` | `codex` | independent second opinion: `codex`, `custom`, or `none` |
+| `external_review_command` | `--external-review-command` | *(empty)* | script the custom external reviewer runs; its stdout is its findings |
+| `base_ref` | `--base-ref` | *(detected)* | ref the review diffs against; empty detects the repository's default branch |
+| `model` | `--model` | *(tool default)* | `model[:effort]` every phase inherits from |
+| `review_model` | `--review-model` | inherits `model` | `model[:effort]` for the comprehensive review phase |
+| `external_model` | `--external-model` | inherits `model` | `model[:effort]` for the external review loop |
+| `final_model` | `--final-model` | inherits `model` | `model[:effort]` for the final review phase |
+| `finalize_model` | `--finalize-model` | inherits `model` | `model[:effort]` for the finalize step |
+| `max_iterations` | `--max-iterations` | `10` | iteration limit for the comprehensive review phase |
+| `external_max_iterations` | `--external-max-iterations` | `5` | iteration limit for the external review loop |
+| `final_max_iterations` | `--final-max-iterations` | `5` | iteration limit for the final review phase |
+| `stalemate_patience` | `--stalemate-patience` | `0` | consecutive unchanged iterations tolerated before a loop gives up; 0 disables |
+| `session_timeout` | `--session-timeout` | `0` | bound on a whole executor call; 0 disables |
+| `idle_timeout` | `--idle-timeout` | `0` | bound on a silent stretch of an executor call; 0 disables |
+| `progress_interval` | `--progress-interval` | `30s` | how often to report that a silent executor is still working |
+| `finalize` | `--finalize` | `false` | run the finalize step after the last review phase |
+| `progress_dir` | `--progress-dir` | `.rrev/progress` | directory the per-change progress log is written to |
+| `report_file` | `--report-file` | `.rrev/findings.md` | destination of the findings report |
+| `checklist_budget` | `--checklist-budget` | `20000` | maximum characters of requirement checklist expanded into a prompt |
+| `validation_command` | `--validation-command` | *(empty)* | command the executor runs before committing a fix |
+| `debug` | `--debug` | `false` | record resolved command lines and full prompts |
+| `no_color` | `--no-color` | `false` | disable coloured terminal output |
+
+Two further flags select no setting: `--version` prints the version and exits,
+and the mode flags above.
+
+A model specification is `model[:effort]`. Either part may be omitted and
+inherits the configured default; an effort level the selected tool does not
+accept is reported and dropped rather than passed through.
+
+rrev rejects configurations that contradict each other. Selecting codex as both
+the primary executor and the external review tool by flag is a startup error;
+the same contradiction coming only from configuration files disables the
+external phase with a warning on stderr.
+
+## Prompts and agents
+
+Every phase prompt and every reviewer agent ships embedded in the binary. Any
+one of them can be replaced by placing a file with the same name in
+`.rrev/prompts/` or `.rrev/agents/` (project) or under the user configuration
+directory. Overriding one file leaves every other one on its default.
+
+| Prompt | Phase |
+| --- | --- |
+| `review_first.txt` | comprehensive review |
+| `external_review.txt` | the external tool's review |
+| `external_eval.txt` | the primary executor's evaluation of external findings |
+| `review_final.txt` | final regression review |
+| `finalize.txt` | finalize step |
+
+Shipped agents: `conformance`, `tasks`, `quality`, `implementation`, `testing`,
+`simplification`, `documentation`.
+
+A prompt names the agents its phase launches:
+
+```text
+{{AGENTS: conformance, tasks, quality}}
+```
+
+The reference expands into the invocation form of whichever executor runs that
+phase, and instructs it to launch all of them in one message so they run
+concurrently. Adding `.rrev/agents/perf.txt` and naming it in a prompt launches
+it alongside the defaults; dropping a name from the prompt stops that agent from
+running, even though its definition still exists. A referenced agent that
+resolves to no file is a startup error naming the prompt and the agent.
+
+### Template variables
+
+Prompts and agent definitions expand these. An unrecognized variable is an error
+naming the file and the variable rather than text passed through to the model.
+
+| Variable | Value |
+| --- | --- |
+| `{{CHANGE}}` | the selected change's name |
+| `{{GOAL}}`, `{{GOAL_LINE}}` | the derived one-line review goal |
+| `{{BASE_REF}}` | the resolved base ref |
+| `{{DIFF_INSTRUCTION}}` | the command that produces the diff under review |
+| `{{PROGRESS_LOG}}` | path of this run's progress log |
+| `{{REPORT_FILE}}` | path of the findings report |
+| `{{VALIDATION_COMMAND}}` | the configured validation command |
+| `{{MODE_RULES}}` | the run mode's rules paragraph |
+| `{{PRIOR_FINDINGS}}` | earlier external rounds and their dispositions |
+| `{{EXTERNAL_OUTPUT}}` | the external tool's raw report, for evaluation |
+| `{{OPENSPEC_DIR}}`, `{{CHANGE_DIR}}` | the OpenSpec root and the change directory |
+| `{{PROPOSAL}}`, `{{DESIGN}}`, `{{TASKS}}`, `{{SPECS}}`, `{{ARTIFACTS}}` | the change's artifact paths |
+| `{{REQUIREMENTS}}`, `{{REQUIREMENT_COUNT}}` | the requirement checklist and its size |
+| `{{ITERATION}}`, `{{MAX_ITERATIONS}}` | the current iteration and its limit |
+
+The checklist is expanded inline and truncated at `checklist_budget`, saying so
+explicitly rather than silently dropping requirements. The diff never is.
+
+## Signal contract
+
+rrev decides a phase's outcome from markers it reads back out of the executor's
+output. A marker counts only when it is alone on its own line and outside a code
+fence, so a model quoting the protocol does not end a loop.
+
+| Marker | Meaning |
+| --- | --- |
+| `<<<RREV:REVIEW_DONE>>>` | this review iteration found nothing; the phase converged |
+| `<<<RREV:EXTERNAL_DONE>>>` | the external review loop reached agreement |
+| `<<<RREV:TASK_FAILED>>>` | unrecoverable failure; the pipeline stops and reports the phase |
+
+**Emitting no marker is not success.** rrev reads a missing marker as "work was
+done, iterate again" and runs another iteration, up to the phase's limit. This
+is the load-bearing property of the protocol: silence never ends a loop as
+converged.
+
+## Progress log
+
+Each run appends to `.rrev/progress/progress-<change>.md`, creating the directory and an
+ignore rule so logs are never picked up by the pipeline's own commits. A second
+run against the same change appends to the same file, preserving history.
+
+The log records the change and goal, the base ref, every phase and iteration
+boundary, the findings reported, which were confirmed and fixed, which were
+rejected and why, and each loop's termination reason. Every phase prompt is
+given the log's path and told to read it before reporting, so a finding already
+rejected with a stated reason is not re-reported unchanged.
+
+Concurrent runs serialize their appends, so entries interleave whole. A progress
+directory that cannot be written degrades the run to logging disabled rather
+than aborting it.
+
+## Findings report
+
+Report-only mode writes `report_file` (`.rrev/findings.md` by default): one row
+per verified finding with its file and line, severity, reporting reviewer, the
+requirement it relates to, and a summary.
 
 ## Credits
 
@@ -38,8 +278,8 @@ in their own headers:
 
 - Reviewer agents: `agents/quality.txt`, `agents/implementation.txt`,
   `agents/testing.txt`, `agents/simplification.txt`, `agents/documentation.txt`
-- Phase prompts: `prompts/review_first.txt`, `prompts/review_external.txt`,
-  `prompts/review_external_eval.txt`, `prompts/review_final.txt`,
+- Phase prompts: `prompts/review_first.txt`, `prompts/external_review.txt`,
+  `prompts/external_eval.txt`, `prompts/review_final.txt`,
   `prompts/finalize.txt`
 
 rrev's own `agents/conformance.txt` and `agents/tasks.txt` are not derived from

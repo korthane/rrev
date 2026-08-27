@@ -92,18 +92,7 @@ func parseArgs(args []string, out io.Writer) (*options, error) {
 	fs.SetOutput(out)
 	fs.Usage = func() { writeUsage(out, fs) }
 
-	version := fs.Bool("version", false, "print the rrev version and exit")
-	modes := make([]*bool, len(modeFlags))
-	for i, m := range modeFlags {
-		modes[i] = fs.Bool(m.name, false, m.usage)
-	}
-	for _, key := range config.Keys() {
-		if boolKeys[key] {
-			fs.Bool(flagName(key), false, flagUsage[key])
-			continue
-		}
-		fs.String(flagName(key), "", flagUsage[key])
-	}
+	registerFlags(fs)
 
 	positional, err := parseInterspersed(fs, args)
 	if err != nil {
@@ -113,14 +102,14 @@ func parseArgs(args []string, out io.Writer) (*options, error) {
 		return nil, fmt.Errorf("expected at most one change name, got %s", joinAnd(quoteAll(positional)))
 	}
 
-	opts := &options{Mode: processor.ModeFull, Flags: map[string]string{}, Version: *version}
+	opts := &options{Mode: processor.ModeFull, Flags: map[string]string{}, Version: isSet(fs, "version")}
 	if len(positional) == 1 {
 		opts.Change = positional[0]
 	}
 
 	var selected []string
-	for i, m := range modeFlags {
-		if *modes[i] {
+	for _, m := range modeFlags {
+		if isSet(fs, m.name) {
 			selected = append(selected, "--"+m.name)
 			opts.Mode = m.mode
 		}
@@ -140,6 +129,26 @@ func parseArgs(args []string, out io.Writer) (*options, error) {
 	})
 	return opts, nil
 }
+
+// registerFlags declares every flag rrev accepts: the version flag, one per run
+// mode, and one per configuration setting, since every setting is overridable
+// for a single run.
+func registerFlags(fs *flag.FlagSet) {
+	fs.Bool("version", false, "print the rrev version and exit")
+	for _, m := range modeFlags {
+		fs.Bool(m.name, false, m.usage)
+	}
+	for _, key := range config.Keys() {
+		if boolKeys[key] {
+			fs.Bool(flagName(key), false, flagUsage[key])
+			continue
+		}
+		fs.String(flagName(key), "", flagUsage[key])
+	}
+}
+
+// isSet reports whether a boolean flag was turned on.
+func isSet(fs *flag.FlagSet, name string) bool { return fs.Lookup(name).Value.String() == "true" }
 
 // parseInterspersed parses args, collecting positional arguments wherever they
 // appear. Go's flag package stops at the first one, which would silently ignore
