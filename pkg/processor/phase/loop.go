@@ -189,7 +189,7 @@ func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection
 			findings[i].Reviewer = call.exec.Name()
 		}
 		if call.verified {
-			e.Log.Confirmed(findings[i].entry(), "fixed")
+			e.Log.Confirmed(findings[i].entry(), e.confirmedAction())
 			continue
 		}
 		e.Log.Finding(findings[i].entry())
@@ -203,6 +203,16 @@ func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection
 	for _, v := range validations {
 		e.Log.Validation(v.entry())
 	}
+}
+
+// confirmedAction names what became of a confirmed finding. Report-only mode
+// forbids the executor from changing anything, so the log must not claim a fix
+// the run was never allowed to make.
+func (e *Env) confirmedAction() string {
+	if e.SinglePass {
+		return "reported; not fixed (report-only)"
+	}
+	return "fixed"
 }
 
 // iterVars overlays the per-iteration values on the run-wide ones.

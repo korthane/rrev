@@ -165,7 +165,7 @@ Each setting has a flag named after it, with underscores written as hyphens.
 | `base_ref` | `--base-ref` | *(detected)* | ref the review diffs against; empty detects the repository's default branch |
 | `model` | `--model` | *(tool default)* | `model[:effort]` every phase inherits from |
 | `review_model` | `--review-model` | inherits `model` | `model[:effort]` for the comprehensive review phase |
-| `external_model` | `--external-model` | inherits `model` | `model[:effort]` for the external review loop |
+| `external_model` | `--external-model` | inherits the effort of `model` | `model[:effort]` for the external review loop; an inherited model name is dropped when the external tool differs from the primary executor, so name that tool's model here |
 | `final_model` | `--final-model` | inherits `model` | `model[:effort]` for the final review phase |
 | `finalize_model` | `--finalize-model` | inherits `model` | `model[:effort]` for the finalize step |
 | `max_iterations` | `--max-iterations` | `10` | iteration limit for the comprehensive review phase |

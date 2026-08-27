@@ -28,24 +28,28 @@ func ParseDeltaSpec(capability, content string) ([]Requirement, error) {
 		scenario  strings.Builder
 	)
 
+	// Both flushes are guarded on real content, not on a non-empty builder: the
+	// blank line after a section header lands in text, and flushing it at the
+	// next header would erase the body already written for the requirement
+	// before it.
 	flushScenario := func() {
-		if len(reqs) == 0 {
-			scenario.Reset()
+		steps := strings.TrimSpace(scenario.String())
+		scenario.Reset()
+		if steps == "" || len(reqs) == 0 {
 			return
 		}
 		last := &reqs[len(reqs)-1]
 		if len(last.Scenarios) > 0 {
-			last.Scenarios[len(last.Scenarios)-1].Text = strings.TrimSpace(scenario.String())
+			last.Scenarios[len(last.Scenarios)-1].Text = steps
 		}
-		scenario.Reset()
 	}
-	// Guarded on content: a requirement's body is flushed at its first scenario
-	// header, and the later ones must not overwrite it with an empty builder.
 	flushText := func() {
-		if text.Len() > 0 && len(reqs) > 0 {
-			reqs[len(reqs)-1].Text = strings.TrimSpace(text.String())
-		}
+		body := strings.TrimSpace(text.String())
 		text.Reset()
+		if body == "" || len(reqs) == 0 {
+			return
+		}
+		reqs[len(reqs)-1].Text = body
 	}
 
 	inScenario := false

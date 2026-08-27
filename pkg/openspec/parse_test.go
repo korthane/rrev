@@ -90,6 +90,32 @@ func TestParseOperationUnknownIsUnspecified(t *testing.T) {
 	}
 }
 
+// The blank line after a delta section header used to be flushed onto the
+// requirement that preceded it, erasing that requirement's body and its last
+// scenario's steps. Every requirement before a section boundary is checked.
+func TestParseDeltaSpecKeepsBodiesAcrossSectionBoundaries(t *testing.T) {
+	reqs, err := openspec.ParseDeltaSpec("auth", readFixtureSpec(t, "auth"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, req := range reqs {
+		if strings.TrimSpace(req.Text) == "" {
+			t.Errorf("requirement %q has no text", req.Name)
+		}
+		for _, scenario := range req.Scenarios {
+			if strings.TrimSpace(scenario.Text) == "" {
+				t.Errorf("requirement %q scenario %q has no steps", req.Name, scenario.Name)
+			}
+		}
+	}
+	if !strings.Contains(reqs[1].Text, "single-use recovery codes") {
+		t.Errorf("last ADDED requirement text = %q, want its body", reqs[1].Text)
+	}
+	if !strings.Contains(reqs[2].Scenarios[0].Text, "**THEN**") {
+		t.Errorf("last MODIFIED scenario text = %q, want its WHEN/THEN lines", reqs[2].Scenarios[0].Text)
+	}
+}
+
 func TestChecklistEntries(t *testing.T) {
 	reqs, err := openspec.ParseDeltaSpec("auth", readFixtureSpec(t, "auth"))
 	if err != nil {

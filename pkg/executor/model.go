@@ -106,8 +106,42 @@ func SpecFor(cfg *config.Config, phase Phase) Spec {
 	}
 }
 
+// configured returns the specification written for the phase itself, before any
+// inheritance, which is how Select tells an inherited model from a chosen one.
+func configured(cfg *config.Config, phase Phase) Spec {
+	switch phase {
+	case PhaseReview:
+		return ParseSpec(cfg.ReviewModel)
+	case PhaseExternal:
+		return ParseSpec(cfg.ExternalModel)
+	case PhaseFinal:
+		return ParseSpec(cfg.FinalModel)
+	case PhaseFinalize:
+		return ParseSpec(cfg.FinalizeModel)
+	default:
+		return Spec{}
+	}
+}
+
 // Select resolves the model specification a phase runs with under a given tool,
-// returning the warning to print when an effort level had to be dropped.
+// returning the warning to print when part of it had to be dropped.
+//
+// A model name means something only to the tool it names a model of, so an
+// inherited one is dropped for a phase running under a different tool: the
+// external review would otherwise pass the primary executor's model to a tool
+// that has never heard of it and fail the whole call. A model configured for
+// the phase itself is the user naming that tool's model, and is kept.
 func Select(cfg *config.Config, phase Phase, tool string) (Spec, string) {
-	return SpecFor(cfg, phase).For(tool)
+	spec := SpecFor(cfg, phase)
+	var warnings []string
+	if tool != cfg.Executor && spec.Model != "" && configured(cfg, phase).Model == "" {
+		warnings = append(warnings, fmt.Sprintf("model %q is configured for %s, not for %s; proceeding at %s's default model",
+			spec.Model, cfg.Executor, tool, tool))
+		spec.Model = ""
+	}
+	spec, warning := spec.For(tool)
+	if warning != "" {
+		warnings = append(warnings, warning)
+	}
+	return spec, strings.Join(warnings, "; ")
 }

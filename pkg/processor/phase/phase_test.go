@@ -314,6 +314,25 @@ func TestSinglePassRunsOneIteration(t *testing.T) {
 	}
 }
 
+func TestSinglePassLogsFindingsAsNotFixed(t *testing.T) {
+	dir := t.TempDir()
+	log, err := progress.Open(dir, "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	primary := mock("claude", "FINDING: critical | pkg/a.go:42 | conformance | Change selection | the flag is never parsed")
+	env, _ := newEnv(t, primary, nil, nil)
+	env.Log = log
+	env.SinglePass = true
+
+	Comprehensive(context.Background(), env)
+
+	body := readFile(t, log.Path())
+	if !strings.Contains(body, `action="reported; not fixed (report-only)"`) {
+		t.Errorf("progress log claims a fix a report-only run cannot make\n%s", body)
+	}
+}
+
 // changingHandler makes every iteration look like it committed something, so a
 // loop that would otherwise be a stalemate runs to its own terminating
 // condition.

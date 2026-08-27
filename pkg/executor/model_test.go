@@ -91,6 +91,37 @@ func TestSpecForToolKeepsSupportedEffort(t *testing.T) {
 	}
 }
 
+func TestSelectDropsModelInheritedAcrossTools(t *testing.T) {
+	cfg := defaultConfig(t)
+	cfg.Executor = "claude"
+	cfg.Model = "opus:high"
+
+	// The external tool is a different provider, so the primary executor's
+	// model name would be meaningless to it.
+	spec, warning := executor.Select(cfg, executor.PhaseExternal, "codex")
+	if spec.Model != "" {
+		t.Errorf("external model = %q, want the inherited model dropped", spec.Model)
+	}
+	if spec.Effort != "high" {
+		t.Errorf("external effort = %q, want the inherited effort kept", spec.Effort)
+	}
+	for _, want := range []string{"opus", "claude", "codex"} {
+		if !strings.Contains(warning, want) {
+			t.Errorf("warning %q does not mention %q", warning, want)
+		}
+	}
+
+	cfg.ExternalModel = "gpt-5"
+	if spec, _ := executor.Select(cfg, executor.PhaseExternal, "codex"); spec.Model != "gpt-5" {
+		t.Errorf("external model = %q, want the model configured for the phase kept", spec.Model)
+	}
+
+	// The review phase runs under the primary executor, so nothing is dropped.
+	if spec, warning := executor.Select(cfg, executor.PhaseReview, "claude"); spec.Model != "opus" || warning != "" {
+		t.Errorf("review spec = %+v, warning = %q, want the model kept", spec, warning)
+	}
+}
+
 func TestSelectWarnsForPhase(t *testing.T) {
 	cfg := defaultConfig(t)
 	cfg.Model = "opus"
