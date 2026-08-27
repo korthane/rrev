@@ -34,7 +34,10 @@ Change directory: {{CHANGE_DIR}}
 
 5. Do not push. Pushing is the user's decision, not this step's.
 
-Report what you did, and what you deliberately left alone.
+Report what you did, and what you deliberately left alone. Report the validation
+command's outcome on its own line, so the progress log records it:
+
+VALIDATION: <pass|fail> | <the command you ran> | <what failed, or ->
 
 ## Signal contract
 

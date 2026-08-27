@@ -22,6 +22,11 @@ func Finalize(ctx context.Context, e *Env, prior ...Result) Result {
 	if e.SinglePass {
 		return e.skip(NameFinalize, "the run may not modify the repository")
 	}
+	if len(prior) > 0 && allSkipped(prior) {
+		// Rewriting history on the strength of a review that never ran is the
+		// one outcome this step must never produce.
+		return e.skip(NameFinalize, "no review phase ran, so there is nothing to finalize")
+	}
 	if name, ok := unconverged(prior); ok {
 		return e.skip(NameFinalize, "the %s ended without converging", Label(name))
 	}
@@ -62,6 +67,17 @@ func Finalize(ctx context.Context, e *Env, prior ...Result) Result {
 	}
 	e.note("finalize step done")
 	return res
+}
+
+// allSkipped reports a run whose whole phase sequence was skipped, which every
+// phase reports as OK because none of them left anything outstanding.
+func allSkipped(prior []Result) bool {
+	for _, res := range prior {
+		if !res.Skipped {
+			return false
+		}
+	}
+	return true
 }
 
 // unconverged names the first earlier phase that left something outstanding,

@@ -62,9 +62,10 @@ var retryablePatterns = []string{
 // classify upgrades a finished call to a rate-limit or transient failure when
 // the tool said so, and otherwise leaves the original error alone.
 func classify(tool string, result Result, err error) error {
-	// A call that ended on a signal reviewed something; limit wording in its
-	// output is the reviewer quoting the code under review, not a refusal.
-	if err == nil && result.Signal != "" {
+	// A call that reviewed something - it ended on a signal or reported at
+	// least one finding - is not a refusal; limit wording anywhere in its prose
+	// is the reviewer describing the code under review.
+	if err == nil && reviewed(result) {
 		return nil
 	}
 	lines := diagnostics(result, err)
@@ -75,6 +76,21 @@ func classify(tool string, result Result, err error) error {
 		return &LimitError{Tool: tool, Reason: reason, Retryable: true}
 	}
 	return err
+}
+
+// reviewed reports whether the call produced a review rather than a refusal. A
+// throttled call writes neither a signal nor a report line, which is what keeps
+// an exit-zero refusal classifiable.
+func reviewed(result Result) bool {
+	if result.Signal != "" {
+		return true
+	}
+	for line := range strings.SplitSeq(result.Output, "\n") {
+		if isReportLine(line) {
+			return true
+		}
+	}
+	return false
 }
 
 // diagnostics collects the lines a tool spoke in its own voice: everything it

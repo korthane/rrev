@@ -132,3 +132,26 @@ func TestFinalizeNotReachedByFirstPhaseOnly(t *testing.T) {
 		t.Errorf("primary calls = %d, want the single comprehensive pass", primary.CallCount())
 	}
 }
+
+// A mode whose whole phase sequence was skipped reviewed nothing, and finalize
+// rewrites history: rebasing and squashing on the strength of a review that
+// never ran is the one thing this step must refuse.
+func TestFinalizeSkippedWhenNoPhaseRan(t *testing.T) {
+	primary := mock("claude", reviewDone)
+	env, _ := newEnv(t, primary, nil, func(c *config.Config) { c.Finalize = true })
+
+	res := (&Runner{Env: env, Mode: ModeExternalOnly}).Run(context.Background())
+
+	if len(res.Executed()) != 0 {
+		t.Fatalf("executed = %v, want no phase to have run", res.Executed())
+	}
+	if res.Finalize == nil || !res.Finalize.Skipped {
+		t.Fatalf("finalize = %+v, want it skipped", res.Finalize)
+	}
+	if !strings.Contains(res.Finalize.SkipReason, "no review phase ran") {
+		t.Errorf("skip reason = %q, want it to say no review phase ran", res.Finalize.SkipReason)
+	}
+	if primary.CallCount() != 0 {
+		t.Errorf("executor calls = %d, want 0", primary.CallCount())
+	}
+}

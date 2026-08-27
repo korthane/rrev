@@ -25,6 +25,7 @@ const (
 	kindFinding   = "finding"
 	kindConfirmed = "confirmed"
 	kindRejected  = "rejected"
+	kindValidate  = "validation"
 	kindCommit    = "commit"
 	kindEnd       = "end"
 	kindNote      = "note"
@@ -52,6 +53,14 @@ type Finding struct {
 	Line        int
 	Requirement string
 	Summary     string
+}
+
+// Validation is the outcome of the validation command an executor ran before
+// committing, as the executor reported it.
+type Validation struct {
+	Outcome string
+	Command string
+	Detail  string
 }
 
 // Options tunes a log. The zero value is what a normal run uses.
@@ -174,6 +183,12 @@ func (l *Log) Confirmed(f Finding, action string) {
 // argue with it instead of re-reporting the finding unchanged.
 func (l *Log) Rejected(f Finding, reason string) {
 	l.append(kindRejected, f.fields(), reason)
+}
+
+// Validation records what the executor reported about the validation command it
+// ran before committing, which is the only account of it a later reader gets.
+func (l *Log) Validation(v Validation) {
+	l.append(kindValidate, []kv{{"outcome", v.Outcome}, {"command", v.Command}}, v.Detail)
 }
 
 // Commit records a commit the pipeline made.

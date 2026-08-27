@@ -19,7 +19,7 @@ FINDING: critical | quoted.go:1 | quality | - | this is documentation, not a rep
 ` + "```" + `
 Done.`
 
-	findings, rejections := ParseReport(output)
+	findings, rejections, _ := ParseReport(output)
 
 	want := []Finding{
 		{Severity: "critical", File: "pkg/cli/run.go", Line: 42, Reviewer: "conformance",
@@ -42,7 +42,7 @@ Done.`
 }
 
 func TestParseReportToleratesShortLines(t *testing.T) {
-	findings, rejections := ParseReport("FINDING: major | pkg/a.go:3\nREJECTED: pkg/b.go:4")
+	findings, rejections, _ := ParseReport("FINDING: major | pkg/a.go:3\nREJECTED: pkg/b.go:4")
 
 	if len(findings) != 1 || findings[0].File != "pkg/a.go" || findings[0].Line != 3 || findings[0].Summary != "" {
 		t.Errorf("findings = %+v, want the location kept and the rest empty", findings)
@@ -53,7 +53,7 @@ func TestParseReportToleratesShortLines(t *testing.T) {
 }
 
 func TestParseReportIgnoresNonReportText(t *testing.T) {
-	findings, rejections := ParseReport("I found no FINDING: lines worth reporting\nNOTHING: here")
+	findings, rejections, _ := ParseReport("I found no FINDING: lines worth reporting\nNOTHING: here")
 	if len(findings) != 0 || len(rejections) != 0 {
 		t.Errorf("findings = %+v, rejections = %+v, want none", findings, rejections)
 	}
@@ -64,7 +64,7 @@ func TestFindingRoundTrip(t *testing.T) {
 	if got, want := f.String(), "FINDING: major | a.go:9 | quality | - | leaks a handle"; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
-	parsed, _ := ParseReport(f.String())
+	parsed, _, _ := ParseReport(f.String())
 	if len(parsed) != 1 || !reflect.DeepEqual(parsed[0], f) {
 		t.Errorf("round trip = %+v, want %+v", parsed, f)
 	}
@@ -92,5 +92,19 @@ func TestParseLocationKeepsPathsWithoutLineNumbers(t *testing.T) {
 		if file != tt.file || line != tt.line {
 			t.Errorf("parseLocation(%q) = %q, %d, want %q, %d", tt.text, file, line, tt.file, tt.line)
 		}
+	}
+}
+
+func TestParseReportReadsValidationOutcome(t *testing.T) {
+	output := "VALIDATION: PASS | make test lint | -\nVALIDATION: fail | go test ./... | TestFoo failed"
+
+	_, _, validations := ParseReport(output)
+
+	want := []Validation{
+		{Outcome: "pass", Command: "make test lint"},
+		{Outcome: "fail", Command: "go test ./...", Detail: "TestFoo failed"},
+	}
+	if !reflect.DeepEqual(validations, want) {
+		t.Errorf("validations =\n%+v\nwant\n%+v", validations, want)
 	}
 }

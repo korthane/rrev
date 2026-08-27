@@ -297,3 +297,20 @@ func TestUserDirHonoursXDG(t *testing.T) {
 		t.Errorf("UserDir() = %q, want %q", got, want)
 	}
 }
+
+// The progress directory gets a catch-all ignore rule of its own, so a value
+// that resolves to the repository root would ignore the whole repository.
+func TestResolveRejectsProgressDirAtTheRoot(t *testing.T) {
+	for _, value := range []string{"", ".", "./", "/"} {
+		t.Run("value "+value, func(t *testing.T) {
+			root, userDir := t.TempDir(), t.TempDir()
+			writeConfig(t, filepath.Join(root, DirName), "progress_dir = "+value+"\n")
+
+			if _, err := Resolve(Options{RepoRoot: root, UserDir: userDir}); err == nil {
+				t.Fatalf("progress_dir = %q was accepted, want it rejected", value)
+			} else if !strings.Contains(err.Error(), "progress_dir") {
+				t.Errorf("error %q does not name the setting", err)
+			}
+		})
+	}
+}

@@ -39,7 +39,8 @@ a defect the branch touches is in scope whether this branch introduced it or not
 
 ## Step 2: Fix what you confirmed
 
-- Fix every confirmed finding.
+- Unless the run mode above forbids changing the repository, fix every
+  confirmed finding.
 - Run the validation command: {{VALIDATION_COMMAND}}
   If that reads "(not configured)", run the project's own test and lint commands
   as its CLAUDE.md, README, or Makefile define them.
@@ -62,6 +63,11 @@ REJECTED: <file>:<line> | external | <why it is not a real finding>
 
 A rejection with no reason is not a rejection. The reason is what stops the same
 finding coming back unchanged.
+
+Report the validation command's outcome once, so the progress log records
+whether the fixes were validated:
+
+VALIDATION: <pass|fail> | <the command you ran> | <what failed, or ->
 
 ## Signal contract
 

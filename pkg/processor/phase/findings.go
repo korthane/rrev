@@ -10,8 +10,9 @@ import (
 
 // Report line prefixes every phase prompt instructs the executor to emit.
 const (
-	findingPrefix  = "FINDING:"
-	rejectedPrefix = "REJECTED:"
+	findingPrefix    = "FINDING:"
+	rejectedPrefix   = "REJECTED:"
+	validationPrefix = "VALIDATION:"
 )
 
 // noRequirement is what a prompt tells the executor to write when a finding
@@ -37,6 +38,21 @@ type Rejection struct {
 	Line     int
 	Reviewer string
 	Reason   string
+}
+
+// Validation is the outcome an executor reported for the validation command it
+// ran before committing. rrev cannot observe the run itself, so the report line
+// is the only record of whether the fixes were validated.
+type Validation struct {
+	// Outcome is the word the executor reported, normally pass or fail.
+	Outcome string
+	Command string
+	// Detail is what failed, empty when the executor reported nothing.
+	Detail string
+}
+
+func (v Validation) entry() progress.Validation {
+	return progress.Validation{Outcome: v.Outcome, Command: v.Command, Detail: v.Detail}
 }
 
 // Location renders file and line the way a report and the progress log show it.
@@ -71,14 +87,15 @@ func (r Rejection) entry() progress.Finding {
 	return progress.Finding{Reviewer: r.Reviewer, File: r.File, Line: r.Line, Summary: r.Reason}
 }
 
-// ParseReport extracts the findings and rejections an executor reported. Lines
-// inside a fenced block are ignored for the same reason signals are: a model
-// quoting the report format must not be read as reporting.
-func ParseReport(output string) ([]Finding, []Rejection) {
+// ParseReport extracts the findings, rejections, and validation outcomes an
+// executor reported. Lines inside a fenced block are ignored for the same reason
+// signals are: a model quoting the report format must not be read as reporting.
+func ParseReport(output string) ([]Finding, []Rejection, []Validation) {
 	var (
-		findings   []Finding
-		rejections []Rejection
-		fenced     bool
+		findings    []Finding
+		rejections  []Rejection
+		validations []Validation
+		fenced      bool
 	)
 	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
@@ -95,9 +112,11 @@ func ParseReport(output string) ([]Finding, []Rejection) {
 			findings = append(findings, parseFinding(strings.TrimPrefix(line, findingPrefix)))
 		case strings.HasPrefix(line, rejectedPrefix):
 			rejections = append(rejections, parseRejection(strings.TrimPrefix(line, rejectedPrefix)))
+		case strings.HasPrefix(line, validationPrefix):
+			validations = append(validations, parseValidation(strings.TrimPrefix(line, validationPrefix)))
 		}
 	}
-	return findings, rejections
+	return findings, rejections, validations
 }
 
 // parseFinding reads `severity | file:line | reviewer | requirement | summary`,
@@ -120,6 +139,16 @@ func parseRejection(rest string) Rejection {
 	r := Rejection{Reviewer: field(fields, 1), Reason: field(fields, 2)}
 	r.File, r.Line = parseLocation(field(fields, 0))
 	return r
+}
+
+// parseValidation reads `outcome | command | detail`.
+func parseValidation(rest string) Validation {
+	fields := splitFields(rest, 3)
+	return Validation{
+		Outcome: strings.ToLower(field(fields, 0)),
+		Command: undash(field(fields, 1)),
+		Detail:  undash(field(fields, 2)),
+	}
 }
 
 func splitFields(rest string, n int) []string {

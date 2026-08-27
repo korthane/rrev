@@ -40,7 +40,8 @@ For each remaining finding:
 1. Open the cited location and read the surrounding context.
 2. Confirm the issue is real, and confirm it is genuinely critical or major - a
    correctness, security, data-integrity, or unimplemented-requirement problem.
-3. Fix what you confirmed, then validate and commit:
+3. Unless the run mode above forbids changing the repository, fix what you
+   confirmed, then validate and commit:
    - Run the validation command: {{VALIDATION_COMMAND}}
      If that reads "(not configured)", run the project's own test and lint
      commands as its CLAUDE.md, README, or Makefile define them.
@@ -59,6 +60,11 @@ FINDING: <critical|major> | <file>:<line> | <agent> | <requirement or -> | <summ
 One line per rejection:
 
 REJECTED: <file>:<line> | <agent> | <why it is not a real finding, or "minor">
+
+Report the validation command's outcome once, so the progress log records
+whether the fixes were validated:
+
+VALIDATION: <pass|fail> | <the command you ran> | <what failed, or ->
 
 ## Signal contract
 

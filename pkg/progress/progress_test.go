@@ -287,3 +287,18 @@ func TestConcurrentWritersProduceWholeEntries(t *testing.T) {
 		t.Errorf("headers = %d, details = %d, want %d of each", headers, details, want)
 	}
 }
+
+// rrev cannot watch the validation command run, so the executor's own account of
+// it is the only record a later reader gets.
+func TestValidationOutcomeRecorded(t *testing.T) {
+	log := openLog(t, t.TempDir(), "add-spec-review-pipeline", progress.Options{})
+
+	log.Validation(progress.Validation{Outcome: "fail", Command: "make test", Detail: "TestFoo failed"})
+
+	body := readLog(t, log)
+	for _, want := range []string{"validation:", "outcome=fail", `command="make test"`, "TestFoo failed"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("log %q does not contain %q", body, want)
+		}
+	}
+}

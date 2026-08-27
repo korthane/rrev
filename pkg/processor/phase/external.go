@@ -56,7 +56,10 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 		renderAs: e.External.Name(),
 	})
 	if err != nil || report.Converged {
-		return report, err
+		// A round that ends here was never evaluated, so the tool's own claims
+		// stay out of the phase's result; they are already in the progress log
+		// as reported-only entries.
+		return stepResult{Converged: report.Converged, output: report.output}, err
 	}
 
 	evalVars := vars

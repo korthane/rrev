@@ -53,7 +53,8 @@ Reject nothing for being pre-existing. A defect the branch touches is in scope
 whether this branch introduced it or not.
 
 ### 3.3 Fix what you confirmed
-Fix every confirmed finding, then validate and commit:
+Unless the run mode above forbids changing the repository, fix every confirmed
+finding, then validate and commit:
 - Run the validation command: {{VALIDATION_COMMAND}}
   If that reads "(not configured)", run the project's own test and lint commands
   as its CLAUDE.md, README, or Makefile define them.
@@ -70,6 +71,11 @@ FINDING: <critical|major|minor> | <file>:<line> | <agent> | <requirement or -> |
 Report each rejection the same way, so the next iteration does not re-litigate it:
 
 REJECTED: <file>:<line> | <agent> | <why it is not a real finding>
+
+Report the validation command's outcome once, so the progress log records
+whether the fixes were validated:
+
+VALIDATION: <pass|fail> | <the command you ran> | <what failed, or ->
 
 ## Signal contract
 

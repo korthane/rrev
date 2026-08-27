@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -160,7 +161,7 @@ var fields = []field{
 	{key: "idle_timeout", set: func(c *Config, v string) error { return setDuration(&c.IdleTimeout, v) }},
 	{key: "progress_interval", set: func(c *Config, v string) error { return setDuration(&c.ProgressInterval, v) }},
 	{key: "finalize", set: func(c *Config, v string) error { return setBool(&c.Finalize, v) }},
-	{key: "progress_dir", set: func(c *Config, v string) error { c.ProgressDir = v; return nil }},
+	{key: "progress_dir", set: func(c *Config, v string) error { return setDir(&c.ProgressDir, v) }},
 	{key: "report_file", set: func(c *Config, v string) error { c.ReportFile = v; return nil }},
 	{key: "checklist_budget", set: func(c *Config, v string) error { return setNonNegativeInt(&c.ChecklistBudget, v) }},
 	{key: "validation_command", set: func(c *Config, v string) error { c.ValidationCommand = v; return nil }},
@@ -230,6 +231,18 @@ func setDuration(dst *time.Duration, v string) error {
 		return fmt.Errorf("expected a duration of zero or more")
 	}
 	*dst = d
+	return nil
+}
+
+// setDir rejects a directory that resolves to the root of the repository or of
+// the filesystem: rrev writes a catch-all ignore rule into its progress
+// directory, which at the repository root would ignore the whole repository.
+func setDir(dst *string, v string) error {
+	switch filepath.Clean(v) {
+	case ".", string(filepath.Separator):
+		return fmt.Errorf("expected a directory of its own, not the root")
+	}
+	*dst = v
 	return nil
 }
 

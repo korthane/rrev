@@ -2,6 +2,7 @@ package phase
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -245,5 +246,41 @@ func TestExternalReportsToolFailure(t *testing.T) {
 	}
 	if primary.CallCount() != 0 {
 		t.Error("a failed external review must not be handed to the executor")
+	}
+}
+
+// The external tool's report is the primary executor's input. When the round
+// ends before that evaluation happens, its claims must not become findings of
+// the phase: nothing checked them against the code.
+func TestExternalConvergedRoundReportsNoUnverifiedFindings(t *testing.T) {
+	unverified := "FINDING: critical | a.go:1 | external | - | never verified\n" + externalDone
+	primary, external := mock("claude", reviewDone), mock("codex", unverified)
+	env, _ := newEnv(t, primary, external, nil)
+
+	res := External(context.Background(), env)
+
+	if res.Reason != ReasonConverged {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonConverged)
+	}
+	if len(res.Findings) != 0 {
+		t.Errorf("findings = %+v, want none: the primary executor never evaluated them", res.Findings)
+	}
+	if primary.CallCount() != 0 {
+		t.Errorf("primary calls = %d, want 0", primary.CallCount())
+	}
+}
+
+func TestExternalFailedRoundReportsNoUnverifiedFindings(t *testing.T) {
+	primary, external := mock("claude", reviewDone), mock("codex", "FINDING: critical | a.go:1 | external | - | never verified")
+	external.Responses[0].Err = errors.New("codex died")
+	env, _ := newEnv(t, primary, external, nil)
+
+	res := External(context.Background(), env)
+
+	if res.Reason != ReasonFailure {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonFailure)
+	}
+	if len(res.Findings) != 0 {
+		t.Errorf("findings = %+v, want none: the primary executor never evaluated them", res.Findings)
 	}
 }

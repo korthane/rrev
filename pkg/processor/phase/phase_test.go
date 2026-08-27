@@ -448,3 +448,20 @@ func TestIterationCommitsRecorded(t *testing.T) {
 		t.Errorf("progress log does not name the commit the iteration produced:\n%s", logged)
 	}
 }
+
+// A finding reported without a reviewer is attributed to the executor that
+// reported it, and that attribution has to reach the run's result: it is the
+// source column of the findings report.
+func TestFindingWithoutReviewerIsAttributedInTheResult(t *testing.T) {
+	primary := mock("claude", "FINDING: major | a.go:1 |  | - | missing reviewer", reviewDone)
+	env, _ := newEnv(t, primary, nil, nil)
+
+	res := Comprehensive(context.Background(), env)
+
+	if len(res.Findings) != 1 {
+		t.Fatalf("findings = %+v, want exactly one", res.Findings)
+	}
+	if res.Findings[0].Reviewer != "claude" {
+		t.Errorf("reviewer = %q, want the reporting executor", res.Findings[0].Reviewer)
+	}
+}

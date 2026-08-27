@@ -104,3 +104,20 @@ func TestReportLineWithoutSignalIsNotARefusal(t *testing.T) {
 		t.Fatalf("a reported finding was mistaken for a provider refusal: %v", err)
 	}
 }
+
+// The prompts ask for a paragraph of prose under every finding, and an
+// unconverged iteration carries no signal. Wording the reviewer used to describe
+// the code must not abort the run as a provider refusal.
+func TestProseAboutAnErrorIsNotARefusal(t *testing.T) {
+	report := strings.Join([]string{
+		"FINDING: major | pkg/api/handler.go:12 | quality | - | the nil body is not rejected",
+		"The handler returns an internal server error when the token is missing,",
+		"and tells the caller to please try again, which hides the real cause.",
+		"",
+	}, "\n")
+	tool := newFakeTool(t, fakeToolOpts{stdout: report})
+
+	if _, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"}); err != nil {
+		t.Fatalf("a reviewer's prose was mistaken for a provider refusal: %v", err)
+	}
+}

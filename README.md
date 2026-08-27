@@ -83,7 +83,7 @@ Modes are mutually exclusive; combining two is a startup error.
 | Full pipeline | *(default)* | comprehensive review, external review loop, final review, finalize when enabled |
 | External only | `--external-only` | external review loop, final review, finalize when enabled |
 | First phase only | `--phase1-only` | comprehensive review, then exit; finalize never runs |
-| Report only | `--report-only` | every phase as a single read-only pass, writing a findings report |
+| Report only | `--report-only` | each phase as a single read-only pass, writing a findings report |
 
 Report-only mode never edits a tracked file, stages, or commits: no tracked file
 and no commit changes. It does write its own artifacts — the findings report at
@@ -109,8 +109,9 @@ reporting convergence.
    issues, to catch what the earlier fixes broke. Skipped when nothing was
    changed that could have regressed.
 4. **Finalize** — optional, disabled by default, driven by an overridable
-   prompt, run once after every review phase converged. Its failure never
-   changes the run's outcome.
+   prompt, run once after every review phase converged. Skipped when the mode's
+   whole phase sequence was skipped: it rewrites history, and a review that never
+   ran is no basis for that. Its failure never changes the run's outcome.
 
 Every phase reviews `git diff <base ref>...HEAD` together with the branch's
 commit log. The diff is never expanded into a prompt: reviewers are told the
@@ -282,12 +283,16 @@ converged.
 ### Report lines
 
 Signals decide whether a loop ends; these lines are what rrev reads findings out
-of. Both are recognised only at the start of a line outside a code fence.
+of. They are recognised only at the start of a line outside a code fence.
 
 ```
 FINDING:  <critical|major|minor> | <file>:<line> | <reviewer> | <requirement or -> | <summary>
 REJECTED: <file>:<line> | <reviewer> | why it is not a real finding
+VALIDATION: <pass|fail> | <the command that was run> | what failed, or -
 ```
+
+rrev never runs the validation command itself, so the `VALIDATION` line is the
+only record of whether the fixes were validated.
 
 A `-` stands in for a field the finding does not carry. Findings feed the
 findings report and the progress log; rejections are what later external rounds
@@ -303,8 +308,8 @@ run against the same change appends to the same file, preserving history.
 
 The log records the change and goal, the base ref, every phase and iteration
 boundary, the findings reported, which were confirmed and fixed, which were
-rejected and why, the commits each iteration produced, and each loop's
-termination reason. Every phase prompt is
+rejected and why, the validation outcome each iteration reported, the commits it
+produced, and each loop's termination reason. Every phase prompt is
 given the log's path and told to read it before reporting, so a finding already
 rejected with a stated reason is not re-reported unchanged.
 

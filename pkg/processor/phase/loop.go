@@ -143,8 +143,8 @@ func (e *Env) review(ctx context.Context, call reviewCall) (stepResult, error) {
 
 	// Record whatever the call produced before judging it: a cancelled or
 	// throttled call may still have reported findings worth keeping.
-	findings, rejections := ParseReport(out.Output)
-	e.record(call, findings, rejections)
+	findings, rejections, validations := ParseReport(out.Output)
+	e.record(call, findings, rejections, validations)
 	step := stepResult{Findings: findings, Rejections: rejections, output: out.Output}
 
 	switch {
@@ -179,23 +179,29 @@ type reviewCall struct {
 // verified against real code before fixing is recorded as confirmed, while an
 // unverified report from the independent tool is recorded as reported only. A
 // rejection carries its reason, which is what a later round is shown instead of
-// the finding itself.
-func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection) {
-	for _, f := range findings {
-		if f.Reviewer == "" {
-			f.Reviewer = call.exec.Name()
+// the finding itself, and a validation outcome is recorded as reported: rrev
+// does not run the validation command itself.
+func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection, validations []Validation) {
+	// The fallback is written back into the slice, not into a copy: the same
+	// findings become the run's result and the report's Reviewer column.
+	for i := range findings {
+		if findings[i].Reviewer == "" {
+			findings[i].Reviewer = call.exec.Name()
 		}
 		if call.verified {
-			e.Log.Confirmed(f.entry(), "fixed")
+			e.Log.Confirmed(findings[i].entry(), "fixed")
 			continue
 		}
-		e.Log.Finding(f.entry())
+		e.Log.Finding(findings[i].entry())
 	}
-	for _, r := range rejections {
-		if r.Reviewer == "" {
-			r.Reviewer = call.exec.Name()
+	for i := range rejections {
+		if rejections[i].Reviewer == "" {
+			rejections[i].Reviewer = call.exec.Name()
 		}
-		e.Log.Rejected(r.entry(), r.Reason)
+		e.Log.Rejected(rejections[i].entry(), rejections[i].Reason)
+	}
+	for _, v := range validations {
+		e.Log.Validation(v.entry())
 	}
 }
 

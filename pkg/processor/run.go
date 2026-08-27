@@ -150,7 +150,8 @@ func (r *Runner) Run(ctx context.Context) Result {
 }
 
 // runFinalize runs the finalize step for the modes that carry a run through its
-// last review phase. A run that ended on a failure never reaches it.
+// last review phase. A run that ended on a failure never reaches it; the step
+// itself decides whether the phases that ran justify rewriting the branch.
 func (r *Runner) runFinalize(ctx context.Context, res Result) *phase.Result {
 	if res.Mode == ModePhase1Only || res.Mode.ReadOnly() || res.Err != nil {
 		return nil
