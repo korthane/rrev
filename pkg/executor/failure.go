@@ -1,0 +1,117 @@
+package executor
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+)
+
+// Sentinels for calls that produced no reviewable result, so a phase can tell
+// a throttled or flaky call apart from a review that found nothing.
+var (
+	ErrRateLimited = errors.New("provider usage limit reached")
+	ErrRetryable   = errors.New("transient executor failure")
+)
+
+// LimitError reports a call the provider refused or could not complete. A phase
+// must never record it as a converged iteration.
+type LimitError struct {
+	Tool string
+	// Reason is the tool's own line that identified the failure.
+	Reason    string
+	Retryable bool
+}
+
+func (e *LimitError) Error() string {
+	kind := "usage limit reached"
+	if e.Retryable {
+		kind = "transient failure"
+	}
+	return fmt.Sprintf("%s: %s: %s", e.Tool, kind, e.Reason)
+}
+
+// Is matches whichever sentinel describes the failure.
+func (e *LimitError) Is(target error) bool {
+	if e.Retryable {
+		return target == ErrRetryable
+	}
+	return target == ErrRateLimited
+}
+
+// rateLimitPatterns identify a provider refusing to serve the call at all.
+var rateLimitPatterns = []string{
+	"usage limit reached",
+	"hit your usage limit",
+	"rate limit exceeded",
+	"rate_limit_error",
+	"429 too many requests",
+	"quota exceeded",
+}
+
+// retryablePatterns identify a failure the tool itself suggests retrying.
+var retryablePatterns = []string{
+	"overloaded_error",
+	"service unavailable",
+	"temporarily unavailable",
+	"connection reset by peer",
+	"internal server error",
+	"please try again",
+}
+
+// classify upgrades a finished call to a rate-limit or transient failure when
+// the tool said so, and otherwise leaves the original error alone.
+func classify(tool string, result Result, err error) error {
+	lines := diagnostics(result, err)
+	if reason, ok := match(lines, rateLimitPatterns); ok {
+		return &LimitError{Tool: tool, Reason: reason}
+	}
+	if reason, ok := match(lines, retryablePatterns); ok {
+		return &LimitError{Tool: tool, Reason: reason, Retryable: true}
+	}
+	return err
+}
+
+// diagnostics collects the lines a tool spoke in its own voice: everything it
+// wrote to stderr, plus the parts of its output that are not quoted material.
+func diagnostics(result Result, err error) []string {
+	lines := spoken(result.Output)
+	if failure, ok := errors.AsType[*Error](err); ok && failure.Stderr != "" {
+		lines = append(lines, strings.Split(failure.Stderr, "\n")...)
+	}
+	return lines
+}
+
+// spoken drops fenced blocks and markdown list, quote, and heading lines: a
+// reviewer citing "rate limit exceeded" from the code under review must not be
+// mistaken for the provider refusing the call.
+func spoken(output string) []string {
+	var lines []string
+	fenced := false
+	for line := range strings.SplitSeq(output, "\n") {
+		line = strings.TrimSpace(line)
+		if isFence(line) {
+			fenced = !fenced
+			continue
+		}
+		if fenced || isQuotedLine(line) {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func isQuotedLine(line string) bool {
+	return line != "" && strings.ContainsRune("-*>#|", rune(line[0]))
+}
+
+func match(lines, patterns []string) (string, bool) {
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		if slices.ContainsFunc(patterns, func(p string) bool { return strings.Contains(lower, p) }) {
+			return strings.TrimSpace(line), true
+		}
+	}
+	return "", false
+}

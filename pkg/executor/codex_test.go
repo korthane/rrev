@@ -127,3 +127,37 @@ func TestCodexDefaults(t *testing.T) {
 		t.Errorf("Name() = %q", codex.Name())
 	}
 }
+
+func TestCodexRunPassesEffortAsConfigOverride(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{stdout: "{}"})
+
+	codex := executor.Codex{Command: tool.path, ConfigOverrides: []string{"model_provider=openai"}}
+	if _, err := codex.Run(t.Context(), executor.Request{Prompt: "p", Effort: "high"}); err != nil {
+		t.Fatalf("run codex: %v", err)
+	}
+
+	args := tool.args(t)
+	if !slices.Contains(args, "model_reasoning_effort=high") {
+		t.Errorf("args %v missing the reasoning effort override", args)
+	}
+	if !slices.Contains(args, "model_provider=openai") {
+		t.Errorf("args %v dropped the configured override", args)
+	}
+}
+
+func TestCodexRunDropsUnsupportedEffort(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{stdout: "{}"})
+	var stream strings.Builder
+
+	codex := executor.Codex{Command: tool.path}
+	if _, err := codex.Run(t.Context(), executor.Request{Prompt: "p", Effort: "max", Stream: &stream}); err != nil {
+		t.Fatalf("run codex: %v", err)
+	}
+
+	if slices.ContainsFunc(tool.args(t), func(a string) bool { return strings.HasPrefix(a, "model_reasoning_effort=") }) {
+		t.Errorf("args %v pass an effort codex does not accept", tool.args(t))
+	}
+	if !strings.Contains(stream.String(), "max") || !strings.Contains(stream.String(), "codex") {
+		t.Errorf("stream does not warn about the dropped effort:\n%s", stream.String())
+	}
+}

@@ -15,9 +15,10 @@ type Request struct {
 	Dir string
 	// Phase names the pipeline phase, so a caller can attribute output.
 	Phase string
-	// Model is the already-resolved model name; empty leaves the tool's own
-	// default in place.
-	Model string
+	// Model and Effort are the already-resolved model selection; either empty
+	// leaves the tool's own default in place.
+	Model  string
+	Effort string
 	// Stream receives the tool's activity as it arrives. A caller that wants
 	// phase attribution wraps it before passing it; nil discards the activity.
 	Stream io.Writer

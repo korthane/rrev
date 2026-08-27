@@ -3,6 +3,7 @@ package executor_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -110,7 +111,7 @@ func TestClaudeRunNonZeroExit(t *testing.T) {
 
 func TestClaudeRunResultReportsError(t *testing.T) {
 	tool := newFakeTool(t, fakeToolOpts{
-		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"usage limit reached"}` + "\n",
+		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"tool execution failed"}` + "\n",
 	})
 
 	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"})
@@ -119,7 +120,7 @@ func TestClaudeRunResultReportsError(t *testing.T) {
 	if !ok {
 		t.Fatalf("error = %v, want *executor.Error", err)
 	}
-	if !strings.Contains(runErr.Stderr, "usage limit reached") {
+	if !strings.Contains(runErr.Stderr, "tool execution failed") {
 		t.Errorf("error drops the reported reason: %v", runErr)
 	}
 }
@@ -165,5 +166,37 @@ func TestClaudeRunCancelledContext(t *testing.T) {
 
 	if _, err := (executor.Claude{Command: tool.path}).Run(ctx, executor.Request{Prompt: "p"}); err == nil {
 		t.Fatal("run with a cancelled context succeeded")
+	}
+}
+
+func TestClaudeRunPassesEffort(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{stdout: `{"type":"result","subtype":"success","result":"ok"}`})
+
+	claude := executor.Claude{Command: tool.path}
+	req := executor.Request{Prompt: "p", Model: "claude-opus-5", Effort: "xhigh"}
+	if _, err := claude.Run(t.Context(), req); err != nil {
+		t.Fatalf("run claude: %v", err)
+	}
+
+	if !hasArg(tool.args(t), "--effort", "xhigh") {
+		t.Errorf("args %v missing --effort xhigh", tool.args(t))
+	}
+}
+
+func TestClaudeRunDropsUnsupportedEffort(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{stdout: `{"type":"result","subtype":"success","result":"ok"}`})
+	var stream strings.Builder
+
+	claude := executor.Claude{Command: tool.path}
+	req := executor.Request{Prompt: "p", Effort: "turbo", Stream: &stream}
+	if _, err := claude.Run(t.Context(), req); err != nil {
+		t.Fatalf("run claude: %v", err)
+	}
+
+	if slices.Contains(tool.args(t), "--effort") {
+		t.Errorf("args %v pass an effort claude does not accept", tool.args(t))
+	}
+	if !strings.Contains(stream.String(), "turbo") || !strings.Contains(stream.String(), "claude") {
+		t.Errorf("stream does not warn about the dropped effort:\n%s", stream.String())
 	}
 }

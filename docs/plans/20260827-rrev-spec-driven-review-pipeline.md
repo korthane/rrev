@@ -349,13 +349,13 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 7: Executor models, lifecycle, and resilience
 
-- [ ] implement model and effort selection parsing the combined `model[:effort]` form with per-part inheritance, review falling back to the task model, and a warning for an unsupported effort level
-- [ ] implement context cancellation terminating the child process group so no orphaned process survives
-- [ ] implement session and idle timeouts, both disabled by default, with the idle countdown resetting on output and a distinguishable error preserving captured output
-- [ ] implement rate-limit and retryable-failure detection so neither is recorded as a converged iteration
-- [ ] implement throttled progress indication during long silent sub-agent work
-- [ ] write tests for new functionality, including a test asserting the process tree is gone after cancellation
-- [ ] run project tests - must pass before next task
+- [x] implement model and effort selection parsing the combined `model[:effort]` form with per-part inheritance, review falling back to the task model, and a warning for an unsupported effort level
+- [x] implement context cancellation terminating the child process group so no orphaned process survives
+- [x] implement session and idle timeouts, both disabled by default, with the idle countdown resetting on output and a distinguishable error preserving captured output
+- [x] implement rate-limit and retryable-failure detection so neither is recorded as a converged iteration
+- [x] implement throttled progress indication during long silent sub-agent work
+- [x] write tests for new functionality, including a test asserting the process tree is gone after cancellation
+- [x] run project tests - must pass before next task
 
 ### Task 8: Progress log
 

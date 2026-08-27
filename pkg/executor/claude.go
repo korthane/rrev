@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -19,6 +20,8 @@ type Claude struct {
 	// ExtraArgs are appended to the invocation for a project that needs to pass
 	// further claude flags.
 	ExtraArgs []string
+	// Limits bound one call; every bound is disabled at zero.
+	Limits Limits
 	// Debug records the resolved command line and the full prompt.
 	Debug bool
 }
@@ -36,23 +39,36 @@ func (c Claude) Bin() string {
 
 // Run executes the prompt through the claude CLI.
 func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
+	out := newSyncWriter(req.Stream)
+	spec := c.spec(req, out)
+
 	args := []string{"--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"}
-	if req.Model != "" {
-		args = append(args, "--model", req.Model)
+	if spec.Model != "" {
+		args = append(args, "--model", spec.Model)
+	}
+	if spec.Effort != "" {
+		args = append(args, "--effort", spec.Effort)
 	}
 	args = append(args, c.ExtraArgs...)
 
-	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, debug: c.Debug}
-	col := &collector{stream: req.Stream}
-	err := cmd.run(ctx, req.Stream, func(line string) error { return claudeLine(col, line) })
+	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, limits: c.Limits, debug: c.Debug}
+	col := &collector{stream: out}
+	err := cmd.run(ctx, out, func(line string) error { return claudeLine(col, line) })
 	result := col.result()
-	if err != nil {
-		if reported, ok := errors.AsType[*claudeResultError](err); ok {
-			return result, &Error{Tool: c.Name(), Args: args, ExitCode: -1, Stderr: reported.msg, Err: err}
-		}
-		return result, err
+	if reported, ok := errors.AsType[*claudeResultError](err); ok {
+		err = &Error{Tool: c.Name(), Args: args, ExitCode: -1, Stderr: reported.msg, Err: err}
 	}
-	return result, nil
+	return result, classify(c.Name(), result, err)
+}
+
+// spec drops an effort level claude does not accept, reporting it rather than
+// passing it through to a flag value the CLI would reject.
+func (c Claude) spec(req Request, out io.Writer) Spec {
+	spec, warning := Spec{Model: req.Model, Effort: req.Effort}.For(c.Name())
+	if warning != "" {
+		_, _ = fmt.Fprintln(out, "· "+warning)
+	}
+	return spec
 }
 
 // claudeEvent is one stream-json line. Only the fields rrev renders are

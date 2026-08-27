@@ -27,6 +27,7 @@ type command struct {
 	args   []string
 	dir    string
 	prompt string
+	limits Limits
 	debug  bool
 }
 
@@ -39,11 +40,17 @@ func (c command) run(ctx context.Context, stream io.Writer, onLine func(string) 
 		_, _ = fmt.Fprintf(stream, "· exec: %s %s\n· prompt:\n%s\n", c.bin, strings.Join(c.args, " "), c.prompt)
 	}
 
-	cmd := exec.CommandContext(ctx, c.bin, c.args...)
+	// The tool is started outside the caller's context so cancellation goes
+	// through killGroup, which reaches the sub-agents exec would leave running.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	cmd := exec.Command(c.bin, c.args...)
 	cmd.Dir = c.dir
 	cmd.Stdin = strings.NewReader(c.prompt)
 	stderr := &tailWriter{limit: stderrTailBytes}
 	cmd.Stderr = stderr
+	setProcessGroup(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return c.fail(stderr, err)
@@ -52,26 +59,55 @@ func (c command) run(ctx context.Context, stream io.Writer, onLine func(string) 
 		return c.fail(stderr, err)
 	}
 
+	guard := newWatchdog(c.limits, stream)
+	go guard.watch(cancel)
+	stopKill := killOnCancel(runCtx, cmd)
+
 	var lineErr error
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), maxLineBytes)
 	for scanner.Scan() {
+		guard.touched()
 		if err := onLine(scanner.Text()); err != nil && lineErr == nil {
 			lineErr = err
 		}
 	}
 	scanErr := scanner.Err()
 
-	if err := cmd.Wait(); err != nil {
-		return c.fail(stderr, err)
+	waitErr := cmd.Wait()
+	guard.stop()
+	stopKill()
+
+	if timeout := guard.timeout(c.tool); timeout != nil {
+		return timeout
 	}
-	if lineErr != nil {
+	switch {
+	case waitErr != nil && ctx.Err() != nil:
+		return c.fail(stderr, ctx.Err())
+	case waitErr != nil:
+		return c.fail(stderr, waitErr)
+	case lineErr != nil:
 		return lineErr
-	}
-	if scanErr != nil {
+	case scanErr != nil:
 		return c.fail(stderr, fmt.Errorf("read output: %w", scanErr))
+	default:
+		return nil
 	}
-	return nil
+}
+
+// killOnCancel terminates the tool's whole process group when ctx is cancelled,
+// so a cancelled review leaves no sub-agent behind. The returned function ends
+// the watch once the tool has exited.
+func killOnCancel(ctx context.Context, cmd *exec.Cmd) func() {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			killGroup(cmd)
+		case <-done:
+		}
+	}()
+	return func() { close(done) }
 }
 
 func (c command) fail(stderr *tailWriter, err error) error {

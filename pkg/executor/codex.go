@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -20,6 +21,8 @@ type Codex struct {
 	// ExtraArgs are appended to the invocation for a project that needs to pass
 	// further codex flags.
 	ExtraArgs []string
+	// Limits bound one call; every bound is disabled at zero.
+	Limits Limits
 	// Debug records the resolved command line and the full prompt.
 	Debug bool
 }
@@ -38,11 +41,21 @@ func (c Codex) Bin() string {
 // Run executes the prompt through the codex CLI. The prompt arrives on stdin,
 // which the trailing `-` argument selects.
 func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
-	args := []string{"exec", "--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check"}
-	if req.Model != "" {
-		args = append(args, "--model", req.Model)
+	out := newSyncWriter(req.Stream)
+	spec, warning := Spec{Model: req.Model, Effort: req.Effort}.For(c.Name())
+	if warning != "" {
+		_, _ = fmt.Fprintln(out, "· "+warning)
 	}
-	for _, override := range c.ConfigOverrides {
+
+	args := []string{"exec", "--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check"}
+	if spec.Model != "" {
+		args = append(args, "--model", spec.Model)
+	}
+	overrides := c.ConfigOverrides
+	if spec.Effort != "" {
+		overrides = append(overrides, "model_reasoning_effort="+spec.Effort)
+	}
+	for _, override := range overrides {
 		if override = strings.TrimSpace(override); override != "" {
 			args = append(args, "-c", override)
 		}
@@ -50,10 +63,11 @@ func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
 	args = append(args, c.ExtraArgs...)
 	args = append(args, "-")
 
-	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, debug: c.Debug}
-	col := &collector{stream: req.Stream}
-	err := cmd.run(ctx, req.Stream, func(line string) error { codexLine(col, line); return nil })
-	return col.result(), err
+	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, limits: c.Limits, debug: c.Debug}
+	col := &collector{stream: out}
+	err := cmd.run(ctx, out, func(line string) error { codexLine(col, line); return nil })
+	result := col.result()
+	return result, classify(c.Name(), result, err)
 }
 
 // codexEvent is one line of codex's JSON stream. Two shapes are accepted: the

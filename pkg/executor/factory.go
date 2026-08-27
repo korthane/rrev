@@ -11,17 +11,22 @@ import (
 func New(tool string, cfg *config.Config) (Executor, error) {
 	switch tool {
 	case config.ExecutorClaude:
-		return Claude{Command: cfg.ClaudeCommand, Debug: cfg.Debug}, nil
+		return Claude{Command: cfg.ClaudeCommand, Limits: limitsOf(cfg), Debug: cfg.Debug}, nil
 	case config.ExecutorCodex:
-		return Codex{Command: cfg.CodexCommand, Debug: cfg.Debug}, nil
+		return Codex{Command: cfg.CodexCommand, Limits: limitsOf(cfg), Debug: cfg.Debug}, nil
 	case config.ExternalToolCustom:
 		if cfg.ExternalReviewCommand == "" {
 			return nil, ErrNoCommand
 		}
-		return Custom{Command: cfg.ExternalReviewCommand, Debug: cfg.Debug}, nil
+		return Custom{Command: cfg.ExternalReviewCommand, Limits: limitsOf(cfg), Debug: cfg.Debug}, nil
 	default:
 		return nil, fmt.Errorf("unknown executor %q", tool)
 	}
+}
+
+// limitsOf reads the per-call bounds out of the resolved configuration.
+func limitsOf(cfg *config.Config) Limits {
+	return Limits{Session: cfg.SessionTimeout, Idle: cfg.IdleTimeout, Progress: cfg.ProgressInterval}
 }
 
 // Primary builds the executor that runs the review phases and applies fixes.
