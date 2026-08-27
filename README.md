@@ -253,6 +253,7 @@ naming the file and the variable rather than text passed through to the model.
 | `{{REPORT_FILE}}` | path of the findings report |
 | `{{VALIDATION_COMMAND}}` | the configured validation command |
 | `{{MODE_RULES}}` | the run mode's rules paragraph |
+| `{{REVIEWER_MODE_RULES}}` | the same paragraph for report-only reviewer prompts |
 | `{{PRIOR_FINDINGS}}` | earlier external rounds and their dispositions |
 | `{{EXTERNAL_OUTPUT}}` | the external tool's raw report, for evaluation |
 | `{{OPENSPEC_DIR}}`, `{{CHANGE_DIR}}` | the OpenSpec root and the change directory |

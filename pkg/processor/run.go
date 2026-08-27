@@ -118,6 +118,7 @@ func (r *Runner) Run(ctx context.Context) Result {
 		// not just through rrev's own bookkeeping.
 		r.Env.SinglePass = true
 		r.Env.Vars.ModeRules = ReportOnlyRules
+		r.Env.Vars.ReviewerModeRules = ReportOnlyRules
 	}
 
 	res := Result{Mode: mode, Converged: true}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/korthane/rrev/pkg/config"
@@ -80,7 +81,7 @@ func prepare(ctx context.Context, opts *options, dir string) (*startup, error) {
 	if err != nil {
 		return nil, fmt.Errorf("external review tool: %w", err)
 	}
-	if err := checkExecutables(cfg, primary, external); err != nil {
+	if err := checkExecutables(cfg, opts.Mode, primary, external); err != nil {
 		return nil, err
 	}
 	if err := checkPrompts(cfg, resolved.Assets, opts.Mode, external); err != nil {
@@ -141,8 +142,13 @@ var commandKeys = map[string]string{
 }
 
 // checkExecutables verifies every executable the run intends to invoke is on
-// PATH. An executor with no binary to check, such as a mock, is skipped.
-func checkExecutables(cfg *config.Config, execs ...executor.Executor) error {
+// PATH. An executor with no binary to check, such as a mock, is skipped, and so
+// is the external tool in a mode whose phases never reach it.
+func checkExecutables(cfg *config.Config, mode processor.Mode, primary, external executor.Executor) error {
+	execs := []executor.Executor{primary}
+	if runsExternalPhase(mode) {
+		execs = append(execs, external)
+	}
 	for _, e := range execs {
 		if e == nil || e.Bin() == "" {
 			continue
@@ -153,6 +159,13 @@ func checkExecutables(cfg *config.Config, execs ...executor.Executor) error {
 		}
 	}
 	return nil
+}
+
+// runsExternalPhase reports whether the mode's phase sequence invokes the
+// external review tool, read off the same prompt list preflight validates.
+func runsExternalPhase(mode processor.Mode) bool {
+	return slices.ContainsFunc(processor.PromptUses(mode, false),
+		func(u processor.PromptUse) bool { return u.External })
 }
 
 // checkPrompts expands every prompt the selected mode will use, with the same

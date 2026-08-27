@@ -29,6 +29,10 @@ const (
 	noRequirements = "(no requirements extracted)"
 
 	defaultModeRules = "Run mode: normal. Edit files, run the validation command, and commit, as the steps below describe."
+	// The external reviewer reports; the primary executor verifies and fixes.
+	// Expanding defaultModeRules there would tell it to commit unverified work.
+	defaultReviewerModeRules = "Run mode: review only. Do not edit files, do not commit, and do not run the project's " +
+		"commands: report what you find and let the primary executor verify and fix it."
 	noPriorFindings  = "(first round of this loop: nothing has been reported or dispositioned yet)"
 	noExternalOutput = "(the external review tool produced no output)"
 )
@@ -66,6 +70,11 @@ type Vars struct {
 	// Report-only mode replaces the default with its no-mutation rules there,
 	// rather than each phase rewriting the prompt body.
 	ModeRules string
+
+	// ReviewerModeRules is the run-mode paragraph the reporter-only prompts
+	// expand, so a read-only run still constrains them without a normal run
+	// telling an independent reviewer to fix and commit.
+	ReviewerModeRules string
 
 	// PriorFindings is the external loop's round-to-round memory: earlier
 	// findings and how they were dispositioned, so the external tool does not
@@ -226,28 +235,29 @@ func agentPreamble(executor string, n int) string {
 
 func (v Vars) values() map[string]string {
 	values := map[string]string{
-		"CHANGE":             v.Change,
-		"GOAL":               orElse(v.Goal, v.Change),
-		"GOAL_LINE":          orElse(v.GoalLine, v.Change),
-		"BASE_REF":           v.BaseRef,
-		"DIFF_INSTRUCTION":   v.DiffInstruction,
-		"PROGRESS_LOG":       orElse(v.ProgressLog, emptyValue),
-		"REPORT_FILE":        orElse(v.ReportFile, emptyValue),
-		"VALIDATION_COMMAND": orElse(v.ValidationCommand, emptyValue),
-		"MODE_RULES":         orElse(v.ModeRules, defaultModeRules),
-		"PRIOR_FINDINGS":     orElse(v.PriorFindings, noPriorFindings),
-		"EXTERNAL_OUTPUT":    orElse(v.ExternalOutput, noExternalOutput),
-		"OPENSPEC_DIR":       orElse(v.OpenSpecDir, missingPath),
-		"CHANGE_DIR":         orElse(v.ChangeDir, missingPath),
-		"PROPOSAL":           orElse(v.Proposal, missingPath),
-		"DESIGN":             orElse(v.Design, missingPath),
-		"TASKS":              orElse(v.Tasks, missingPath),
-		"SPECS":              pathList(v.Specs),
-		"ARTIFACTS":          pathList(artifactPaths(v)),
-		"REQUIREMENTS":       renderChecklist(v.Requirements, v.ChecklistBudget),
-		"REQUIREMENT_COUNT":  strconv.Itoa(len(v.Requirements)),
-		"ITERATION":          strconv.Itoa(v.Iteration),
-		"MAX_ITERATIONS":     strconv.Itoa(v.MaxIterations),
+		"CHANGE":              v.Change,
+		"GOAL":                orElse(v.Goal, v.Change),
+		"GOAL_LINE":           orElse(v.GoalLine, v.Change),
+		"BASE_REF":            v.BaseRef,
+		"DIFF_INSTRUCTION":    v.DiffInstruction,
+		"PROGRESS_LOG":        orElse(v.ProgressLog, emptyValue),
+		"REPORT_FILE":         orElse(v.ReportFile, emptyValue),
+		"VALIDATION_COMMAND":  orElse(v.ValidationCommand, emptyValue),
+		"MODE_RULES":          orElse(v.ModeRules, defaultModeRules),
+		"REVIEWER_MODE_RULES": orElse(v.ReviewerModeRules, defaultReviewerModeRules),
+		"PRIOR_FINDINGS":      orElse(v.PriorFindings, noPriorFindings),
+		"EXTERNAL_OUTPUT":     orElse(v.ExternalOutput, noExternalOutput),
+		"OPENSPEC_DIR":        orElse(v.OpenSpecDir, missingPath),
+		"CHANGE_DIR":          orElse(v.ChangeDir, missingPath),
+		"PROPOSAL":            orElse(v.Proposal, missingPath),
+		"DESIGN":              orElse(v.Design, missingPath),
+		"TASKS":               orElse(v.Tasks, missingPath),
+		"SPECS":               pathList(v.Specs),
+		"ARTIFACTS":           pathList(artifactPaths(v)),
+		"REQUIREMENTS":        renderChecklist(v.Requirements, v.ChecklistBudget),
+		"REQUIREMENT_COUNT":   strconv.Itoa(len(v.Requirements)),
+		"ITERATION":           strconv.Itoa(v.Iteration),
+		"MAX_ITERATIONS":      strconv.Itoa(v.MaxIterations),
 	}
 	return values
 }

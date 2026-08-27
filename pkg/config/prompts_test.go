@@ -157,6 +157,12 @@ func TestExternalReviewPromptCarriesChecklistLogAndPriorRounds(t *testing.T) {
 	if !strings.Contains(got, "Do not edit files") {
 		t.Errorf("external_review prompt lets the external tool write to the repository:\n%s", got)
 	}
+	// A normal run must not hand the independent reviewer the fixing
+	// executor's rules: it would contradict the report-only instruction below
+	// it and commit work the primary executor never verified.
+	if strings.Contains(got, defaultModeRules) {
+		t.Errorf("external_review prompt tells the external tool to fix and commit:\n%s", got)
+	}
 }
 
 func TestExternalReviewPromptSaysWhenNoRoundsPrecedeIt(t *testing.T) {
@@ -223,6 +229,7 @@ func TestPromptsExpandTheRunModeRules(t *testing.T) {
 	assets := embeddedPrompts(t)
 	vars := fullVars()
 	vars.ModeRules = "Run mode: report only. Do not edit any file and do not commit."
+	vars.ReviewerModeRules = vars.ModeRules
 	exp := Expander{Assets: assets, Executor: ExecutorClaude, Vars: vars}
 
 	for name := range shippedPrompts {
@@ -233,8 +240,10 @@ func TestPromptsExpandTheRunModeRules(t *testing.T) {
 		if !strings.Contains(got, vars.ModeRules) {
 			t.Errorf("prompt %q does not expand the run-mode rules, so report-only cannot constrain it:\n%s", name, got)
 		}
-		if strings.Contains(got, defaultModeRules) {
-			t.Errorf("prompt %q kept the default run-mode rules alongside the override:\n%s", name, got)
+		for _, fallback := range []string{defaultModeRules, defaultReviewerModeRules} {
+			if strings.Contains(got, fallback) {
+				t.Errorf("prompt %q kept the default run-mode rules alongside the override:\n%s", name, got)
+			}
 		}
 	}
 }

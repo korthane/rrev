@@ -233,6 +233,22 @@ func TestPrepareMissingExternalBinaryNamesItsSource(t *testing.T) {
 	assertNoExecutorRan(t, marker)
 }
 
+// --phase1-only never reaches the external phase, so demanding its binary would
+// block a claude-only user from a mode that cannot invoke codex.
+func TestPrepareSkipsTheExternalBinaryInPhase1Only(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	marker := fakeBin(t, "claude")
+
+	start, err := prepareIn(t, repo, "--phase1-only")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	if start.Mode != processor.ModePhase1Only {
+		t.Errorf("mode = %q, want %q", start.Mode, processor.ModePhase1Only)
+	}
+	assertNoExecutorRan(t, marker)
+}
+
 func TestPrepareExternalReviewDisabled(t *testing.T) {
 	repo := newFixtureRepo(t, "add-user-auth")
 	fakeBin(t, "claude")

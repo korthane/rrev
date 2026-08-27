@@ -17,7 +17,7 @@ Commits under review: `git log {{BASE_REF}}..HEAD --oneline`
 Change artifacts, for intent the diff does not explain:
 {{ARTIFACTS}}
 
-{{MODE_RULES}}
+{{REVIEWER_MODE_RULES}}
 
 ## What the change is required to do
 
