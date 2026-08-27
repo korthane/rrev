@@ -339,13 +339,13 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 6: Executor contract and implementations
 
-- [ ] define the executor interface returning output, detected signal, and error, with a mock implementation available to phase tests
-- [ ] implement signal detection for the review-done, external-done, and failure markers, matching a marker on its own line and ignoring one embedded in quoted text
-- [ ] implement the claude executor invoking the claude CLI with streamed JSON output, rendering incremental text and tolerating unknown event types
-- [ ] implement the codex executor invoking the codex CLI with config overrides
-- [ ] implement the custom executor running a user-supplied external review script and treating its stdout as findings
-- [ ] write tests for new functionality, using recorded fixture streams for both CLI executors
-- [ ] run project tests - must pass before next task
+- [x] define the executor interface returning output, detected signal, and error, with a mock implementation available to phase tests
+- [x] implement signal detection for the review-done, external-done, and failure markers, matching a marker on its own line and ignoring one embedded in quoted text
+- [x] implement the claude executor invoking the claude CLI with streamed JSON output, rendering incremental text and tolerating unknown event types
+- [x] implement the codex executor invoking the codex CLI with config overrides
+- [x] implement the custom executor running a user-supplied external review script and treating its stdout as findings
+- [x] write tests for new functionality, using recorded fixture streams for both CLI executors
+- [x] run project tests - must pass before next task
 
 ### Task 7: Executor models, lifecycle, and resilience
 

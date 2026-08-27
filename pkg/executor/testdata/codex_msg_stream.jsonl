@@ -1,0 +1,7 @@
+{"id":"0","msg":{"type":"task_started","model":"gpt-5"}}
+{"id":"1","msg":{"type":"agent_reasoning","text":"Checking each scenario against the diff"}}
+{"id":"2","msg":{"type":"exec_command_begin","command":["git","diff","main...HEAD"]}}
+{"id":"3","msg":{"type":"agent_message","message":"Finding: pkg/foo.go:12 skips the validation the scenario requires."}}
+{"id":"4","msg":{"type":"an_event_added_after_this_was_written"}}
+{"id":"5","msg":{"type":"agent_message","message":"<<<RREV:EXTERNAL_DONE>>>"}}
+{"id":"6","msg":{"type":"task_complete","last_agent_message":"<<<RREV:EXTERNAL_DONE>>>"}}
