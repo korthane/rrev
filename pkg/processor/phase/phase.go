@@ -76,6 +76,12 @@ func (r Result) OK() bool {
 	return r.Skipped || r.Reason == ReasonConverged || r.Reason == ReasonSinglePass
 }
 
+// Streamer routes an executor's activity to a destination that attributes it to
+// the phase it came from.
+type Streamer interface {
+	Stream(phase string) io.Writer
+}
+
 // Env is everything the phases share for one run: the resolved configuration
 // and review context, the executors, and where to report.
 type Env struct {
@@ -95,8 +101,9 @@ type Env struct {
 	Primary  executor.Executor
 	External executor.Executor
 
-	// Stream receives executor activity; nil discards it.
-	Stream io.Writer
+	// Stream routes executor activity, attributed to the phase that produced
+	// it; nil discards it.
+	Stream Streamer
 	// Out receives rrev's own phase-level narration; nil discards it.
 	Out io.Writer
 
@@ -106,6 +113,14 @@ type Env struct {
 	// mode needs: with no fixes applied there is nothing for a second pass to
 	// verify.
 	SinglePass bool
+}
+
+// stream is where one phase's executor activity goes; nil discards it.
+func (e *Env) stream(phase string) io.Writer {
+	if e.Stream == nil {
+		return nil
+	}
+	return e.Stream.Stream(phase)
 }
 
 // say narrates a phase-level event to the user and returns the same text, so a

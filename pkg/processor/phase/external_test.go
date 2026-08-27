@@ -186,6 +186,34 @@ func TestExternalUserBreakEndsLoop(t *testing.T) {
 	}
 }
 
+// TestExternalBreakCancelsTheCallInFlight covers the break arriving mid-call: a
+// loop the user ended must not keep spending an executor on the iteration it is
+// in, and the cancelled call must read as a break rather than as a failure.
+func TestExternalBreakCancelsTheCallInFlight(t *testing.T) {
+	brk := make(chan struct{})
+	external := mock("codex", "")
+	primary := mock("claude", "evaluated")
+	env, _ := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 5 })
+	external.Handler = func(ctx context.Context, _ executor.Request) (executor.Result, error) {
+		close(brk)
+		<-ctx.Done()
+		return executor.Result{}, ctx.Err()
+	}
+	env.Break = brk
+
+	res := External(context.Background(), env)
+
+	if res.Reason != ReasonUserBreak {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonUserBreak)
+	}
+	if res.Err != nil {
+		t.Errorf("a user break is not a failure: %v", res.Err)
+	}
+	if primary.CallCount() != 0 {
+		t.Errorf("the evaluation ran %d times after the break; want 0", primary.CallCount())
+	}
+}
+
 func TestExternalIterationLimit(t *testing.T) {
 	external := mock("codex", "FINDING: minor | a.go:1 | external | - | naming")
 	primary := mock("claude", "evaluated")

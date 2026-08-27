@@ -38,6 +38,20 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 		limit = 1
 	}
 
+	// A break cancels the call in flight rather than waiting for it: a loop the
+	// user ended should stop spending an executor on the iteration it is in.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if spec.brk != nil {
+		go func() {
+			select {
+			case <-spec.brk:
+				cancel()
+			case <-runCtx.Done():
+			}
+		}()
+	}
+
 	res := Result{Name: spec.name}
 	e.Log.PhaseStart(spec.name)
 
@@ -51,18 +65,23 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 		e.Log.IterationStart(spec.name, n, limit)
 		res.Iterations = n
 
-		step, err := spec.run(ctx, n, limit)
+		step, err := spec.run(runCtx, n, limit)
 		res.Findings = append(res.Findings, step.Findings...)
 		res.Rejections = append(res.Rejections, step.Rejections...)
 		if err != nil {
 			res.Reason, res.Err = ReasonFailure, err
-			if ctx.Err() != nil {
+			switch {
+			case interrupted(spec.brk):
+				// The user ending the loop is an outcome, not a failure: the
+				// pipeline carries on with the phase after it.
+				res.Reason, res.Err = ReasonUserBreak, nil
+			case ctx.Err() != nil:
 				res.Reason = ReasonAborted
 			}
 			break
 		}
 
-		after := e.snapshot(ctx)
+		after := e.snapshot(runCtx)
 		if after.same(before) {
 			stale++
 		} else {
@@ -118,7 +137,7 @@ func (e *Env) review(ctx context.Context, call reviewCall) (stepResult, error) {
 		Phase:  call.phase,
 		Model:  spec.Model,
 		Effort: spec.Effort,
-		Stream: e.Stream,
+		Stream: e.stream(call.phase),
 	})
 
 	// Record whatever the call produced before judging it: a cancelled or

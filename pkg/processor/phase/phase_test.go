@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -356,4 +357,50 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(body)
+}
+
+// fakeStreamer records which phase each stream was opened for.
+type fakeStreamer struct {
+	mu      sync.Mutex
+	byPhase map[string]*bytes.Buffer
+}
+
+func (s *fakeStreamer) Stream(phase string) io.Writer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.byPhase == nil {
+		s.byPhase = map[string]*bytes.Buffer{}
+	}
+	buf, ok := s.byPhase[phase]
+	if !ok {
+		buf = &bytes.Buffer{}
+		s.byPhase[phase] = buf
+	}
+	return buf
+}
+
+func (s *fakeStreamer) text(phase string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if buf, ok := s.byPhase[phase]; ok {
+		return buf.String()
+	}
+	return ""
+}
+
+// TestStreamIsAttributedToItsPhase covers the contract the terminal output
+// depends on: activity reaches the stream opened for the phase that produced it.
+func TestStreamIsAttributedToItsPhase(t *testing.T) {
+	env, _ := newEnv(t, mock("claude", "checking the diff\n"+reviewDone), nil, nil)
+	streams := &fakeStreamer{}
+	env.Stream = streams
+
+	Comprehensive(context.Background(), env)
+
+	if got := streams.text(NameComprehensive); !strings.Contains(got, "checking the diff") {
+		t.Errorf("the comprehensive stream got %q", got)
+	}
+	if got := streams.text(NameExternal); got != "" {
+		t.Errorf("a phase that never ran got output: %q", got)
+	}
 }

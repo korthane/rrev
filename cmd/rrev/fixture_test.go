@@ -110,3 +110,15 @@ func assertNoExecutorRan(t *testing.T, marker string) {
 		t.Errorf("an executor ran during a failed preflight: %s", out)
 	}
 }
+
+// signalBin is fakeBin with one stand-in that prints text on stdout, so a test
+// can drive a phase to the termination signal that text carries.
+func signalBin(t *testing.T, name, text string) string {
+	marker := fakeBin(t, "claude", "codex")
+	script := fmt.Sprintf("#!/bin/sh\ncat >/dev/null\necho %q >> %q\nprintf '%%s\\n' %q\n", name, marker, text)
+	path := filepath.Join(filepath.Dir(marker), name)
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // test helper
+		t.Fatalf("write %s stand-in: %v", name, err)
+	}
+	return marker
+}

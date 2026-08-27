@@ -418,13 +418,13 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 14: CLI output, exit status, and signal handling
 
-- [ ] implement the startup banner reporting change, base ref, mode, executors, resolved models, and the extracted requirement count
-- [ ] implement exit statuses distinguishing convergence, non-convergence, and startup or abort failure
-- [ ] implement interrupt handling that aborts the run, terminates the process group, flushes the progress log, and exits non-zero
-- [ ] implement the break signal ending only the external loop on platforms that support it, omitting the hint where unsupported
-- [ ] implement phase-attributed coloured terminal output honouring a no-colour option
-- [ ] write tests for new functionality, including output assertions and a platform-guarded case for the break signal
-- [ ] run project tests - must pass before next task
+- [x] implement the startup banner reporting change, base ref, mode, executors, resolved models, and the extracted requirement count
+- [x] implement exit statuses distinguishing convergence, non-convergence, and startup or abort failure
+- [x] implement interrupt handling that aborts the run, terminates the process group, flushes the progress log, and exits non-zero
+- [x] implement the break signal ending only the external loop on platforms that support it, omitting the hint where unsupported
+- [x] implement phase-attributed coloured terminal output honouring a no-colour option
+- [x] write tests for new functionality, including output assertions and a platform-guarded case for the break signal
+- [x] run project tests - must pass before next task
 
 ### Task 15: Integration and documentation
 
