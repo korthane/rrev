@@ -400,12 +400,12 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 12: Pipeline modes, reporting, and runner
 
-- [ ] implement the optional finalize step running once, disabled by default, best-effort on failure, and skipped on non-convergence
-- [ ] implement report-only mode short-circuiting every loop to a single pass and leaving the working tree and commit history unchanged
-- [ ] implement the findings report emitting file, line, severity, reporting reviewer, and related requirement for each verified finding
-- [ ] implement the runner mapping each run mode to its phase sequence for full, external-only, first-phase-only, and report-only
-- [ ] write tests for new functionality, asserting the executed phase sequence per mode
-- [ ] run project tests - must pass before next task
+- [x] implement the optional finalize step running once, disabled by default, best-effort on failure, and skipped on non-convergence
+- [x] implement report-only mode short-circuiting every loop to a single pass and leaving the working tree and commit history unchanged
+- [x] implement the findings report emitting file, line, severity, reporting reviewer, and related requirement for each verified finding
+- [x] implement the runner mapping each run mode to its phase sequence for full, external-only, first-phase-only, and report-only
+- [x] write tests for new functionality, asserting the executed phase sequence per mode
+- [x] run project tests - must pass before next task
 
 ### Task 13: CLI flags, change selection, and preflight
 

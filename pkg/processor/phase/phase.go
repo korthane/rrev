@@ -17,6 +17,7 @@ const (
 	NameComprehensive = "comprehensive"
 	NameExternal      = "external"
 	NameFinal         = "final"
+	NameFinalize      = "finalize"
 )
 
 // Prompt asset names each phase expands.
@@ -25,6 +26,7 @@ const (
 	promptExternal      = "external_review"
 	promptExternalEval  = "external_eval"
 	promptFinal         = "review_final"
+	promptFinalize      = "finalize"
 )
 
 // Reason is the condition that ended a loop. Every loop reports one.
@@ -125,6 +127,15 @@ func (e *Env) note(format string, args ...any) {
 // skip builds the result for a phase that never ran, reporting why.
 func (e *Env) skip(name, format string, args ...any) Result {
 	reason := fmt.Sprintf(format, args...)
-	e.note("%s review skipped: %s", name, reason)
+	e.note("%s skipped: %s", label(name), reason)
 	return Result{Name: name, Reason: ReasonSkipped, Skipped: true, SkipReason: reason}
+}
+
+// label names a step the way it is described to the user: the review phases
+// are loops, the finalize step is not.
+func label(name string) string {
+	if name == NameFinalize {
+		return NameFinalize + " step"
+	}
+	return name + " review"
 }

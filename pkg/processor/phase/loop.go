@@ -93,9 +93,9 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 // terminal and in the progress log.
 func (e *Env) report(res Result) {
 	e.Log.LoopEnd(res.Name, string(res.Reason), res.Iterations)
-	e.say("%s review ended after %s: %s", res.Name, plural(res.Iterations, "iteration"), res.Reason)
+	e.say("%s ended after %s: %s", label(res.Name), plural(res.Iterations, "iteration"), res.Reason)
 	if res.Err != nil {
-		e.note("%s review error: %v", res.Name, res.Err)
+		e.note("%s error: %v", label(res.Name), res.Err)
 	}
 }
 
@@ -109,7 +109,7 @@ func (e *Env) review(ctx context.Context, call reviewCall) (stepResult, error) {
 
 	spec, warning := executor.Select(e.Config, call.model, call.exec.Name())
 	if warning != "" {
-		e.note("%s review: %s", call.phase, warning)
+		e.note("%s: %s", label(call.phase), warning)
 	}
 
 	out, runErr := call.exec.Run(ctx, executor.Request{
