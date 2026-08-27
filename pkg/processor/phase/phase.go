@@ -22,11 +22,11 @@ const (
 
 // Prompt asset names each phase expands.
 const (
-	promptComprehensive = "review_first"
-	promptExternal      = "external_review"
-	promptExternalEval  = "external_eval"
-	promptFinal         = "review_final"
-	promptFinalize      = "finalize"
+	PromptComprehensive = "review_first"
+	PromptExternal      = "external_review"
+	PromptExternalEval  = "external_eval"
+	PromptFinal         = "review_final"
+	PromptFinalize      = "finalize"
 )
 
 // Reason is the condition that ended a loop. Every loop reports one.

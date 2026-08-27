@@ -7,8 +7,9 @@ Iteration {{ITERATION}} of at most {{MAX_ITERATIONS}} for this phase.
 Change directory: {{CHANGE_DIR}}
 Change artifacts:
 {{ARTIFACTS}}
-Requirement checklist: {{REQUIREMENT_COUNT}} requirements, expanded in full inside
-the conformance agent's definition below.
+Requirement checklist: {{REQUIREMENT_COUNT}} requirements, expanded inside the
+conformance agent's definition below. If that checklist says it was truncated,
+read the delta spec files for the requirements it does not carry.
 Progress log: {{PROGRESS_LOG}}
 
 {{MODE_RULES}}

@@ -211,3 +211,45 @@ func plural(n int, noun string) string {
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
 }
+
+// PromptUse names a prompt a run will expand and the executor identity it is
+// rendered for, since agent references expand into that tool's invocation form.
+type PromptUse struct {
+	Name string
+	// External marks a prompt the external review tool renders rather than the
+	// primary executor.
+	External bool
+}
+
+// PromptUses lists every prompt a run in this mode may expand, so preflight can
+// reject a broken override before a phase spends an executor on it. finalize
+// says whether the optional finalize step is enabled.
+func PromptUses(m Mode, finalize bool) []PromptUse {
+	if m == "" {
+		m = ModeFull
+	}
+	var uses []PromptUse
+	for _, name := range promptSequence(m) {
+		uses = append(uses, PromptUse{Name: name, External: name == phase.PromptExternal})
+	}
+	if finalize && m != ModePhase1Only && !m.ReadOnly() {
+		uses = append(uses, PromptUse{Name: phase.PromptFinalize})
+	}
+	return uses
+}
+
+// promptSequence mirrors sequence: the prompts the mode's phases expand, in the
+// order those phases run.
+func promptSequence(m Mode) []string {
+	comprehensive := []string{phase.PromptComprehensive}
+	external := []string{phase.PromptExternal, phase.PromptExternalEval}
+	final := []string{phase.PromptFinal}
+	switch m {
+	case ModePhase1Only:
+		return comprehensive
+	case ModeExternalOnly:
+		return slices.Concat(external, final)
+	default:
+		return slices.Concat(comprehensive, external, final)
+	}
+}

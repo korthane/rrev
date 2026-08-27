@@ -178,7 +178,7 @@ Each setting has a flag named after it, with underscores written as hyphens.
 | `finalize` | `--finalize` | `false` | run the finalize step after the last review phase |
 | `progress_dir` | `--progress-dir` | `.rrev/progress` | directory the per-change progress log is written to |
 | `report_file` | `--report-file` | `.rrev/findings.md` | destination of the findings report |
-| `checklist_budget` | `--checklist-budget` | `20000` | maximum characters of requirement checklist expanded into a prompt |
+| `checklist_budget` | `--checklist-budget` | `120000` | maximum characters of requirement checklist expanded into a prompt; 0 is unlimited |
 | `validation_command` | `--validation-command` | *(empty)* | command the executor runs before committing a fix |
 | `debug` | `--debug` | `false` | record resolved command lines and full prompts |
 | `no_color` | `--no-color` | `false` | disable coloured terminal output |

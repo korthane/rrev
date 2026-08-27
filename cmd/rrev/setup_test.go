@@ -261,3 +261,47 @@ func TestPrepareReportsDegradedMode(t *testing.T) {
 			start.Review.Degraded, start.Warnings)
 	}
 }
+
+func TestPreparePromptReferencingMissingAgent(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	marker := fakeBin(t, "claude", "codex")
+	writeFile(t, repo, ".rrev/prompts/review_first.txt", "Review {{CHANGE}}.\n{{AGENTS: conformance, nosuchagent}}\n")
+
+	_, err := prepareIn(t, repo)
+	if err == nil {
+		t.Fatal("prepare: want a startup error for a prompt naming an agent that resolves to no file")
+	}
+	for _, want := range []string{"review_first", "nosuchagent"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q, want it to name %q", err, want)
+		}
+	}
+	assertNoExecutorRan(t, marker)
+}
+
+func TestPreparePromptWithUnknownVariable(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	marker := fakeBin(t, "claude", "codex")
+	writeFile(t, repo, ".rrev/prompts/review_final.txt", "Regression pass for {{NOT_A_VARIABLE}}.\n")
+
+	_, err := prepareIn(t, repo)
+	if err == nil {
+		t.Fatal("prepare: want a startup error for a prompt using an unknown variable")
+	}
+	if !strings.Contains(err.Error(), "NOT_A_VARIABLE") {
+		t.Errorf("error %q, want it to name the variable", err)
+	}
+	assertNoExecutorRan(t, marker)
+}
+
+// TestPreparePromptCheckSkipsPhasesTheModeNeverRuns keeps preflight from
+// failing a run over a prompt its mode never expands.
+func TestPreparePromptCheckSkipsPhasesTheModeNeverRuns(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	fakeBin(t, "claude", "codex")
+	writeFile(t, repo, ".rrev/prompts/review_final.txt", "Regression pass for {{NOT_A_VARIABLE}}.\n")
+
+	if _, err := prepareIn(t, repo, "--phase1-only"); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+}

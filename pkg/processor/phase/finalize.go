@@ -35,7 +35,7 @@ func Finalize(ctx context.Context, e *Env, prior ...Result) Result {
 	before := e.snapshot(ctx)
 	step, err := e.review(ctx, reviewCall{
 		phase:    NameFinalize,
-		prompt:   promptFinalize,
+		prompt:   PromptFinalize,
 		exec:     e.Primary,
 		model:    executor.PhaseFinalize,
 		done:     executor.SignalNone,

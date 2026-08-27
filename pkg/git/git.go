@@ -65,7 +65,10 @@ func New(ctx context.Context, dir string) (*Repo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrNotRepository, dir, err)
 	}
-	repo.root = root
+	// Every git command runs from the work-tree root, which is also where the
+	// executors run: a diff issued from a subdirectory is restricted to it when
+	// diff.relative is set, which would hide changes elsewhere on the branch.
+	repo.root, repo.dir = root, root
 	return repo, nil
 }
 

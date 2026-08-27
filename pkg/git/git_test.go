@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -377,5 +378,29 @@ func TestContextCancellationStopsGit(t *testing.T) {
 
 	if _, err := repo.HeadHash(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("want context.Canceled, got %v", err)
+	}
+}
+
+// TestChangedFilesFromSubdirectoryWithRelativeDiff pins the work tree the git
+// commands run in. With diff.relative set, a diff issued from a subdirectory
+// covers only that subdirectory, so a repository queried from anywhere but its
+// root would report a branch with changes as having none.
+func TestChangedFilesFromSubdirectoryWithRelativeDiff(t *testing.T) {
+	dir := newBranchedRepo(t, "main")
+	runGit(t, dir, "config", "diff.relative", "true")
+	sub := filepath.Join(dir, "sub")
+	writeFile(t, sub, "keep.txt", "keep\n")
+	commit(t, dir, "add a subdirectory untouched by the branch")
+
+	repo := open(t, sub)
+	files, err := repo.ChangedFiles(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	if !slices.Contains(files, "feature.txt") {
+		t.Errorf("ChangedFiles = %v, want the branch's file outside the subdirectory", files)
+	}
+	if err := repo.EnsureChanges(t.Context(), "main"); err != nil {
+		t.Errorf("EnsureChanges: %v", err)
 	}
 }

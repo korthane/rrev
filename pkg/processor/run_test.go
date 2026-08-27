@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -307,5 +308,37 @@ func TestRunnerAllPhasesSkippedDoesNotConverge(t *testing.T) {
 	}
 	if res.Converged {
 		t.Error("a run that never invoked an executor reported convergence")
+	}
+}
+
+// TestPromptUsesCoversEveryPhaseTheModeRuns keeps preflight's prompt check in
+// step with the phase sequence: a prompt a mode expands but preflight never
+// validates is a mid-run failure waiting to happen.
+func TestPromptUsesCoversEveryPhaseTheModeRuns(t *testing.T) {
+	tests := []struct {
+		mode     Mode
+		finalize bool
+		want     []string
+	}{
+		{ModeFull, false, []string{"review_first", "external_review", "external_eval", "review_final"}},
+		{ModeFull, true, []string{"review_first", "external_review", "external_eval", "review_final", "finalize"}},
+		{ModePhase1Only, true, []string{"review_first"}},
+		{ModeExternalOnly, true, []string{"external_review", "external_eval", "review_final", "finalize"}},
+		{ModeReportOnly, true, []string{"review_first", "external_review", "external_eval", "review_final"}},
+		{"", false, []string{"review_first", "external_review", "external_eval", "review_final"}},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.mode)+fmt.Sprint(tt.finalize), func(t *testing.T) {
+			var names []string
+			for _, use := range PromptUses(tt.mode, tt.finalize) {
+				names = append(names, use.Name)
+				if want := use.Name == phase.PromptExternal; use.External != want {
+					t.Errorf("%s: External = %v, want %v", use.Name, use.External, want)
+				}
+			}
+			if !slices.Equal(names, tt.want) {
+				t.Errorf("PromptUses = %v, want %v", names, tt.want)
+			}
+		})
 	}
 }

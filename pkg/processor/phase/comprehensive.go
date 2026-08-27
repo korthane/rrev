@@ -17,7 +17,7 @@ func Comprehensive(ctx context.Context, e *Env) Result {
 		run: func(ctx context.Context, n, limit int) (stepResult, error) {
 			return e.review(ctx, reviewCall{
 				phase:    NameComprehensive,
-				prompt:   promptComprehensive,
+				prompt:   PromptComprehensive,
 				exec:     e.Primary,
 				model:    executor.PhaseReview,
 				done:     executor.SignalReviewDone,

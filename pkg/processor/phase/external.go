@@ -48,7 +48,7 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 
 	report, err := e.review(ctx, reviewCall{
 		phase:    NameExternal,
-		prompt:   promptExternal,
+		prompt:   PromptExternal,
 		exec:     e.External,
 		model:    executor.PhaseExternal,
 		done:     executor.SignalExternalDone,
@@ -66,7 +66,7 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 	evalVars.ExternalOutput = report.output
 	eval, err := e.review(ctx, reviewCall{
 		phase:    NameExternal,
-		prompt:   promptExternalEval,
+		prompt:   PromptExternalEval,
 		exec:     e.Primary,
 		model:    executor.PhaseExternal,
 		done:     executor.SignalExternalDone,

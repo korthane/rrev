@@ -83,6 +83,9 @@ func prepare(ctx context.Context, opts *options, dir string) (*startup, error) {
 	if err := checkExecutables(cfg, primary, external); err != nil {
 		return nil, err
 	}
+	if err := checkPrompts(cfg, resolved.Assets, opts.Mode, external); err != nil {
+		return nil, err
+	}
 
 	return &startup{
 		Repo: repo, Config: cfg, Assets: resolved.Assets, Review: review,
@@ -147,6 +150,27 @@ func checkExecutables(cfg *config.Config, execs ...executor.Executor) error {
 		if _, err := exec.LookPath(e.Bin()); err != nil {
 			return fmt.Errorf("%s executable %q was not found on PATH (set in %s)",
 				e.Name(), e.Bin(), cfg.Origin(commandKeys[e.Name()]))
+		}
+	}
+	return nil
+}
+
+// checkPrompts expands every prompt the selected mode will use, with the same
+// agent resolution and executor rendering the run will apply. A broken override
+// - an unknown variable, an agent that resolves to no file - is the author's
+// bug, and finding it here costs nothing next to finding it mid-phase.
+func checkPrompts(cfg *config.Config, assets config.Assets, mode processor.Mode, external executor.Executor) error {
+	for _, use := range processor.PromptUses(mode, cfg.Finalize) {
+		renderAs := cfg.Executor
+		if use.External {
+			if external == nil {
+				// The external phase is disabled, so its prompt never expands.
+				continue
+			}
+			renderAs = external.Name()
+		}
+		if _, err := (config.Expander{Assets: assets, Executor: renderAs}).Prompt(use.Name); err != nil {
+			return fmt.Errorf("prompt %q: %w", use.Name, err)
 		}
 	}
 	return nil

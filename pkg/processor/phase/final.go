@@ -20,7 +20,7 @@ func Final(ctx context.Context, e *Env, prior ...Result) Result {
 		run: func(ctx context.Context, n, limit int) (stepResult, error) {
 			return e.review(ctx, reviewCall{
 				phase:    NameFinal,
-				prompt:   promptFinal,
+				prompt:   PromptFinal,
 				exec:     e.Primary,
 				model:    executor.PhaseFinal,
 				done:     executor.SignalReviewDone,
