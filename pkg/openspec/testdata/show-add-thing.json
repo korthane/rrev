@@ -1,0 +1,120 @@
+{
+  "id": "add-thing",
+  "title": "add-thing",
+  "deltaCount": 5,
+  "deltas": [
+    {
+      "spec": "auth",
+      "operation": "ADDED",
+      "description": "Add requirement: The system SHALL let a signed-in user enroll a TOTP authenticator.",
+      "requirement": {
+        "text": "The system SHALL let a signed-in user enroll a TOTP authenticator.",
+        "scenarios": [
+          {
+            "rawText": "- **WHEN** a signed-in user submits a valid TOTP code for a pending secret\n- **THEN** the authenticator is activated"
+          },
+          {
+            "rawText": "- **WHEN** the submitted code does not match the pending secret\n- **THEN** enrollment fails and the secret stays pending"
+          }
+        ]
+      },
+      "requirements": [
+        {
+          "text": "The system SHALL let a signed-in user enroll a TOTP authenticator.",
+          "scenarios": [
+            {
+              "rawText": "- **WHEN** a signed-in user submits a valid TOTP code for a pending secret\n- **THEN** the authenticator is activated"
+            },
+            {
+              "rawText": "- **WHEN** the submitted code does not match the pending secret\n- **THEN** enrollment fails and the secret stays pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "spec": "auth",
+      "operation": "ADDED",
+      "description": "Add requirement: The system SHALL issue single-use recovery codes on enrollment.",
+      "requirement": {
+        "text": "The system SHALL issue single-use recovery codes on enrollment.",
+        "scenarios": [
+          {
+            "rawText": "- **WHEN** enrollment completes\n- **THEN** ten single-use recovery codes are returned once"
+          }
+        ]
+      },
+      "requirements": [
+        {
+          "text": "The system SHALL issue single-use recovery codes on enrollment.",
+          "scenarios": [
+            {
+              "rawText": "- **WHEN** enrollment completes\n- **THEN** ten single-use recovery codes are returned once"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "spec": "auth",
+      "operation": "MODIFIED",
+      "description": "Modify requirement: The system SHALL require a second factor when the account has an active authenticator.",
+      "requirement": {
+        "text": "The system SHALL require a second factor when the account has an active authenticator.",
+        "scenarios": [
+          {
+            "rawText": "- **WHEN** a user with an active authenticator submits a correct password\n- **THEN** the system asks for a TOTP code before issuing a session"
+          }
+        ]
+      },
+      "requirements": [
+        {
+          "text": "The system SHALL require a second factor when the account has an active authenticator.",
+          "scenarios": [
+            {
+              "rawText": "- **WHEN** a user with an active authenticator submits a correct password\n- **THEN** the system asks for a TOTP code before issuing a session"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "spec": "auth",
+      "operation": "REMOVED",
+      "description": "Remove requirement: **Reason**: SMS delivery is not trustworthy enough for a second factor.",
+      "requirement": {
+        "text": "**Reason**: SMS delivery is not trustworthy enough for a second factor.",
+        "scenarios": []
+      },
+      "requirements": [
+        {
+          "text": "**Reason**: SMS delivery is not trustworthy enough for a second factor.",
+          "scenarios": []
+        }
+      ]
+    },
+    {
+      "spec": "billing/invoices",
+      "operation": "ADDED",
+      "description": "Add requirement: The system SHALL number invoices sequentially per billing account.",
+      "requirement": {
+        "text": "The system SHALL number invoices sequentially per billing account.",
+        "scenarios": [
+          {
+            "rawText": "- **WHEN** a second invoice is issued for the same account\n- **THEN** its number is one greater than the previous invoice's"
+          }
+        ]
+      },
+      "requirements": [
+        {
+          "text": "The system SHALL number invoices sequentially per billing account.",
+          "scenarios": [
+            {
+              "rawText": "- **WHEN** a second invoice is issued for the same account\n- **THEN** its number is one greater than the previous invoice's"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

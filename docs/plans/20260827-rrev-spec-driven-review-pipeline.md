@@ -309,15 +309,15 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 3: OpenSpec change context
 
-- [ ] implement change discovery through the openspec CLI, excluding archived changes from auto-detection
-- [ ] implement the filesystem fallback enumerating the changes directory when the CLI is absent, noting the degraded mode in output
-- [ ] implement artifact loading for proposal, design, delta specs, and tasks, degrading gracefully on a missing optional artifact and failing with the filename on an unreadable one
-- [ ] implement the delta-spec markdown parser producing requirements with capability path, delta operation, name, and scenarios
-- [ ] implement requirement extraction through the openspec CLI JSON output as the preferred path
-- [ ] implement goal derivation from the proposal with a fallback to the change name
-- [ ] assemble the immutable review context resolved once per run, carrying change name, goal, artifact paths, and the requirement checklist
-- [ ] write tests for new functionality, including a cross-check asserting the CLI and parser paths extract identical requirement and scenario counts for the same fixture
-- [ ] run project tests - must pass before next task
+- [x] implement change discovery through the openspec CLI, excluding archived changes from auto-detection
+- [x] implement the filesystem fallback enumerating the changes directory when the CLI is absent, noting the degraded mode in output
+- [x] implement artifact loading for proposal, design, delta specs, and tasks, degrading gracefully on a missing optional artifact and failing with the filename on an unreadable one
+- [x] implement the delta-spec markdown parser producing requirements with capability path, delta operation, name, and scenarios
+- [x] implement requirement extraction through the openspec CLI JSON output as the preferred path
+- [x] implement goal derivation from the proposal with a fallback to the change name
+- [x] assemble the immutable review context resolved once per run, carrying change name, goal, artifact paths, and the requirement checklist
+- [x] write tests for new functionality, including a cross-check asserting the CLI and parser paths extract identical requirement and scenario counts for the same fixture
+- [x] run project tests - must pass before next task
 
 ### Task 4: Configuration resolution and defaults
 
