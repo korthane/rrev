@@ -18,20 +18,23 @@ func embeddedAgents(t *testing.T) Assets {
 // fullVars exercises every variable an agent definition may reference.
 func fullVars() Vars {
 	return Vars{
-		Change:          "add-user-auth",
-		Goal:            "let users sign in",
-		GoalLine:        "add-user-auth: let users sign in",
-		BaseRef:         "main",
-		DiffInstruction: "git diff main...HEAD",
-		ProgressLog:     ".rrev/progress/add-user-auth.txt",
-		OpenSpecDir:     "openspec",
-		ChangeDir:       "openspec/changes/add-user-auth",
-		Proposal:        "openspec/changes/add-user-auth/proposal.md",
-		Design:          "openspec/changes/add-user-auth/design.md",
-		Tasks:           "openspec/changes/add-user-auth/tasks.md",
-		Specs:           []string{"openspec/changes/add-user-auth/specs/auth/spec.md"},
-		Requirements:    []string{"1. [ADDED] auth: Sign in\n   - Valid password: WHEN ... THEN ...\n"},
-		MaxIterations:   10,
+		Change:            "add-user-auth",
+		Goal:              "let users sign in",
+		GoalLine:          "add-user-auth: let users sign in",
+		BaseRef:           "main",
+		DiffInstruction:   "git diff main...HEAD",
+		ProgressLog:       ".rrev/progress/add-user-auth.txt",
+		ReportFile:        ".rrev/findings.md",
+		ValidationCommand: "make test",
+		OpenSpecDir:       "openspec",
+		ChangeDir:         "openspec/changes/add-user-auth",
+		Proposal:          "openspec/changes/add-user-auth/proposal.md",
+		Design:            "openspec/changes/add-user-auth/design.md",
+		Tasks:             "openspec/changes/add-user-auth/tasks.md",
+		Specs:             []string{"openspec/changes/add-user-auth/specs/auth/spec.md"},
+		Requirements:      []string{"1. [ADDED] auth: Sign in\n   - Valid password: WHEN ... THEN ...\n"},
+		Iteration:         1,
+		MaxIterations:     10,
 	}
 }
 

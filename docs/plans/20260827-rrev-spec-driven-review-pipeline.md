@@ -378,14 +378,14 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 10: Phase prompts
 
-- [ ] write the comprehensive review prompt launching all phase-one agents in one message, then deduplicating, verifying against real code, fixing, validating, and committing
-- [ ] write the external review prompt carrying the requirement checklist, the progress log instruction, and prior-round findings with their dispositions
-- [ ] write the external findings evaluation prompt that verifies each reported finding before fixing and records rejections with reasons
-- [ ] write the final review prompt restricted to critical and major issues, using the quality, implementation, and conformance agents only
-- [ ] write the default finalize prompt, inert when finalize is disabled
-- [ ] state the signal contract in every prompt, spelling out that absence of a signal means iterate again
-- [ ] write tests asserting every embedded prompt expands with no unknown variables for both executors and that each contains the signal contract
-- [ ] run project tests - must pass before next task
+- [x] write the comprehensive review prompt launching all phase-one agents in one message, then deduplicating, verifying against real code, fixing, validating, and committing
+- [x] write the external review prompt carrying the requirement checklist, the progress log instruction, and prior-round findings with their dispositions
+- [x] write the external findings evaluation prompt that verifies each reported finding before fixing and records rejections with reasons
+- [x] write the final review prompt restricted to critical and major issues, using the quality, implementation, and conformance agents only
+- [x] write the default finalize prompt, inert when finalize is disabled
+- [x] state the signal contract in every prompt, spelling out that absence of a signal means iterate again
+- [x] write tests asserting every embedded prompt expands with no unknown variables for both executors and that each contains the signal contract
+- [x] run project tests - must pass before next task
 
 ### Task 11: Review phases
 

@@ -1,1 +1,80 @@
-Placeholder for the review_final prompt. The prompt text is written in a later task.
+[Adapted from ralphex (https://github.com/umputun/ralphex) by Umputun, MIT licensed.]
+
+Final regression review of: {{GOAL_LINE}}
+
+Earlier phases fixed and committed code on this branch. This pass exists to catch
+what those fixes broke. It is deliberately narrow: critical and major issues only.
+
+Iteration {{ITERATION}} of at most {{MAX_ITERATIONS}} for this phase.
+
+Change directory: {{CHANGE_DIR}}
+Progress log: {{PROGRESS_LOG}}
+
+{{MODE_RULES}}
+
+## Step 1: Read the context
+
+Read the progress log at {{PROGRESS_LOG}} first: it lists what earlier phases
+changed and which findings were already rejected and why. Do not re-report those
+unless you can say why the recorded reason is wrong.
+
+Then get the branch context:
+- `git log {{BASE_REF}}..HEAD --oneline` - the commits under review
+- {{DIFF_INSTRUCTION}} - the code under review
+
+## Step 2: Launch the reviewer agents
+
+{{AGENTS: quality, implementation, conformance}}
+
+Do not proceed to step 3 until every agent has returned its report.
+
+Do not embed code or diffs in the agent prompts. Each definition tells its agent
+how to obtain the diff itself.
+
+## Step 3: Verify and act, critical and major only
+
+Discard every minor finding without fixing it. Style, naming, phrasing, and
+missing polish do not belong to this phase and must not stop it converging.
+
+For each remaining finding:
+1. Open the cited location and read the surrounding context.
+2. Confirm the issue is real, and confirm it is genuinely critical or major - a
+   correctness, security, data-integrity, or unimplemented-requirement problem.
+3. Fix what you confirmed, then validate and commit:
+   - Run the validation command: {{VALIDATION_COMMAND}}
+     If that reads "(not configured)", run the project's own test and lint
+     commands as its CLAUDE.md, README, or Makefile define them.
+   - All tests must pass and all lint issues must be resolved before you commit.
+   - Commit with: `git commit -m "fix: address final review findings"`
+
+Reject nothing for being pre-existing. A defect the branch touches is in scope
+whether this branch introduced it or not.
+
+## Step 4: Report
+
+One line per verified finding:
+
+FINDING: <critical|major> | <file>:<line> | <agent> | <requirement or -> | <summary>
+
+One line per rejection:
+
+REJECTED: <file>:<line> | <agent> | <why it is not a real finding, or "minor">
+
+## Signal contract
+
+A signal is a marker rrev reads back from your output. It counts only when it is
+alone on its own line and outside any code fence, so quoting one inside a fenced
+block does nothing.
+
+- <<<RREV:REVIEW_DONE>>> - emit only when this iteration confirmed no critical or
+  major issues and you changed nothing. Unfixed minor findings do not stop you
+  emitting it.
+- <<<RREV:TASK_FAILED>>> - emit when you cannot proceed at all. The run stops and
+  reports this phase.
+
+Emitting no marker is not success. rrev reads a missing marker as "work was done,
+iterate again" and runs this phase again, up to {{MAX_ITERATIONS}} iterations. So
+when you fixed and committed something, emit nothing: the next iteration has to
+check whether that fix regressed anything in turn.
+
+OUTPUT FORMAT: no markdown formatting. Plain text and - lists are fine.

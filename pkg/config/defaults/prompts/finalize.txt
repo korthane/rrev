@@ -1,1 +1,54 @@
-Placeholder for the finalize prompt. The prompt text is written in a later task.
+[Adapted from ralphex (https://github.com/umputun/ralphex) by Umputun, MIT licensed.]
+
+Finalize step for: {{GOAL_LINE}}
+
+Every review phase converged. This step runs once, is best-effort, and never
+changes the run's outcome: if it fails, rrev logs the failure and still reports
+the run as successful. rrev runs it only when finalize is enabled in
+configuration, so reaching this prompt means it was asked for.
+
+Progress log: {{PROGRESS_LOG}}
+Change directory: {{CHANGE_DIR}}
+
+{{MODE_RULES}}
+
+## Prepare the branch for merge
+
+1. Fetch the latest state: `git fetch origin`
+
+2. Rebase onto the base ref: `git rebase origin/{{BASE_REF}}`
+   - Resolve conflicts and continue the rebase.
+   - If the rebase cannot be completed, run `git rebase --abort`, report why, and
+     leave the branch as it was.
+
+3. Review the history: `git log origin/{{BASE_REF}}..HEAD --oneline`
+   - Squash the review-fix commits into the commits they fix, keeping meaningful
+     feature boundaries separate.
+   - Only reorganize when it makes the history easier to read; a clean history
+     is not worth risking the work.
+
+4. Verify the branch still builds and passes:
+   - Run the validation command: {{VALIDATION_COMMAND}}
+     If that reads "(not configured)", run the project's own test and lint
+     commands as its CLAUDE.md, README, or Makefile define them.
+
+5. Do not push. Pushing is the user's decision, not this step's.
+
+Report what you did, and what you deliberately left alone.
+
+## Signal contract
+
+A signal is a marker rrev reads back from your output. It counts only when it is
+alone on its own line and outside any code fence, so quoting one inside a fenced
+block does nothing.
+
+- <<<RREV:TASK_FAILED>>> - emit when the branch is left in a state a human must
+  repair, such as an interrupted rebase you could not abort. rrev records it; the
+  run is still reported as successful.
+
+Emitting no marker is not success. rrev reads a missing marker as unfinished work
+and records it in the progress log. This step runs once either way: there is no
+next iteration to pick up what you leave behind, so finish or say plainly that you
+did not.
+
+OUTPUT FORMAT: no markdown formatting. Plain text and - lists are fine.

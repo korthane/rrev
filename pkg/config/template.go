@@ -27,6 +27,10 @@ const (
 	emptyList      = "(none)"
 	emptyValue     = "(not configured)"
 	noRequirements = "(no requirements extracted)"
+
+	defaultModeRules = "Run mode: normal. Edit files, run the validation command, and commit, as the steps below describe."
+	noPriorFindings  = "(first round of this loop: nothing has been reported or dispositioned yet)"
+	noExternalOutput = "(the external review tool produced no output)"
 )
 
 // TemplateError reports a prompt or agent file rrev refused to expand. The file
@@ -57,6 +61,19 @@ type Vars struct {
 	ProgressLog       string
 	ReportFile        string
 	ValidationCommand string
+
+	// ModeRules is the run-mode paragraph every prompt expands near its top.
+	// Report-only mode replaces the default with its no-mutation rules there,
+	// rather than each phase rewriting the prompt body.
+	ModeRules string
+
+	// PriorFindings is the external loop's round-to-round memory: earlier
+	// findings and how they were dispositioned, so the external tool does not
+	// re-report what was rejected with a reason.
+	PriorFindings string
+	// ExternalOutput is the external tool's raw report, evaluated by the
+	// primary executor.
+	ExternalOutput string
 
 	OpenSpecDir string
 	ChangeDir   string
@@ -221,6 +238,9 @@ func (v Vars) values() map[string]string {
 		"PROGRESS_LOG":       orElse(v.ProgressLog, emptyValue),
 		"REPORT_FILE":        orElse(v.ReportFile, emptyValue),
 		"VALIDATION_COMMAND": orElse(v.ValidationCommand, emptyValue),
+		"MODE_RULES":         orElse(v.ModeRules, defaultModeRules),
+		"PRIOR_FINDINGS":     orElse(v.PriorFindings, noPriorFindings),
+		"EXTERNAL_OUTPUT":    orElse(v.ExternalOutput, noExternalOutput),
 		"OPENSPEC_DIR":       orElse(v.OpenSpecDir, missingPath),
 		"CHANGE_DIR":         orElse(v.ChangeDir, missingPath),
 		"PROPOSAL":           orElse(v.Proposal, missingPath),

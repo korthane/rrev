@@ -73,6 +73,10 @@ type watchdog struct {
 	stream io.Writer
 	touch  chan struct{}
 	done   chan struct{}
+	// finished closes when watch returns, so stop can wait for it: a watchdog
+	// still writing its note after the call returned would race the caller
+	// reading the stream it wrote to.
+	finished chan struct{}
 
 	mu      sync.Mutex
 	expired expiry
@@ -81,7 +85,8 @@ type watchdog struct {
 func newWatchdog(limits Limits, stream io.Writer) *watchdog {
 	return &watchdog{
 		limits: limits, stream: stream,
-		touch: make(chan struct{}, 1), done: make(chan struct{}), expired: expiryNone,
+		touch: make(chan struct{}, 1), done: make(chan struct{}), finished: make(chan struct{}),
+		expired: expiryNone,
 	}
 }
 
@@ -96,6 +101,7 @@ func (w *watchdog) touched() {
 
 // watch runs until stop is called, cancelling the call on an expired bound.
 func (w *watchdog) watch(cancel context.CancelFunc) {
+	defer close(w.finished)
 	start := time.Now()
 	session, idle, progress := newPulse(w.limits.Session), newPulse(w.limits.Idle), newPulse(w.limits.Progress)
 	defer func() {
@@ -124,8 +130,11 @@ func (w *watchdog) watch(cancel context.CancelFunc) {
 	}
 }
 
-// stop ends the watch once the call has finished.
-func (w *watchdog) stop() { close(w.done) }
+// stop ends the watch once the call has finished and waits for it to return.
+func (w *watchdog) stop() {
+	close(w.done)
+	<-w.finished
+}
 
 // timeout reports the bound that expired, if any.
 func (w *watchdog) timeout(tool string) error {
