@@ -284,3 +284,29 @@ func TestExternalFailedRoundReportsNoUnverifiedFindings(t *testing.T) {
 		t.Errorf("findings = %+v, want none: the primary executor never evaluated them", res.Findings)
 	}
 }
+
+// TestExternalEvaluationUsesTheReviewModel guards the model each side of the
+// loop runs with: external_model names a model of the external tool, so passing
+// it to the primary executor's evaluation would fail the call outright.
+func TestExternalEvaluationUsesTheReviewModel(t *testing.T) {
+	external := mock("codex", "FINDING: major | pkg/a.go:10 | external | - | the mode flags are not exclusive", externalDone)
+	primary := mock("claude", "FINDING: major | pkg/a.go:10 | external | - | fixed the missing exclusion")
+	env, repo := newEnv(t, primary, external, func(c *config.Config) {
+		c.ReviewModel = "opus"
+		c.ExternalModel = "gpt-5-codex"
+	})
+	primary.Handler = changingHandler(primary, repo)
+
+	External(context.Background(), env)
+
+	calls := primary.Calls()
+	if len(calls) == 0 {
+		t.Fatal("the primary executor never evaluated the external findings")
+	}
+	if calls[0].Model != "opus" {
+		t.Errorf("evaluation model = %q, want %q: the external tool's model must not reach the primary executor", calls[0].Model, "opus")
+	}
+	if got := external.Calls()[0].Model; got != "gpt-5-codex" {
+		t.Errorf("external review model = %q, want %q", got, "gpt-5-codex")
+	}
+}

@@ -64,11 +64,14 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 
 	evalVars := vars
 	evalVars.ExternalOutput = report.output
+	// The evaluation runs under the primary executor, so it resolves the review
+	// phase's model: external_model names a model of the external tool, which
+	// the primary executor would reject as unknown.
 	eval, err := e.review(ctx, reviewCall{
 		phase:    NameExternal,
 		prompt:   PromptExternalEval,
 		exec:     e.Primary,
-		model:    executor.PhaseExternal,
+		model:    executor.PhaseReview,
 		done:     executor.SignalExternalDone,
 		vars:     evalVars,
 		renderAs: e.Config.Executor,

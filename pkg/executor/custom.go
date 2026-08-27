@@ -45,7 +45,7 @@ func (c Custom) Run(ctx context.Context, req Request) (Result, error) {
 	out := newSyncWriter(req.Stream)
 	cmd := command{tool: c.Name(), bin: fields[0], args: fields[1:], dir: req.Dir, prompt: req.Prompt, limits: c.Limits, debug: c.Debug}
 	col := &collector{stream: out}
-	err := cmd.run(ctx, out, func(line string) error { col.line(line); return nil })
+	err := cmd.run(ctx, col, func(line string) error { col.line(line); return nil })
 	result := col.result()
 	return result, classify(c.Name(), result, err)
 }

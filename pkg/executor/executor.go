@@ -77,6 +77,9 @@ func (e *Error) Unwrap() error { return e.Err }
 type collector struct {
 	stream io.Writer
 	text   strings.Builder
+	// touch reports rendered output to the watchdog, which is set while a
+	// command runs; nothing else renders, so it is nil until then.
+	touch func()
 }
 
 func (c *collector) say(text string) {
@@ -109,6 +112,9 @@ func (c *collector) final(text string) {
 func (c *collector) render(line string) {
 	if c.stream == nil {
 		return
+	}
+	if c.touch != nil {
+		c.touch()
 	}
 	// A terminal that cannot be written to is not worth failing the review for.
 	_, _ = fmt.Fprintln(c.stream, line)

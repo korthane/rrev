@@ -198,3 +198,44 @@ func TestContextIsResolvedOnce(t *testing.T) {
 			len(rc.Requirements), len(rc.Artifacts.Specs), requirements, specs)
 	}
 }
+
+// TestArtifactEditedMidRunIsNotPickedUp covers the mid-run edit for real: the
+// context resolves once, so rewriting an artifact on disk afterwards moves
+// neither the checklist, nor the goal, nor the captured text a phase is handed.
+func TestArtifactEditedMidRunIsNotPickedUp(t *testing.T) {
+	root := openspec.Root{Dir: t.TempDir()}
+	proposal := "## Why\n\nUsers need a second factor.\n"
+	spec := "## ADDED Requirements\n\n### Requirement: TOTP enrollment\n" +
+		"The system SHALL let a user enroll an authenticator.\n\n" +
+		"#### Scenario: Enrollment succeeds\n- **WHEN** a valid code is submitted\n- **THEN** it is activated\n"
+	change := writeChange(t, root, "add-thing", map[string]string{
+		"proposal.md":        proposal,
+		"tasks.md":           "- [ ] 1.1 Do it\n",
+		"specs/auth/spec.md": spec,
+	})
+
+	rc, err := openspec.Resolve(openspec.CLI{Disabled: true}, root, change, openspec.Discovery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checklist := strings.Join(openspec.ChecklistEntries(rc.Requirements), "")
+
+	// The fix step of a review edits the change's own files, so this is the run
+	// the scenario describes rather than a hypothetical one.
+	writeChange(t, root, "add-thing", map[string]string{
+		"proposal.md": "## Why\n\nSomething else entirely.\n",
+		"specs/auth/spec.md": spec + "\n### Requirement: Recovery codes\n" +
+			"The system SHALL issue recovery codes.\n\n" +
+			"#### Scenario: Codes issued\n- **WHEN** enrollment completes\n- **THEN** codes are returned\n",
+	})
+
+	if got := strings.Join(openspec.ChecklistEntries(rc.Requirements), ""); got != checklist {
+		t.Errorf("checklist changed after a mid-run edit:\n%s\nwant:\n%s", got, checklist)
+	}
+	if !strings.Contains(rc.Goal, "second factor") {
+		t.Errorf("goal = %q, want the one derived at startup", rc.Goal)
+	}
+	if rc.Artifacts.Proposal.Content != proposal {
+		t.Errorf("proposal content = %q, want the text captured at startup", rc.Artifacts.Proposal.Content)
+	}
+}

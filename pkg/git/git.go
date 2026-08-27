@@ -102,28 +102,51 @@ func (r *Repo) DefaultBranch(ctx context.Context) (string, error) {
 }
 
 // pickBase chooses between a default branch and its remote-tracking counterpart,
-// reporting false when neither resolves. A local branch left behind its remote
-// keeps commits the branch under review already contains out of its merge base,
-// so the three-dot diff would present upstream work as part of the review; the
-// remote-tracking ref wins in that case, and the friendlier local name otherwise.
+// reporting false when neither resolves. The two can disagree - a local branch
+// left behind by a fetch, or diverged from its remote - and the wrong choice
+// puts commits the branch under review already contains outside the merge base,
+// so the three-dot diff would present them as part of the review. Whichever ref
+// forks from HEAD later is therefore the base, with the friendlier local name
+// winning when they fork at the same commit.
 func (r *Repo) pickBase(ctx context.Context, local, remote string) (string, bool) {
 	switch {
 	case !r.RefExists(ctx, local):
 		return remote, r.RefExists(ctx, remote)
-	case r.RefExists(ctx, remote) && r.strictlyBehind(ctx, local, remote):
+	case r.RefExists(ctx, remote) && r.forksLater(ctx, remote, local):
 		return remote, true
 	default:
 		return local, true
 	}
 }
 
-// strictlyBehind reports whether ref is an ancestor of other and not the same commit.
-func (r *Repo) strictlyBehind(ctx context.Context, ref, other string) bool {
-	if _, err := r.git(ctx, "merge-base", "--is-ancestor", ref, other); err != nil {
+// forksLater reports whether ref shares more history with HEAD than other does,
+// which is exactly when diffing against ref excludes commits that diffing
+// against other would wrongly include.
+func (r *Repo) forksLater(ctx context.Context, ref, other string) bool {
+	base, ok := r.mergeBase(ctx, ref, "HEAD")
+	against, okOther := r.mergeBase(ctx, other, "HEAD")
+	if !ok || !okOther {
+		// A ref with no common history cannot serve as a three-dot base at all,
+		// so the one that still shares history with HEAD wins outright.
+		return ok
+	}
+	if base == against {
 		return false
 	}
+	return r.contains(ctx, base, against)
+}
+
+// mergeBase returns the best common ancestor of two refs, reporting false when
+// they share no history or either ref does not resolve.
+func (r *Repo) mergeBase(ctx context.Context, ref, other string) (string, bool) {
+	hash, err := r.git(ctx, "merge-base", ref, other)
+	return hash, err == nil && hash != ""
+}
+
+// contains reports whether ref already holds every commit of other.
+func (r *Repo) contains(ctx context.Context, ref, other string) bool {
 	_, err := r.git(ctx, "merge-base", "--is-ancestor", other, ref)
-	return err != nil
+	return err == nil
 }
 
 // RefExists reports whether ref resolves to a commit in this repository.

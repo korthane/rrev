@@ -81,4 +81,4 @@ The review context SHALL be resolved once per run and reused by every phase and 
 
 #### Scenario: Artifacts changed mid-run
 - **WHEN** an artifact file is edited on disk while the pipeline is running
-- **THEN** the run continues with the context captured at startup, and the change is not silently picked up mid-pipeline
+- **THEN** rrev does not re-resolve the context, and every later phase is still handed the change name, goal, artifact paths, and requirement checklist captured at startup

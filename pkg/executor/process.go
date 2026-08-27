@@ -34,23 +34,40 @@ type command struct {
 // run starts the command and calls onLine for every stdout line as it arrives,
 // so a phase reports progress rather than an unexplained pause. An error from
 // onLine is remembered but does not stop the scan: the tool keeps running and
-// its remaining output stays worth capturing.
-func (c command) run(ctx context.Context, stream io.Writer, onLine func(string) error) error {
+// its remaining output stays worth capturing. The collector is passed in whole
+// so the watchdog learns which output actually reached the terminal.
+func (c command) run(ctx context.Context, col *collector, onLine func(string) error) error {
+	stream := col.stream
 	if c.debug && stream != nil {
 		_, _ = fmt.Fprintf(stream, "· exec: %s %s\n· prompt:\n%s\n", c.bin, strings.Join(c.args, " "), c.prompt)
 	}
 
 	// The tool is started outside the caller's context so cancellation goes
-	// through killGroup, which reaches the sub-agents exec would leave running.
+	// through the process group, which reaches the sub-agents exec would leave
+	// running.
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	guard := newWatchdog(c.limits, stream)
+	// Only what the collector renders is a sign of life the user can see, so
+	// that is what holds off the progress note.
+	col.touch = guard.touched
 
 	cmd := exec.Command(c.bin, c.args...)
 	cmd.Dir = c.dir
 	cmd.Stdin = strings.NewReader(c.prompt)
 	stderr := &tailWriter{limit: stderrTailBytes}
-	cmd.Stderr = stderr
-	setProcessGroup(cmd)
+	// Diagnostics on stderr are kept back for a failure report, so a tool
+	// reporting its progress there only proves it is alive: enough to hold off
+	// the idle bound, not enough to stand in for the progress note.
+	cmd.Stderr = &activityWriter{to: stderr, touch: guard.stirred}
+	group, err := newProcessGroup(cmd)
+	if err != nil {
+		// Without a process group a cancelled run would orphan the tool's
+		// sub-agents, so the phase fails before anything is started.
+		return c.fail(stderr, err)
+	}
+	defer group.close()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return c.fail(stderr, err)
@@ -58,16 +75,24 @@ func (c command) run(ctx context.Context, stream io.Writer, onLine func(string) 
 	if err := cmd.Start(); err != nil {
 		return c.fail(stderr, err)
 	}
+	if err := group.started(); err != nil {
+		// The tool is running but not under our control, so it is stopped here
+		// rather than left to finish a review nothing can cancel.
+		group.kill()
+		_ = cmd.Wait()
+		return c.fail(stderr, err)
+	}
 
-	guard := newWatchdog(c.limits, stream)
 	go guard.watch(cancel)
-	stopKill := killOnCancel(runCtx, cmd)
+	stopKill := killOnCancel(runCtx, group)
 
 	var lineErr error
-	scanner := bufio.NewScanner(stdout)
+	// Raw bytes arriving prove the tool is alive, not that it said anything:
+	// a long line still in the scanner, or an event rrev does not render, puts
+	// nothing on the terminal, so it holds off the idle bound only.
+	scanner := bufio.NewScanner(&activityReader{from: stdout, touch: guard.stirred})
 	scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), maxLineBytes)
 	for scanner.Scan() {
-		guard.touched()
 		if err := onLine(scanner.Text()); err != nil && lineErr == nil {
 			lineErr = err
 		}
@@ -103,17 +128,22 @@ func (c command) run(ctx context.Context, stream io.Writer, onLine func(string) 
 
 // killOnCancel terminates the tool's whole process group when ctx is cancelled,
 // so a cancelled review leaves no sub-agent behind. The returned function ends
-// the watch once the tool has exited.
-func killOnCancel(ctx context.Context, cmd *exec.Cmd) func() {
-	done := make(chan struct{})
+// the watch once the tool has exited, and waits for a kill already in flight:
+// releasing the group while it is being terminated would race on its handles.
+func killOnCancel(ctx context.Context, group *processGroup) func() {
+	done, stopped := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer close(stopped)
 		select {
 		case <-ctx.Done():
-			killGroup(cmd)
+			group.kill()
 		case <-done:
 		}
 	}()
-	return func() { close(done) }
+	return func() {
+		close(done)
+		<-stopped
+	}
 }
 
 func (c command) fail(stderr *tailWriter, err error) error {
@@ -122,6 +152,31 @@ func (c command) fail(stderr *tailWriter, err error) error {
 		failure.ExitCode = exitErr.ExitCode()
 	}
 	return failure
+}
+
+// activityWriter reports every write to the watchdog before passing it on.
+type activityWriter struct {
+	to    io.Writer
+	touch func()
+}
+
+func (w *activityWriter) Write(p []byte) (int, error) {
+	w.touch()
+	return w.to.Write(p)
+}
+
+// activityReader reports every non-empty read to the watchdog.
+type activityReader struct {
+	from  io.Reader
+	touch func()
+}
+
+func (r *activityReader) Read(p []byte) (int, error) {
+	n, err := r.from.Read(p)
+	if n > 0 {
+		r.touch()
+	}
+	return n, err
 }
 
 // tailWriter keeps only the last limit bytes written to it.

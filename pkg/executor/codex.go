@@ -52,7 +52,7 @@ func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
 
 	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, limits: c.Limits, debug: c.Debug}
 	col := &collector{stream: out}
-	err := cmd.run(ctx, out, func(line string) error { codexLine(col, line); return nil })
+	err := cmd.run(ctx, col, func(line string) error { codexLine(col, line); return nil })
 	result := col.result()
 	return result, classify(c.Name(), result, err)
 }

@@ -148,7 +148,7 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/spec-context/spec.md`
 **Requirement: Context reuse across phases.** The review context SHALL be resolved once per run and reused by every phase and every executor call, so that a reviewer, the external tool, and the fixing executor all evaluate the diff against identical criteria.
 
 - Same context in every phase: WHEN the pipeline runs the comprehensive phase, the external loop, and the final phase, THEN each receives the same change name, goal, artifact paths, and requirement checklist.
-- Artifacts changed mid-run: WHEN an artifact file is edited on disk while the pipeline is running, THEN the run continues with the context captured at startup, and the change is not silently picked up mid-pipeline.
+- Artifacts changed mid-run: WHEN an artifact file is edited on disk while the pipeline is running, THEN rrev does not re-resolve the context, and every later phase is still handed the change name, goal, artifact paths, and requirement checklist captured at startup.
 
 ### Capability: agent-execution
 

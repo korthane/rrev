@@ -49,7 +49,7 @@ func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
 
 	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, limits: c.Limits, debug: c.Debug}
 	col := &collector{stream: out}
-	err := cmd.run(ctx, out, func(line string) error { return claudeLine(col, line) })
+	err := cmd.run(ctx, col, func(line string) error { return claudeLine(col, line) })
 	result := col.result()
 	if reported, ok := errors.AsType[*claudeResultError](err); ok {
 		err = &Error{Tool: c.Name(), Args: args, ExitCode: -1, Stderr: reported.msg, Err: err}

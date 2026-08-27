@@ -72,7 +72,11 @@ type watchdog struct {
 	limits Limits
 	stream io.Writer
 	touch  chan struct{}
-	done   chan struct{}
+	// quiet carries activity the user cannot see, such as stderr kept back for
+	// diagnostics. It proves the tool is alive, but must not silence the
+	// progress note, which is then the only sign of life on the terminal.
+	quiet chan struct{}
+	done  chan struct{}
 	// finished closes when watch returns, so stop can wait for it: a watchdog
 	// still writing its note after the call returned would race the caller
 	// reading the stream it wrote to.
@@ -85,16 +89,25 @@ type watchdog struct {
 func newWatchdog(limits Limits, stream io.Writer) *watchdog {
 	return &watchdog{
 		limits: limits, stream: stream,
-		touch: make(chan struct{}, 1), done: make(chan struct{}), finished: make(chan struct{}),
+		touch: make(chan struct{}, 1), quiet: make(chan struct{}, 1),
+		done: make(chan struct{}), finished: make(chan struct{}),
 		expired: expiryNone,
 	}
 }
 
-// touched records output arriving, which restarts the idle countdown. A
-// dropped signal is harmless: the timer was already about to be reset.
-func (w *watchdog) touched() {
+// touched records visible output arriving, which restarts the idle countdown
+// and the progress note the output itself makes redundant.
+func (w *watchdog) touched() { poke(w.touch) }
+
+// stirred records activity that stays off the terminal: it restarts the idle
+// countdown only, so the user still gets the periodic note.
+func (w *watchdog) stirred() { poke(w.quiet) }
+
+// poke is non-blocking: a dropped notification is harmless, since the timer it
+// would reset was already about to be reset.
+func poke(ch chan struct{}) {
 	select {
-	case w.touch <- struct{}{}:
+	case ch <- struct{}{}:
 	default:
 	}
 }
@@ -117,6 +130,8 @@ func (w *watchdog) watch(cancel context.CancelFunc) {
 		case <-w.touch:
 			idle.reset()
 			progress.reset()
+		case <-w.quiet:
+			idle.reset()
 		case <-session.C():
 			w.expire(expirySession, cancel)
 			return

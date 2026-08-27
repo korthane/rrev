@@ -136,3 +136,72 @@ func TestCancellationReturnsCapturedOutput(t *testing.T) {
 		t.Errorf("output captured before cancellation was lost: %q", result.Output)
 	}
 }
+
+// TestIdleTimeoutResetsOnStderr covers a tool that reports its progress on
+// stderr: it is working, so the idle bound must not cut it short.
+func TestIdleTimeoutResetsOnStderr(t *testing.T) {
+	tool := newScript(t, "echo starting\ni=0\nwhile [ $i -lt 6 ]; do echo working >&2; sleep 0.1; i=$((i+1)); done\n")
+	custom := executor.Custom{Command: tool, Limits: executor.Limits{Idle: 400 * time.Millisecond}}
+
+	result, err := custom.Run(t.Context(), executor.Request{Prompt: "p"})
+	if err != nil {
+		t.Fatalf("a tool reporting progress on stderr was cut short: %v", err)
+	}
+	if !strings.Contains(result.Output, "starting") {
+		t.Errorf("output = %q, want the tool to have run to completion", result.Output)
+	}
+}
+
+// TestProgressIndicationWhileOnlyStderrSpeaks covers the same tool from the
+// user's side: stderr never reaches the terminal, so the progress note is the
+// only sign of life and must keep firing.
+func TestProgressIndicationWhileOnlyStderrSpeaks(t *testing.T) {
+	// stderr arrives far more often than the progress interval, so a note only
+	// appears if stderr stopped resetting that interval.
+	tool := newScript(t, "i=0\nwhile [ $i -lt 20 ]; do echo diagnostics >&2; sleep 0.05; i=$((i+1)); done\necho done\n")
+	var stream strings.Builder
+	custom := executor.Custom{Command: tool, Limits: executor.Limits{Progress: 250 * time.Millisecond}}
+
+	if _, err := custom.Run(t.Context(), executor.Request{Prompt: "p", Stream: &stream}); err != nil {
+		t.Fatalf("run custom: %v", err)
+	}
+
+	if strings.Contains(stream.String(), "diagnostics") {
+		t.Errorf("stderr leaked into the attributed stream:\n%s", stream.String())
+	}
+	if !strings.Contains(stream.String(), "still working") {
+		t.Errorf("a stderr-only stretch produced no progress indication:\n%s", stream.String())
+	}
+}
+
+// TestProgressIndicationWhilePartialLine covers a tool writing a long line: the
+// bytes prove it is alive, but nothing is rendered until the line ends, so the
+// progress note is again the only sign of life.
+func TestProgressIndicationWhilePartialLine(t *testing.T) {
+	tool := newScript(t, "i=0\nwhile [ $i -lt 20 ]; do printf x; sleep 0.05; i=$((i+1)); done\necho\n")
+	var stream strings.Builder
+	custom := executor.Custom{Command: tool, Limits: executor.Limits{Progress: 250 * time.Millisecond}}
+
+	if _, err := custom.Run(t.Context(), executor.Request{Prompt: "p", Stream: &stream}); err != nil {
+		t.Fatalf("run custom: %v", err)
+	}
+
+	if !strings.Contains(stream.String(), "still working") {
+		t.Errorf("an unfinished line produced no progress indication:\n%s", stream.String())
+	}
+}
+
+// TestIdleTimeoutResetsOnPartialLine is the other side of the same tool: bytes
+// arriving mean it is working, so the idle bound must not cut it short.
+func TestIdleTimeoutResetsOnPartialLine(t *testing.T) {
+	tool := newScript(t, "i=0\nwhile [ $i -lt 6 ]; do printf x; sleep 0.1; i=$((i+1)); done\necho done\n")
+	custom := executor.Custom{Command: tool, Limits: executor.Limits{Idle: 400 * time.Millisecond}}
+
+	result, err := custom.Run(t.Context(), executor.Request{Prompt: "p"})
+	if err != nil {
+		t.Fatalf("a tool writing one long line was cut short: %v", err)
+	}
+	if !strings.Contains(result.Output, "done") {
+		t.Errorf("output = %q, want the tool to have run to completion", result.Output)
+	}
+}

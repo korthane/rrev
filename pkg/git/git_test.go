@@ -460,3 +460,119 @@ func TestDefaultBranchPrefersLocalWhenAhead(t *testing.T) {
 		t.Errorf("DefaultBranch() = %q, want %q", got, "main")
 	}
 }
+
+// TestDefaultBranchPrefersRemoteWhenDiverged covers a local default branch that
+// carries unpushed work and is missing upstream work at the same time: the
+// branch under review was cut from the remote, so only the remote-tracking ref
+// gives a merge base that leaves upstream commits out of the diff.
+func TestDefaultBranchPrefersRemoteWhenDiverged(t *testing.T) {
+	origin := newRepo(t, "main")
+	clone := t.TempDir()
+	runGit(t, clone, "clone", origin, ".")
+	runGit(t, clone, "config", "user.name", "rrev test")
+	runGit(t, clone, "config", "user.email", "rrev-test@example.com")
+
+	writeFile(t, origin, "upstream.txt", "upstream\n")
+	commit(t, origin, "upstream work")
+	runGit(t, clone, "fetch", "origin")
+
+	writeFile(t, clone, "local.txt", "local\n")
+	commit(t, clone, "unpushed work on main")
+
+	runGit(t, clone, "checkout", "-b", "feature", "origin/main")
+	writeFile(t, clone, "feature.txt", "feature\n")
+	commit(t, clone, "add feature")
+
+	repo := open(t, clone)
+	got, err := repo.DefaultBranch(t.Context())
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if got != "origin/main" {
+		t.Fatalf("DefaultBranch() = %q, want %q", got, "origin/main")
+	}
+	files, err := repo.ChangedFiles(t.Context(), got)
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	if !slices.Equal(files, []string{"feature.txt"}) {
+		t.Errorf("review diff leaked upstream work: %v", files)
+	}
+}
+
+// TestDefaultBranchPrefersLocalWhenDivergedAndBranchedLocally is the mirror of
+// TestDefaultBranchPrefersRemoteWhenDiverged: the same diverged default branch,
+// but the branch under review was cut from the local one, so the remote-tracking
+// ref would drag the unpushed default-branch commit into the review.
+func TestDefaultBranchPrefersLocalWhenDivergedAndBranchedLocally(t *testing.T) {
+	origin := newRepo(t, "main")
+	clone := t.TempDir()
+	runGit(t, clone, "clone", origin, ".")
+	runGit(t, clone, "config", "user.name", "rrev test")
+	runGit(t, clone, "config", "user.email", "rrev-test@example.com")
+
+	writeFile(t, origin, "upstream.txt", "upstream\n")
+	commit(t, origin, "upstream work")
+	runGit(t, clone, "fetch", "origin")
+
+	writeFile(t, clone, "local.txt", "local\n")
+	commit(t, clone, "unpushed work on main")
+
+	runGit(t, clone, "checkout", "-b", "feature")
+	writeFile(t, clone, "feature.txt", "feature\n")
+	commit(t, clone, "add feature")
+
+	repo := open(t, clone)
+	got, err := repo.DefaultBranch(t.Context())
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if got != "main" {
+		t.Fatalf("DefaultBranch() = %q, want %q", got, "main")
+	}
+	files, err := repo.ChangedFiles(t.Context(), got)
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	if !slices.Equal(files, []string{"feature.txt"}) {
+		t.Errorf("review diff leaked default-branch work: %v", files)
+	}
+}
+
+// TestDefaultBranchPrefersRemoteWhenLocalHasUnrelatedHistory covers an upstream
+// history rewrite: the local default branch shares no commit with the branch
+// under review, so only the remote-tracking ref yields a merge base at all.
+func TestDefaultBranchPrefersRemoteWhenLocalHasUnrelatedHistory(t *testing.T) {
+	origin := newRepo(t, "main")
+	clone := t.TempDir()
+	runGit(t, clone, "clone", origin, ".")
+	runGit(t, clone, "config", "user.name", "rrev test")
+	runGit(t, clone, "config", "user.email", "rrev-test@example.com")
+
+	runGit(t, clone, "checkout", "-b", "feature", "origin/main")
+	writeFile(t, clone, "feature.txt", "feature\n")
+	commit(t, clone, "add feature")
+
+	runGit(t, clone, "checkout", "--orphan", "rewritten")
+	runGit(t, clone, "rm", "-rf", ".")
+	writeFile(t, clone, "rewritten.txt", "rewritten\n")
+	commit(t, clone, "rewritten history")
+	runGit(t, clone, "branch", "-f", "main", "rewritten")
+	runGit(t, clone, "checkout", "feature")
+
+	repo := open(t, clone)
+	got, err := repo.DefaultBranch(t.Context())
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if got != "origin/main" {
+		t.Fatalf("DefaultBranch() = %q, want %q", got, "origin/main")
+	}
+	files, err := repo.ChangedFiles(t.Context(), got)
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	if !slices.Equal(files, []string{"feature.txt"}) {
+		t.Errorf("ChangedFiles = %v, want the branch's own file", files)
+	}
+}
