@@ -301,11 +301,11 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 2: Git integration
 
-- [ ] implement default-branch detection for the review base ref, handling repositories whose default branch is neither `main` nor `master`
-- [ ] implement diff retrieval, commit-log retrieval, HEAD hash, and a working-tree diff fingerprint
-- [ ] implement empty-diff detection so a branch with no changes relative to the base ref is reported as nothing to review without invoking an executor
-- [ ] write tests for new functionality, using a fixture repository created inside the test
-- [ ] run project tests - must pass before next task
+- [x] implement default-branch detection for the review base ref, handling repositories whose default branch is neither `main` nor `master`
+- [x] implement diff retrieval, commit-log retrieval, HEAD hash, and a working-tree diff fingerprint
+- [x] implement empty-diff detection so a branch with no changes relative to the base ref is reported as nothing to review without invoking an executor
+- [x] write tests for new functionality, using a fixture repository created inside the test
+- [x] run project tests - must pass before next task
 
 ### Task 3: OpenSpec change context
 
