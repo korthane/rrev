@@ -180,16 +180,24 @@ func lookExecutable(root, bin string) error {
 }
 
 // checkProgressDir rejects a progress directory that resolves onto the
-// repository root or the filesystem root. rrev writes a catch-all ignore rule
-// into that directory, which at the repository root would ignore the whole
-// repository and leave the pipeline's own commits staging nothing.
+// repository root, onto the filesystem root, or outside the repository
+// altogether. rrev writes a catch-all ignore rule into that directory: at the
+// repository root it would ignore the whole repository and leave the pipeline's
+// own commits staging nothing, and above it, whatever tracks the parent.
 func checkProgressDir(root string, cfg *config.Config) error {
 	dir := filepath.Clean(absDir(root, cfg.ProgressDir))
-	if dir != filepath.Clean(root) && filepath.Dir(dir) != dir {
+	if dir != filepath.Clean(root) && filepath.Dir(dir) != dir && !escapes(root, dir) {
 		return nil
 	}
-	return fmt.Errorf("progress_dir %q (set in %s) resolves to %s, which must be a directory of its own: "+
-		"rrev writes a catch-all ignore rule there", cfg.ProgressDir, cfg.Origin("progress_dir"), dir)
+	return fmt.Errorf("progress_dir %q (set in %s) resolves to %s, which must be a directory of its own "+
+		"inside the repository: rrev writes a catch-all ignore rule there",
+		cfg.ProgressDir, cfg.Origin("progress_dir"), dir)
+}
+
+// escapes reports whether dir lies outside root.
+func escapes(root, dir string) bool {
+	rel, err := filepath.Rel(root, dir)
+	return err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // runsExternalPhase reports whether the mode's phase sequence invokes the

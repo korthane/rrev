@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -21,7 +22,12 @@ type LimitError struct {
 	// Reason is the tool's own line that identified the failure.
 	Reason    string
 	Retryable bool
+	// Err is the failure the classification was made from, kept so the exit
+	// status, stderr tail, or timeout underneath it stays reachable.
+	Err error
 }
+
+func (e *LimitError) Unwrap() error { return e.Err }
 
 func (e *LimitError) Error() string {
 	kind := "usage limit reached"
@@ -62,20 +68,34 @@ var retryablePatterns = []string{
 // classify upgrades a finished call to a rate-limit or transient failure when
 // the tool said so, and otherwise leaves the original error alone.
 func classify(tool string, result Result, err error) error {
-	// A call that reviewed something - it ended on a signal or reported at
-	// least one finding - is not a refusal; limit wording anywhere in its prose
-	// is the reviewer describing the code under review.
-	if err == nil && reviewed(result) {
+	// A bound rrev enforced itself, or a run the user aborted, is not the
+	// provider refusing: what such a call captured is partial review prose.
+	if errors.Is(err, ErrTimeout) || errors.Is(err, context.Canceled) {
+		return err
+	}
+	if err == nil && !refusal(result) {
 		return nil
 	}
 	lines := diagnostics(result, err)
 	if reason, ok := match(lines, rateLimitPatterns); ok {
-		return &LimitError{Tool: tool, Reason: reason}
+		return &LimitError{Tool: tool, Reason: reason, Err: err}
 	}
 	if reason, ok := match(lines, retryablePatterns); ok {
-		return &LimitError{Tool: tool, Reason: reason, Retryable: true}
+		return &LimitError{Tool: tool, Reason: reason, Retryable: true, Err: err}
 	}
 	return err
+}
+
+// refusalLines bounds how much a call that exited zero may have said and still
+// be read as a refusal: a throttled tool prints its message and stops, while a
+// review that ran says far more.
+const refusalLines = 5
+
+// refusal reports whether an exit-zero call looks like a provider refusal
+// rather than a review: it carried no signal, reported nothing, and said too
+// little to have reviewed anything.
+func refusal(result Result) bool {
+	return !reviewed(result) && len(spoken(result.Output)) <= refusalLines
 }
 
 // reviewed reports whether the call produced a review rather than a refusal. A
@@ -116,7 +136,7 @@ func spoken(output string) []string {
 			fenced = !fenced
 			continue
 		}
-		if fenced || isQuotedLine(line) || isReportLine(line) {
+		if line == "" || fenced || isQuotedLine(line) || isReportLine(line) {
 			continue
 		}
 		lines = append(lines, line)

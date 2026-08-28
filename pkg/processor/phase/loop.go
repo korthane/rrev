@@ -39,6 +39,12 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 		limit = 1
 	}
 
+	// A break that arrived before this loop started belongs to whatever was
+	// running then; it must not end a loop that has not run an iteration.
+	if interrupted(spec.brk) {
+		spec.brk = nil
+	}
+
 	// A break cancels the call in flight rather than waiting for it: a loop the
 	// user ended should stop spending an executor on the iteration it is in.
 	runCtx, cancel := context.WithCancel(ctx)

@@ -360,6 +360,24 @@ func TestPrepareRejectsProgressDirAtTheRepositoryRoot(t *testing.T) {
 	assertNoExecutorRan(t, marker)
 }
 
+// The same ignore rule outside the repository would ignore whatever tracks the
+// parent directory, so a progress directory that escapes the root is rejected
+// with the value that produced it.
+func TestPrepareRejectsProgressDirOutsideTheRepository(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	marker := fakeBin(t, "claude", "codex")
+	writeFile(t, repo, ".rrev/config.ini", "progress_dir = ../rrev-progress\n")
+
+	_, err := prepareIn(t, repo)
+	if err == nil {
+		t.Fatal("prepare: want an error when the progress directory is outside the repository")
+	}
+	if !strings.Contains(err.Error(), "progress_dir") {
+		t.Errorf("error %q, want it to mention progress_dir", err)
+	}
+	assertNoExecutorRan(t, marker)
+}
+
 // The executor runs with the repository root as its working directory, so a
 // relative command must be looked up there rather than in rrev's own.
 func TestPrepareResolvesARelativeCommandAgainstTheRepositoryRoot(t *testing.T) {

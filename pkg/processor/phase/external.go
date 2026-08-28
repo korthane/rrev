@@ -3,6 +3,7 @@ package phase
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/korthane/rrev/pkg/executor"
@@ -77,12 +78,23 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 		renderAs: e.Config.Executor,
 		verified: true,
 	})
-	*rounds = append(*rounds, round{n: n, reported: report.Findings, confirmed: eval.Findings, rejections: eval.Rejections})
+	*rounds = recordRound(*rounds, round{n: n, reported: report.Findings, confirmed: eval.Findings, rejections: eval.Rejections})
 
 	// The external tool's own findings are the primary executor's input, not
 	// the loop's result: only what the executor confirmed counts as a finding
 	// of this phase.
 	return eval, err
+}
+
+// recordRound keeps one round per iteration: an iteration re-run after a
+// transient failure replaces the round its failed attempt left behind, so the
+// memory shown to the next round never reports the same round twice.
+func recordRound(rounds []round, r round) []round {
+	if i := slices.IndexFunc(rounds, func(x round) bool { return x.n == r.n }); i >= 0 {
+		rounds[i] = r
+		return rounds
+	}
+	return append(rounds, r)
 }
 
 // sameModel reports the self-review the external phase exists to avoid. The

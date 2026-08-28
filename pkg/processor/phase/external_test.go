@@ -187,6 +187,55 @@ func TestExternalUserBreakEndsLoop(t *testing.T) {
 	}
 }
 
+// A break the user sent while another phase was running was meant for whatever
+// was running then. The external loop is the only one that watches the channel,
+// so a latched break would skip the phase entirely without it ever starting.
+func TestExternalIgnoresABreakThatPredatesTheLoop(t *testing.T) {
+	brk := make(chan struct{})
+	close(brk)
+	external := mock("codex", externalDone)
+	primary := mock("claude", "evaluated")
+	env, _ := newEnv(t, primary, external, nil)
+	env.Break = brk
+
+	res := External(context.Background(), env)
+
+	if res.Reason != ReasonConverged {
+		t.Fatalf("reason = %q, want %q: the break belonged to an earlier phase", res.Reason, ReasonConverged)
+	}
+	if external.CallCount() == 0 {
+		t.Error("the external tool was never invoked")
+	}
+}
+
+// An iteration re-run after a transient failure is still one round: recording
+// it twice would show the next round the same report under the same number,
+// which is exactly the memory meant to stop the tool repeating itself.
+func TestExternalRetriedIterationRecordsOneRound(t *testing.T) {
+	external := mock("codex", "FINDING: major | pkg/a.go:10 | external | - | the loop bound is off by one")
+	primary := mock("claude", "")
+	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 2 })
+	evals := 0
+	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
+		evals++
+		if evals == 1 {
+			return executor.Result{}, &executor.LimitError{Tool: "claude", Reason: "overloaded_error", Retryable: true}
+		}
+		repo.commit("head-eval")
+		return executor.Result{Output: "REJECTED: pkg/a.go:10 | external | the bound is inclusive by design"}, nil
+	}
+
+	External(context.Background(), env)
+
+	calls := external.Calls()
+	if len(calls) < 2 {
+		t.Fatalf("external calls = %d, want the loop to reach its second round", len(calls))
+	}
+	if got := strings.Count(calls[len(calls)-1].Prompt, "Round 1"); got != 1 {
+		t.Errorf("the last round's prompt reports round 1 %d times, want once", got)
+	}
+}
+
 // TestExternalBreakCancelsTheCallInFlight covers the break arriving mid-call: a
 // loop the user ended must not keep spending an executor on the iteration it is
 // in, and the cancelled call must read as a break rather than as a failure.

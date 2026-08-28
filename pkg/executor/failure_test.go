@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/korthane/rrev/pkg/executor"
 )
@@ -119,5 +120,62 @@ func TestProseAboutAnErrorIsNotARefusal(t *testing.T) {
 
 	if _, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"}); err != nil {
 		t.Fatalf("a reviewer's prose was mistaken for a provider refusal: %v", err)
+	}
+}
+
+// An iteration that says nothing rrev recognises as a report is still a review
+// when it says a lot: a refusal is a line or two, so long prose that happens to
+// quote limit wording must not end the run.
+func TestLongProseWithoutAReportIsNotARefusal(t *testing.T) {
+	prose := strings.Join([]string{
+		"I read the diff and the surrounding handlers.",
+		"The retry helper now backs off once the provider answers 429 Too Many Requests,",
+		"which is what the earlier revision got wrong.",
+		"I applied the fix and committed it on the branch.",
+		"Nothing else in the diff touches throttling.",
+		"The tests pass.",
+		"",
+	}, "\n")
+	tool := newFakeTool(t, fakeToolOpts{stdout: prose})
+
+	if _, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"}); err != nil {
+		t.Fatalf("a reviewer's prose was mistaken for a provider refusal: %v", err)
+	}
+}
+
+// A bound rrev enforced itself must stay recognisable as a timeout: reported as
+// a transient provider failure it would be retried, spending the budget again
+// on a call that timed out for a reason retrying cannot fix.
+func TestTimeoutIsNotReclassifiedAsAProviderFailure(t *testing.T) {
+	tool := newScript(t, "echo the handler returns an internal server error\nsleep 30\n")
+	custom := executor.Custom{Command: tool, Limits: executor.Limits{Session: 500 * time.Millisecond}}
+
+	_, err := custom.Run(t.Context(), executor.Request{Prompt: "p"})
+
+	if !errors.Is(err, executor.ErrTimeout) {
+		t.Fatalf("error = %v, want it to stay a timeout", err)
+	}
+	if errors.Is(err, executor.ErrRetryable) || errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("error = %v, want it distinguished from a provider failure", err)
+	}
+}
+
+// The classification must not swallow what it was made from: the exit status
+// and the tool's stderr are what a reader needs to tell one refusal apart from
+// the next.
+func TestLimitErrorKeepsTheUnderlyingFailure(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{stderr: "ERROR: rate limit exceeded", exit: 7})
+
+	_, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Fatalf("error = %v, want a rate-limit error", err)
+	}
+	failure, ok := errors.AsType[*executor.Error](err)
+	if !ok {
+		t.Fatalf("error %v does not carry the invocation it was classified from", err)
+	}
+	if failure.ExitCode != 7 {
+		t.Errorf("exit code = %d, want 7", failure.ExitCode)
 	}
 }
