@@ -1,0 +1,89 @@
+[Adapted from ralphex (https://github.com/umputun/ralphex) by Umputun, MIT licensed.]
+
+External review evaluation for: {{GOAL_LINE}}
+
+An independent review tool examined this branch and reported the findings below.
+Nothing here is authoritative: the tool did not run the code and may have misread
+it. Your job is to verify each finding, fix the ones that are real, and record why
+you rejected the rest.
+
+Iteration {{ITERATION}} of at most {{MAX_ITERATIONS}} for this loop.
+
+The code under review, when you need it beyond the cited lines:
+{{DIFF_INSTRUCTION}}
+
+Progress log: {{PROGRESS_LOG}}
+Change artifacts:
+{{ARTIFACTS}}
+
+{{MODE_RULES}}
+
+## What the external tool reported
+
+---
+{{EXTERNAL_OUTPUT}}
+---
+
+## Step 1: Verify every finding
+
+For each reported finding:
+1. Open the file at the cited line and read the surrounding context.
+2. Trace it: who calls this, what it calls, what the value can actually be.
+3. Check the change's artifacts and the design notes - the behaviour the tool
+   dislikes may be exactly what a requirement asks for.
+4. Check the progress log at {{PROGRESS_LOG}}: if this finding was already
+   rejected in an earlier round, reuse the recorded reason unless it is wrong.
+
+Then classify it as CONFIRMED or REJECTED. Reject nothing for being pre-existing:
+a defect the branch touches is in scope whether this branch introduced it or not.
+
+## Step 2: Fix what you confirmed
+
+- Unless the run mode above forbids changing the repository, fix every
+  confirmed finding.
+- Run the validation command: {{VALIDATION_COMMAND}}
+  If that reads "(not configured)", run the project's own test and lint commands
+  as its CLAUDE.md, README, or Makefile define them.
+- All tests must pass and all lint issues must be resolved.
+- Commit with: `git commit -m "fix: address external review findings"`
+
+Never run the external review tool yourself. rrev runs it and hands you its
+output; running it again wastes an iteration.
+
+## Step 3: Report
+
+One line per confirmed finding:
+
+FINDING: <critical|major|minor> | <file>:<line> | external | <requirement or -> | <summary>
+
+One line per rejection, with the reason stated plainly enough that the external
+tool can argue against it next round:
+
+REJECTED: <file>:<line> | external | <why it is not a real finding>
+
+A rejection with no reason is not a rejection. The reason is what stops the same
+finding coming back unchanged.
+
+Report the validation command's outcome once, so the progress log records
+whether the fixes were validated:
+
+VALIDATION: <pass|fail> | <the command you ran> | <what failed, or ->
+
+## Signal contract
+
+A signal is a marker rrev reads back from your output. It counts only when it is
+alone on its own line and outside any code fence, so quoting one inside a fenced
+block does nothing.
+
+- <<<RREV:EXTERNAL_DONE>>> - emit only when the external tool reported nothing
+  actionable and you changed nothing this round. Commit any fix still sitting
+  uncommitted from an earlier round first.
+- <<<RREV:TASK_FAILED>>> - emit when you cannot proceed at all. The run stops and
+  reports this phase.
+
+Emitting no marker is not success. rrev reads a missing marker as "work was done,
+iterate again" and runs the external tool again, up to {{MAX_ITERATIONS}}
+iterations. So when you fixed something, and when you rejected everything, emit
+nothing: the next round shows the external tool your reasons and lets it answer.
+
+OUTPUT FORMAT: no markdown formatting. Plain text and - lists are fine.

@@ -45,6 +45,8 @@ pkg/status/        signal constants, phase sections, terminal rendering
 
 The seam between `pkg/openspec` and everything else is `ReviewContext` — resolved once at startup, immutable, passed by value into every phase. That is what makes "same criteria in every phase" a structural property rather than a discipline.
 
+It carries artifact *paths*, not frozen copies of their text: reviewers cite `file:line` in the live tree, and the fix step edits the change's own task list, so a phase reading a snapshot would cite lines that no longer exist and re-report tasks the previous iteration already unchecked. What is pinned is rrev's own resolution — goal, paths, checklist — which is never recomputed mid-run.
+
 ### Requirement extraction: parse markdown, don't shell out per-requirement
 
 Alternatives: call `openspec show <change> --json --deltas-only` for structured requirements; parse the delta spec markdown directly.

@@ -148,7 +148,7 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/spec-context/spec.md`
 **Requirement: Context reuse across phases.** The review context SHALL be resolved once per run and reused by every phase and every executor call, so that a reviewer, the external tool, and the fixing executor all evaluate the diff against identical criteria.
 
 - Same context in every phase: WHEN the pipeline runs the comprehensive phase, the external loop, and the final phase, THEN each receives the same change name, goal, artifact paths, and requirement checklist.
-- Artifacts changed mid-run: WHEN an artifact file is edited on disk while the pipeline is running, THEN the run continues with the context captured at startup, and the change is not silently picked up mid-pipeline.
+- Artifacts changed mid-run: WHEN an artifact file is edited on disk while the pipeline is running, THEN rrev does not re-resolve the context, and every later phase is still handed the change name, goal, artifact paths, and requirement checklist captured at startup.
 
 ### Capability: agent-execution
 
@@ -291,156 +291,156 @@ Source: `openspec/changes/add-spec-review-pipeline/specs/progress-log/spec.md`
 
 ### Task 1: Project bootstrap
 
-- [ ] initialize the Go module as `github.com/korthane/rrev` with the current stable toolchain and create the `cmd/rrev/` and `pkg/` skeleton (openspec, config, executor, processor, processor/phase, progress, git, status)
-- [ ] add Makefile targets for build, test, lint, and coverage
-- [ ] add the linter configuration and confirm it runs clean on the skeleton
-- [ ] add a CI workflow running build, test, and lint on push, and validate the workflow file with a workflow linter
-- [ ] add LICENSE, .gitignore, and a README stub crediting ralphex (MIT, Umputun) as the origin of the pipeline mechanic, naming the derived prompt and agent files
-- [ ] write a placeholder test proving the test target executes
-- [ ] run project tests - must pass before next task
+- [x] initialize the Go module as `github.com/korthane/rrev` with the current stable toolchain and create the `cmd/rrev/` and `pkg/` skeleton (openspec, config, executor, processor, processor/phase, progress, git, status)
+- [x] add Makefile targets for build, test, lint, and coverage
+- [x] add the linter configuration and confirm it runs clean on the skeleton
+- [x] add a CI workflow running build, test, and lint on push, and validate the workflow file with a workflow linter
+- [x] add LICENSE, .gitignore, and a README stub crediting ralphex (MIT, Umputun) as the origin of the pipeline mechanic, naming the derived prompt and agent files
+- [x] write a placeholder test proving the test target executes
+- [x] run project tests - must pass before next task
 
 ### Task 2: Git integration
 
-- [ ] implement default-branch detection for the review base ref, handling repositories whose default branch is neither `main` nor `master`
-- [ ] implement diff retrieval, commit-log retrieval, HEAD hash, and a working-tree diff fingerprint
-- [ ] implement empty-diff detection so a branch with no changes relative to the base ref is reported as nothing to review without invoking an executor
-- [ ] write tests for new functionality, using a fixture repository created inside the test
-- [ ] run project tests - must pass before next task
+- [x] implement default-branch detection for the review base ref, handling repositories whose default branch is neither `main` nor `master`
+- [x] implement diff retrieval, commit-log retrieval, HEAD hash, and a working-tree diff fingerprint
+- [x] implement empty-diff detection so a branch with no changes relative to the base ref is reported as nothing to review without invoking an executor
+- [x] write tests for new functionality, using a fixture repository created inside the test
+- [x] run project tests - must pass before next task
 
 ### Task 3: OpenSpec change context
 
-- [ ] implement change discovery through the openspec CLI, excluding archived changes from auto-detection
-- [ ] implement the filesystem fallback enumerating the changes directory when the CLI is absent, noting the degraded mode in output
-- [ ] implement artifact loading for proposal, design, delta specs, and tasks, degrading gracefully on a missing optional artifact and failing with the filename on an unreadable one
-- [ ] implement the delta-spec markdown parser producing requirements with capability path, delta operation, name, and scenarios
-- [ ] implement requirement extraction through the openspec CLI JSON output as the preferred path
-- [ ] implement goal derivation from the proposal with a fallback to the change name
-- [ ] assemble the immutable review context resolved once per run, carrying change name, goal, artifact paths, and the requirement checklist
-- [ ] write tests for new functionality, including a cross-check asserting the CLI and parser paths extract identical requirement and scenario counts for the same fixture
-- [ ] run project tests - must pass before next task
+- [x] implement change discovery through the openspec CLI, excluding archived changes from auto-detection
+- [x] implement the filesystem fallback enumerating the changes directory when the CLI is absent, noting the degraded mode in output
+- [x] implement artifact loading for proposal, design, delta specs, and tasks, degrading gracefully on a missing optional artifact and failing with the filename on an unreadable one
+- [x] implement the delta-spec markdown parser producing requirements with capability path, delta operation, name, and scenarios
+- [x] implement requirement extraction through the openspec CLI JSON output as the preferred path
+- [x] implement goal derivation from the proposal with a fallback to the change name
+- [x] assemble the immutable review context resolved once per run, carrying change name, goal, artifact paths, and the requirement checklist
+- [x] write tests for new functionality, including a cross-check asserting the CLI and parser paths extract identical requirement and scenario counts for the same fixture
+- [x] run project tests - must pass before next task
 
 ### Task 4: Configuration resolution and defaults
 
-- [ ] implement layered config resolution across flags, project directory, user directory, and embedded defaults, ensuring a partially populated source never zeroes a lower-precedence value
-- [ ] implement the INI-style parser that rejects malformed input with file and line in the error and never silently falls back to defaults
-- [ ] embed the default config, prompts, and agents into the binary so a run with no config files on disk resolves every setting
-- [ ] implement per-file prompt and agent override lookup across the three sources, so overriding one file leaves the rest on embedded defaults
-- [ ] write tests for new functionality
-- [ ] run project tests - must pass before next task
+- [x] implement layered config resolution across flags, project directory, user directory, and embedded defaults, ensuring a partially populated source never zeroes a lower-precedence value
+- [x] implement the INI-style parser that rejects malformed input with file and line in the error and never silently falls back to defaults
+- [x] embed the default config, prompts, and agents into the binary so a run with no config files on disk resolves every setting
+- [x] implement per-file prompt and agent override lookup across the three sources, so overriding one file leaves the rest on embedded defaults
+- [x] write tests for new functionality
+- [x] run project tests - must pass before next task
 
 ### Task 5: Configuration templating and conflict detection
 
-- [ ] implement template variable expansion for change name, artifact paths, goal, requirement checklist, progress log path, base ref, and diff instruction, erroring with the filename on an unknown variable
-- [ ] implement requirement-checklist truncation at a configured budget that states in the prompt that truncation occurred
-- [ ] implement executor-aware agent reference expansion producing claude subagent invocations and codex spawn calls from one prompt file, erroring on an unresolvable agent name
-- [ ] implement incompatible-option detection: a hard startup error for conflicting flags, and a warn-and-override path for a conflict present only in config files
-- [ ] write tests for new functionality
-- [ ] run project tests - must pass before next task
+- [x] implement template variable expansion for change name, artifact paths, goal, requirement checklist, progress log path, base ref, and diff instruction, erroring with the filename on an unknown variable
+- [x] implement requirement-checklist truncation at a configured budget that states in the prompt that truncation occurred
+- [x] implement executor-aware agent reference expansion producing claude subagent invocations and codex spawn calls from one prompt file, erroring on an unresolvable agent name
+- [x] implement incompatible-option detection: a hard startup error for conflicting flags, and a warn-and-override path for a conflict present only in config files
+- [x] write tests for new functionality
+- [x] run project tests - must pass before next task
 
 ### Task 6: Executor contract and implementations
 
-- [ ] define the executor interface returning output, detected signal, and error, with a mock implementation available to phase tests
-- [ ] implement signal detection for the review-done, external-done, and failure markers, matching a marker on its own line and ignoring one embedded in quoted text
-- [ ] implement the claude executor invoking the claude CLI with streamed JSON output, rendering incremental text and tolerating unknown event types
-- [ ] implement the codex executor invoking the codex CLI with config overrides
-- [ ] implement the custom executor running a user-supplied external review script and treating its stdout as findings
-- [ ] write tests for new functionality, using recorded fixture streams for both CLI executors
-- [ ] run project tests - must pass before next task
+- [x] define the executor interface returning output, detected signal, and error, with a mock implementation available to phase tests
+- [x] implement signal detection for the review-done, external-done, and failure markers, matching a marker on its own line and ignoring one embedded in quoted text
+- [x] implement the claude executor invoking the claude CLI with streamed JSON output, rendering incremental text and tolerating unknown event types
+- [x] implement the codex executor invoking the codex CLI with config overrides
+- [x] implement the custom executor running a user-supplied external review script and treating its stdout as findings
+- [x] write tests for new functionality, using recorded fixture streams for both CLI executors
+- [x] run project tests - must pass before next task
 
 ### Task 7: Executor models, lifecycle, and resilience
 
-- [ ] implement model and effort selection parsing the combined `model[:effort]` form with per-part inheritance, review falling back to the task model, and a warning for an unsupported effort level
-- [ ] implement context cancellation terminating the child process group so no orphaned process survives
-- [ ] implement session and idle timeouts, both disabled by default, with the idle countdown resetting on output and a distinguishable error preserving captured output
-- [ ] implement rate-limit and retryable-failure detection so neither is recorded as a converged iteration
-- [ ] implement throttled progress indication during long silent sub-agent work
-- [ ] write tests for new functionality, including a test asserting the process tree is gone after cancellation
-- [ ] run project tests - must pass before next task
+- [x] implement model and effort selection parsing the combined `model[:effort]` form with per-part inheritance, review falling back to the task model, and a warning for an unsupported effort level
+- [x] implement context cancellation terminating the child process group so no orphaned process survives
+- [x] implement session and idle timeouts, both disabled by default, with the idle countdown resetting on output and a distinguishable error preserving captured output
+- [x] implement rate-limit and retryable-failure detection so neither is recorded as a converged iteration
+- [x] implement throttled progress indication during long silent sub-agent work
+- [x] write tests for new functionality, including a test asserting the process tree is gone after cancellation
+- [x] run project tests - must pass before next task
 
 ### Task 8: Progress log
 
-- [ ] implement progress log creation under the project progress directory, named per change, creating the directory and its ignore rule when missing
-- [ ] implement append-and-reuse so a second run against the same change preserves prior history
-- [ ] implement structured entry writing for phase and iteration boundaries, findings, confirmations, rejections with reason, validation and commit outcomes, and termination reasons
-- [ ] implement file locking so concurrent appends interleave whole entries
-- [ ] implement graceful degradation when the progress directory is unwritable, continuing the review with logging disabled
-- [ ] implement a bounded lock wait that reports contention and continues rather than blocking indefinitely
-- [ ] write tests for new functionality, including a concurrent-writer test asserting no partial entry
-- [ ] run project tests - must pass before next task
+- [x] implement progress log creation under the project progress directory, named per change, creating the directory and its ignore rule when missing
+- [x] implement append-and-reuse so a second run against the same change preserves prior history
+- [x] implement structured entry writing for phase and iteration boundaries, findings, confirmations, rejections with reason, validation and commit outcomes, and termination reasons
+- [x] implement file locking so concurrent appends interleave whole entries
+- [x] implement graceful degradation when the progress directory is unwritable, continuing the review with logging disabled
+- [x] implement a bounded lock wait that reports contention and continues rather than blocking indefinitely
+- [x] write tests for new functionality, including a concurrent-writer test asserting no partial entry
+- [x] run project tests - must pass before next task
 
 ### Task 9: Reviewer agents
 
-- [ ] write the conformance agent that classifies the diff against each requirement scenario as satisfying, partially satisfying, contradicting, or not addressing it, requiring a file and line citation for every satisfied verdict and treating an uncited one as not addressed
-- [ ] write the tasks agent that cross-checks task-list checkboxes against the diff and reports any marked complete without corresponding implementation
-- [ ] adapt the quality, implementation, testing, simplification, and documentation agents from ralphex defaults, recording attribution
-- [ ] write tests asserting every shipped agent definition is discoverable and non-empty
-- [ ] run project tests - must pass before next task
+- [x] write the conformance agent that classifies the diff against each requirement scenario as satisfying, partially satisfying, contradicting, or not addressing it, requiring a file and line citation for every satisfied verdict and treating an uncited one as not addressed
+- [x] write the tasks agent that cross-checks task-list checkboxes against the diff and reports any marked complete without corresponding implementation
+- [x] adapt the quality, implementation, testing, simplification, and documentation agents from ralphex defaults, recording attribution
+- [x] write tests asserting every shipped agent definition is discoverable and non-empty
+- [x] run project tests - must pass before next task
 
 ### Task 10: Phase prompts
 
-- [ ] write the comprehensive review prompt launching all phase-one agents in one message, then deduplicating, verifying against real code, fixing, validating, and committing
-- [ ] write the external review prompt carrying the requirement checklist, the progress log instruction, and prior-round findings with their dispositions
-- [ ] write the external findings evaluation prompt that verifies each reported finding before fixing and records rejections with reasons
-- [ ] write the final review prompt restricted to critical and major issues, using the quality, implementation, and conformance agents only
-- [ ] write the default finalize prompt, inert when finalize is disabled
-- [ ] state the signal contract in every prompt, spelling out that absence of a signal means iterate again
-- [ ] write tests asserting every embedded prompt expands with no unknown variables for both executors and that each contains the signal contract
-- [ ] run project tests - must pass before next task
+- [x] write the comprehensive review prompt launching all phase-one agents in one message, then deduplicating, verifying against real code, fixing, validating, and committing
+- [x] write the external review prompt carrying the requirement checklist, the progress log instruction, and prior-round findings with their dispositions
+- [x] write the external findings evaluation prompt that verifies each reported finding before fixing and records rejections with reasons
+- [x] write the final review prompt restricted to critical and major issues, using the quality, implementation, and conformance agents only
+- [x] write the default finalize prompt, inert when finalize is disabled
+- [x] state the signal contract in every prompt, spelling out that absence of a signal means iterate again
+- [x] write tests asserting every embedded prompt expands with no unknown variables for both executors and that each contains the signal contract
+- [x] run project tests - must pass before next task
 
 ### Task 11: Review phases
 
-- [ ] implement the comprehensive review phase running its agents concurrently and iterating until the review-done signal
-- [ ] implement the external review loop alternating the external tool and the primary executor, carrying prior findings and dispositions forward
-- [ ] implement the skip of the external phase when the primary executor and external tool would be the same model, reporting it as skipped
-- [ ] implement loop termination on signal, iteration limit, stalemate, executor failure, and user break, reporting which condition ended the loop
-- [ ] implement stalemate detection over consecutive iterations with no new commit and no working-tree change, honouring a disabled patience setting
-- [ ] implement the final review phase including its skip when the external loop converged on the first pass with no fixes applied
-- [ ] write tests for new functionality using mock executors across converging and non-converging outputs, with a case per termination condition
-- [ ] run project tests - must pass before next task
+- [x] implement the comprehensive review phase running its agents concurrently and iterating until the review-done signal
+- [x] implement the external review loop alternating the external tool and the primary executor, carrying prior findings and dispositions forward
+- [x] implement the skip of the external phase when the primary executor and external tool would be the same model, reporting it as skipped
+- [x] implement loop termination on signal, iteration limit, stalemate, executor failure, and user break, reporting which condition ended the loop
+- [x] implement stalemate detection over consecutive iterations with no new commit and no working-tree change, honouring a disabled patience setting
+- [x] implement the final review phase including its skip when the external loop converged on the first pass with no fixes applied
+- [x] write tests for new functionality using mock executors across converging and non-converging outputs, with a case per termination condition
+- [x] run project tests - must pass before next task
 
 ### Task 12: Pipeline modes, reporting, and runner
 
-- [ ] implement the optional finalize step running once, disabled by default, best-effort on failure, and skipped on non-convergence
-- [ ] implement report-only mode short-circuiting every loop to a single pass and leaving the working tree and commit history unchanged
-- [ ] implement the findings report emitting file, line, severity, reporting reviewer, and related requirement for each verified finding
-- [ ] implement the runner mapping each run mode to its phase sequence for full, external-only, first-phase-only, and report-only
-- [ ] write tests for new functionality, asserting the executed phase sequence per mode
-- [ ] run project tests - must pass before next task
+- [x] implement the optional finalize step running once, disabled by default, best-effort on failure, and skipped on non-convergence
+- [x] implement report-only mode short-circuiting every loop to a single pass and leaving the working tree and commit history unchanged
+- [x] implement the findings report emitting file, line, severity, reporting reviewer, and related requirement for each verified finding
+- [x] implement the runner mapping each run mode to its phase sequence for full, external-only, first-phase-only, and report-only
+- [x] write tests for new functionality, asserting the executed phase sequence per mode
+- [x] run project tests - must pass before next task
 
 ### Task 13: CLI flags, change selection, and preflight
 
-- [ ] implement flag parsing for the positional change name, run modes, and per-run overrides, with an invalid value failing before any phase
-- [ ] implement change selection with single-change auto-detection, an ambiguity error listing candidates, and an unknown-name error
-- [ ] implement mutual exclusion of run modes as a startup error naming both conflicting flags
-- [ ] implement startup preflight for git repository, base ref resolution, change readability, and presence of every executable to be invoked
-- [ ] write tests for new functionality, including a case per preflight failure asserting no phase runs
-- [ ] run project tests - must pass before next task
+- [x] implement flag parsing for the positional change name, run modes, and per-run overrides, with an invalid value failing before any phase
+- [x] implement change selection with single-change auto-detection, an ambiguity error listing candidates, and an unknown-name error
+- [x] implement mutual exclusion of run modes as a startup error naming both conflicting flags
+- [x] implement startup preflight for git repository, base ref resolution, change readability, and presence of every executable to be invoked
+- [x] write tests for new functionality, including a case per preflight failure asserting no phase runs
+- [x] run project tests - must pass before next task
 
 ### Task 14: CLI output, exit status, and signal handling
 
-- [ ] implement the startup banner reporting change, base ref, mode, executors, resolved models, and the extracted requirement count
-- [ ] implement exit statuses distinguishing convergence, non-convergence, and startup or abort failure
-- [ ] implement interrupt handling that aborts the run, terminates the process group, flushes the progress log, and exits non-zero
-- [ ] implement the break signal ending only the external loop on platforms that support it, omitting the hint where unsupported
-- [ ] implement phase-attributed coloured terminal output honouring a no-colour option
-- [ ] write tests for new functionality, including output assertions and a platform-guarded case for the break signal
-- [ ] run project tests - must pass before next task
+- [x] implement the startup banner reporting change, base ref, mode, executors, resolved models, and the extracted requirement count
+- [x] implement exit statuses distinguishing convergence, non-convergence, and startup or abort failure
+- [x] implement interrupt handling that aborts the run, terminates the process group, flushes the progress log, and exits non-zero
+- [x] implement the break signal ending only the external loop on platforms that support it, omitting the hint where unsupported
+- [x] implement phase-attributed coloured terminal output honouring a no-colour option
+- [x] write tests for new functionality, including output assertions and a platform-guarded case for the break signal
+- [x] run project tests - must pass before next task
 
 ### Task 15: Integration and documentation
 
-- [ ] add an end-to-end test running the full pipeline against a fixture OpenSpec repository with scripted mock executors, asserting the phase sequence, commits, and exit status
-- [ ] add an end-to-end test for report-only mode asserting a report is produced and the repository is unmodified
-- [ ] add an end-to-end test asserting a conformance gap in the fixture is reported against the specific requirement it violates
-- [ ] write the README covering installation, prerequisites, run modes, configuration, prompt and agent customization, and the signal contract
-- [ ] verify every flag documented in the README exists in the CLI and every CLI flag is documented
-- [ ] run project tests - must pass before next task
+- [x] add an end-to-end test running the full pipeline against a fixture OpenSpec repository with scripted mock executors, asserting the phase sequence, commits, and exit status
+- [x] add an end-to-end test for report-only mode asserting a report is produced and the repository is unmodified
+- [x] add an end-to-end test asserting a conformance gap in the fixture is reported against the specific requirement it violates
+- [x] write the README covering installation, prerequisites, run modes, configuration, prompt and agent customization, and the signal contract
+- [x] verify every flag documented in the README exists in the CLI and every CLI flag is documented
+- [x] run project tests - must pass before next task
 
 ### Task 16: Verify acceptance criteria
 
-- [ ] verify all requirements from Overview are implemented
-- [ ] verify each capability in Technical Details has corresponding implementation and test coverage
-- [ ] run full project test suite
-- [ ] run project linter - all issues must be fixed
+- [x] verify all requirements from Overview are implemented
+- [x] verify each capability in Technical Details has corresponding implementation and test coverage
+- [x] run full project test suite
+- [x] run project linter - all issues must be fixed
 
 ## Post-Completion
 

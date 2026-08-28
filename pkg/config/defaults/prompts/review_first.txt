@@ -1,0 +1,98 @@
+[Adapted from ralphex (https://github.com/umputun/ralphex) by Umputun, MIT licensed.]
+
+Comprehensive review of: {{GOAL_LINE}}
+
+Iteration {{ITERATION}} of at most {{MAX_ITERATIONS}} for this phase.
+
+Change directory: {{CHANGE_DIR}}
+Change artifacts:
+{{ARTIFACTS}}
+Requirement checklist: {{REQUIREMENT_COUNT}} requirements, expanded inside the
+conformance agent's definition below. If that checklist says it was truncated,
+read the delta spec files for the requirements it does not carry.
+Progress log: {{PROGRESS_LOG}}
+
+{{MODE_RULES}}
+
+## Step 1: Read the context
+
+Read the progress log at {{PROGRESS_LOG}} before anything else. It records earlier
+iterations: which findings were confirmed and fixed, and which were rejected and
+why. Do not re-report a finding the log already rejected unless you can say why
+the recorded reason is wrong.
+
+Then get the branch context:
+- `git log {{BASE_REF}}..HEAD --oneline` - the commits under review
+- {{DIFF_INSTRUCTION}} - the code under review
+
+## Step 2: Launch every reviewer agent
+
+{{AGENTS: conformance, tasks, quality, implementation, testing, simplification, documentation}}
+
+Do not proceed to step 3 until every agent has returned its report.
+
+Do not embed code or diffs in the agent prompts. Each definition tells its agent
+how to obtain the diff itself; pasting a diff into seven prompts is slow and buys
+nothing.
+
+## Step 3: Deduplicate, verify, fix
+
+### 3.1 Deduplicate
+Merge findings that name the same file:line and the same issue, keeping every
+reporting agent's name on the merged finding.
+
+### 3.2 Verify every finding against the real code
+For each finding, open the cited location, read the surrounding context, and
+decide:
+- CONFIRMED - the issue is real and not already mitigated elsewhere
+- REJECTED - it does not exist, is already handled, or the agent misread the code
+
+A conformance verdict is verified the same way: check the cited line, or run the
+search yourself before accepting that a requirement is unimplemented.
+
+Reject nothing for being pre-existing. A defect the branch touches is in scope
+whether this branch introduced it or not.
+
+### 3.3 Fix what you confirmed
+Unless the run mode above forbids changing the repository, fix every confirmed
+finding, then validate and commit:
+- Run the validation command: {{VALIDATION_COMMAND}}
+  If that reads "(not configured)", run the project's own test and lint commands
+  as its CLAUDE.md, README, or Makefile define them.
+- All tests must pass and all lint issues must be resolved before you commit.
+- Commit with: `git commit -m "fix: address review findings"`
+
+## Step 4: Report
+
+Report every verified finding, one per line, in this form so rrev can collect
+them:
+
+FINDING: <critical|major|minor> | <file>:<line> | <agent> | <requirement or -> | <summary>
+
+Report each rejection the same way, so the next iteration does not re-litigate it:
+
+REJECTED: <file>:<line> | <agent> | <why it is not a real finding>
+
+Report the validation command's outcome once, so the progress log records
+whether the fixes were validated:
+
+VALIDATION: <pass|fail> | <the command you ran> | <what failed, or ->
+
+## Signal contract
+
+A signal is a marker rrev reads back from your output. It counts only when it is
+alone on its own line and outside any code fence, so quoting one inside a fenced
+block does nothing.
+
+- <<<RREV:REVIEW_DONE>>> - emit only when this iteration confirmed zero findings
+  and you changed nothing. It means "this review found nothing", never "I finished
+  fixing things".
+- <<<RREV:TASK_FAILED>>> - emit when you cannot proceed at all. The run stops and
+  reports this phase.
+
+Emitting no marker is not success. rrev reads a missing marker as "work was done,
+iterate again" and runs this phase again, up to {{MAX_ITERATIONS}} iterations. So
+when you fixed and committed something, emit nothing: the next iteration has to
+check whether your fixes broke anything.
+
+OUTPUT FORMAT: no markdown formatting. Plain text and - lists are fine.

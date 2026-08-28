@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: build
+        run: make build
+
+      - name: test
+        run: make test
+
+      # The process-group and Break implementations are Windows-only, so
+      # nothing here compiles them unless we ask for it explicitly.
+      - name: cross-build windows
+        run: |
+          GOOS=windows GOARCH=amd64 go build ./...
+          GOOS=windows GOARCH=386 go build ./...
+
+      - name: lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1

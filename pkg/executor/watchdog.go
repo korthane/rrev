@@ -1,0 +1,235 @@
+package executor
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"sync"
+	"time"
+)
+
+// Limits bound one executor call. A zero duration disables that bound, which is
+// the default: a thorough review legitimately takes a long time.
+type Limits struct {
+	// Session bounds the whole call; Idle only a stretch without output.
+	Session time.Duration
+	Idle    time.Duration
+	// Progress is how often a silent call reports that it is still working.
+	Progress time.Duration
+}
+
+// Timeout sentinels, so a phase can match either bound or one specifically.
+var (
+	ErrTimeout        = errors.New("executor timed out")
+	ErrSessionTimeout = errors.New("executor session timed out")
+	ErrIdleTimeout    = errors.New("executor went idle")
+)
+
+// TimeoutError reports a call rrev cut short because it outlived one of its
+// bounds. It is distinguishable from a tool failure, and the output captured
+// before the bound expired is returned alongside it.
+type TimeoutError struct {
+	Tool  string
+	Limit time.Duration
+	Idle  bool
+}
+
+func (e *TimeoutError) Error() string {
+	if e.Idle {
+		return fmt.Sprintf("%s produced no output for %s", e.Tool, e.Limit)
+	}
+	return fmt.Sprintf("%s exceeded its %s session timeout", e.Tool, e.Limit)
+}
+
+// Is matches the generic timeout sentinel and the specific bound that expired.
+func (e *TimeoutError) Is(target error) bool {
+	switch target {
+	case ErrTimeout:
+		return true
+	case ErrIdleTimeout:
+		return e.Idle
+	case ErrSessionTimeout:
+		return !e.Idle
+	default:
+		return false
+	}
+}
+
+// expiry names the bound that cut a call short.
+type expiry int
+
+const (
+	expiryNone expiry = iota
+	expirySession
+	expiryIdle
+)
+
+// watchdog enforces a call's bounds while it runs: it cancels the call when the
+// session or idle bound expires, and reports that a quiet call is still alive
+// so a long stretch inside sub-agents does not look like a hang.
+type watchdog struct {
+	limits Limits
+	stream io.Writer
+	touch  chan struct{}
+	// quiet carries activity the user cannot see, such as stderr kept back for
+	// diagnostics. It proves the tool is alive, but must not silence the
+	// progress note, which is then the only sign of life on the terminal.
+	quiet chan struct{}
+	done  chan struct{}
+	// finished closes when watch returns, so stop can wait for it: a watchdog
+	// still writing its note after the call returned would race the caller
+	// reading the stream it wrote to.
+	finished chan struct{}
+
+	mu      sync.Mutex
+	expired expiry
+}
+
+func newWatchdog(limits Limits, stream io.Writer) *watchdog {
+	return &watchdog{
+		limits: limits, stream: stream,
+		touch: make(chan struct{}, 1), quiet: make(chan struct{}, 1),
+		done: make(chan struct{}), finished: make(chan struct{}),
+		expired: expiryNone,
+	}
+}
+
+// touched records visible output arriving, which restarts the idle countdown
+// and the progress note the output itself makes redundant.
+func (w *watchdog) touched() { poke(w.touch) }
+
+// stirred records activity that stays off the terminal: it restarts the idle
+// countdown only, so the user still gets the periodic note.
+func (w *watchdog) stirred() { poke(w.quiet) }
+
+// poke is non-blocking: a dropped notification is harmless, since the timer it
+// would reset was already about to be reset.
+func poke(ch chan struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
+}
+
+// watch runs until stop is called, cancelling the call on an expired bound.
+func (w *watchdog) watch(cancel context.CancelFunc) {
+	defer close(w.finished)
+	start := time.Now()
+	session, idle, progress := newPulse(w.limits.Session), newPulse(w.limits.Idle), newPulse(w.limits.Progress)
+	defer func() {
+		session.stop()
+		idle.stop()
+		progress.stop()
+	}()
+
+	for {
+		select {
+		case <-w.done:
+			return
+		case <-w.touch:
+			idle.reset()
+			progress.reset()
+		case <-w.quiet:
+			idle.reset()
+		case <-session.C():
+			w.expire(expirySession, cancel)
+			return
+		case <-idle.C():
+			w.expire(expiryIdle, cancel)
+			return
+		case <-progress.C():
+			w.report(time.Since(start))
+			progress.reset()
+		}
+	}
+}
+
+// stop ends the watch once the call has finished and waits for it to return.
+func (w *watchdog) stop() {
+	close(w.done)
+	<-w.finished
+}
+
+// timeout reports the bound that expired, if any.
+func (w *watchdog) timeout(tool string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	switch w.expired {
+	case expirySession:
+		return &TimeoutError{Tool: tool, Limit: w.limits.Session}
+	case expiryIdle:
+		return &TimeoutError{Tool: tool, Limit: w.limits.Idle, Idle: true}
+	default:
+		return nil
+	}
+}
+
+func (w *watchdog) expire(kind expiry, cancel context.CancelFunc) {
+	w.mu.Lock()
+	w.expired = kind
+	w.mu.Unlock()
+	cancel()
+}
+
+func (w *watchdog) report(elapsed time.Duration) {
+	if w.stream == nil {
+		return
+	}
+	// A terminal that cannot be written to is not worth failing the review for.
+	_, _ = fmt.Fprintf(w.stream, "· still working (%s)\n", elapsed.Round(time.Second))
+}
+
+// pulse is a timer that a zero duration disables, so a disabled bound is a
+// channel that never fires rather than a branch at every use.
+type pulse struct {
+	d time.Duration
+	t *time.Timer
+}
+
+func newPulse(d time.Duration) *pulse {
+	p := &pulse{d: d}
+	if d > 0 {
+		p.t = time.NewTimer(d)
+	}
+	return p
+}
+
+func (p *pulse) C() <-chan time.Time {
+	if p.t == nil {
+		return nil
+	}
+	return p.t.C
+}
+
+func (p *pulse) reset() {
+	if p.t == nil {
+		return
+	}
+	p.t.Reset(p.d)
+}
+
+func (p *pulse) stop() {
+	if p.t != nil {
+		p.t.Stop()
+	}
+}
+
+// syncWriter serializes writes to the terminal so a watchdog note cannot
+// interleave with the streamed output of the call it is watching. A nil target
+// discards.
+type syncWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func newSyncWriter(w io.Writer) *syncWriter { return &syncWriter{w: w} }
+
+func (s *syncWriter) Write(p []byte) (int, error) {
+	if s.w == nil {
+		return len(p), nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
+}

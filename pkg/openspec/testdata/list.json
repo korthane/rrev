@@ -1,0 +1,11 @@
+{
+  "changes": [
+    {
+      "name": "add-thing",
+      "completedTasks": 1,
+      "totalTasks": 2,
+      "lastModified": "2026-08-27T19:49:29.408Z",
+      "status": "in-progress"
+    }
+  ]
+}
