@@ -97,6 +97,10 @@ type Vars struct {
 	// ChecklistBudget caps the expanded checklist in characters; zero is
 	// unlimited.
 	ChecklistBudget int
+	// UnparsedSpecs are delta spec files no requirement came from. They are
+	// named in the checklist so a reviewer handed an incomplete one can read
+	// them and say so, rather than reporting conformance it never checked.
+	UnparsedSpecs []string
 
 	Iteration     int
 	MaxIterations int
@@ -254,7 +258,7 @@ func (v Vars) values() map[string]string {
 		"TASKS":               orElse(v.Tasks, missingPath),
 		"SPECS":               pathList(v.Specs),
 		"ARTIFACTS":           pathList(artifactPaths(v)),
-		"REQUIREMENTS":        renderChecklist(v.Requirements, v.ChecklistBudget),
+		"REQUIREMENTS":        renderChecklist(v.Requirements, v.ChecklistBudget, v.UnparsedSpecs),
 		"REQUIREMENT_COUNT":   strconv.Itoa(len(v.Requirements)),
 		"ITERATION":           strconv.Itoa(v.Iteration),
 		"MAX_ITERATIONS":      strconv.Itoa(v.MaxIterations),
@@ -275,9 +279,9 @@ func artifactPaths(v Vars) []string {
 // renderChecklist fits the checklist into budget characters, saying so when it
 // does not fit: a reviewer that knows its checklist was cut can report that,
 // while one silently handed a short list reports false conformance.
-func renderChecklist(entries []string, budget int) string {
+func renderChecklist(entries []string, budget int, unparsed []string) string {
 	if len(entries) == 0 {
-		return noRequirements
+		return noRequirements + unparsedBanner(unparsed)
 	}
 	kept, used := 0, 0
 	for _, entry := range entries {
@@ -288,12 +292,32 @@ func renderChecklist(entries []string, budget int) string {
 		kept++
 	}
 	shown := strings.Join(entries[:kept], "\n")
-	if kept == len(entries) {
-		return shown
+	if kept < len(entries) {
+		shown += fmt.Sprintf("\n[TRUNCATED: this checklist was cut at %d characters. %d of %d requirements are shown;"+
+			" %d are missing from this prompt. Read the delta spec files listed above for the rest, and say in your"+
+			" report that your checklist was truncated.]\n", budget, kept, len(entries), len(entries)-kept)
 	}
-	return shown + fmt.Sprintf("\n[TRUNCATED: this checklist was cut at %d characters. %d of %d requirements are shown;"+
-		" %d are missing from this prompt. Read the delta spec files listed above for the rest, and say in your"+
-		" report that your checklist was truncated.]\n", budget, kept, len(entries), len(entries)-kept)
+	return shown + unparsedBanner(unparsed)
+}
+
+// unparsedBanner names the delta specs that contributed no requirement, for the
+// same reason truncation is announced: a silently short checklist reads as a
+// change with fewer requirements instead of one whose specs were not read.
+func unparsedBanner(unparsed []string) string {
+	if len(unparsed) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n[INCOMPLETE: no requirement could be parsed from %s. This checklist does not cover"+
+		" %s. Read %s directly, judge the change against what %s states, and say in your report that your"+
+		" checklist was incomplete.]\n", strings.Join(unparsed, ", "), plural(len(unparsed), "that file", "those files"),
+		plural(len(unparsed), "it", "them"), plural(len(unparsed), "it", "they"))
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 func pathList(paths []string) string {

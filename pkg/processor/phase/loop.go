@@ -2,6 +2,7 @@ package phase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/korthane/rrev/pkg/config"
@@ -65,7 +66,7 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 		e.Log.IterationStart(spec.name, n, limit)
 		res.Iterations = n
 
-		step, err := spec.run(runCtx, n, limit)
+		step, err := e.runStep(runCtx, spec, n, limit)
 		res.Findings = append(res.Findings, step.Findings...)
 		res.Rejections = append(res.Rejections, step.Rejections...)
 		if err != nil {
@@ -107,6 +108,24 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 
 	e.report(res)
 	return res
+}
+
+// retryBudget bounds how many times one iteration may be re-run after the
+// executor reported a failure it called transient: enough to ride out a blip,
+// few enough that a provider that keeps failing still ends the run.
+const retryBudget = 2
+
+// runStep runs one iteration, re-running it when the executor reports a
+// transient failure rather than ending the whole pipeline on a flaky call.
+func (e *Env) runStep(ctx context.Context, spec loopSpec, n, limit int) (stepResult, error) {
+	for attempt := 0; ; attempt++ {
+		step, err := spec.run(ctx, n, limit)
+		if err == nil || attempt >= retryBudget || !errors.Is(err, executor.ErrRetryable) ||
+			ctx.Err() != nil || interrupted(spec.brk) {
+			return step, err
+		}
+		e.note("%s iteration %d: %v; retrying", Label(spec.name), n, err)
+	}
 }
 
 // report states the terminating condition and the iteration count, in the

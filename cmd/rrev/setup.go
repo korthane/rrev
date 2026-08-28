@@ -67,15 +67,18 @@ func prepare(ctx context.Context, opts *options, dir string) (*startup, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := repo.EnsureChanges(ctx, baseRef); err != nil {
-		return nil, err
-	}
-
+	// The change is resolved before the diff is checked: on a branch with no
+	// changes, an unknown change name must still be reported as such rather
+	// than hidden behind "nothing to review".
 	review, err := resolveReview(dir, opts.Change)
 	if err != nil {
 		return nil, err
 	}
 	warnings = append(warnings, review.Notes...)
+
+	if err := repo.EnsureChanges(ctx, baseRef); err != nil {
+		return nil, err
+	}
 
 	primary, err := executor.Primary(cfg)
 	if err != nil {

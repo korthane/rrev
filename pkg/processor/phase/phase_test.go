@@ -93,6 +93,47 @@ const (
 	taskFailed   = "<<<RREV:TASK_FAILED>>>"
 )
 
+// TestTransientFailureRetriesTheIteration covers the retryable classification:
+// a blip the tool itself calls transient must not end a run that still has
+// iterations left.
+func TestTransientFailureRetriesTheIteration(t *testing.T) {
+	primary := &executor.Mock{Tool: "claude", Responses: []executor.Response{
+		{Err: &executor.LimitError{Tool: "claude", Reason: "service unavailable", Retryable: true}},
+		{Output: reviewDone},
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+
+	res := Comprehensive(context.Background(), env)
+
+	if res.Reason != ReasonConverged || res.Err != nil {
+		t.Fatalf("result = %+v, want a converged phase", res)
+	}
+	if res.Iterations != 1 {
+		t.Errorf("iterations = %d, want the retry to reuse iteration 1", res.Iterations)
+	}
+	if primary.CallCount() != 2 {
+		t.Errorf("executor calls = %d, want the failed call retried once", primary.CallCount())
+	}
+}
+
+// TestPersistentTransientFailureEndsTheLoop pins the other side of the retry:
+// a tool that keeps failing still ends the phase instead of spinning.
+func TestPersistentTransientFailureEndsTheLoop(t *testing.T) {
+	primary := &executor.Mock{Tool: "claude", Responses: []executor.Response{
+		{Err: &executor.LimitError{Tool: "claude", Reason: "service unavailable", Retryable: true}},
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+
+	res := Comprehensive(context.Background(), env)
+
+	if res.Reason != ReasonFailure || res.Err == nil {
+		t.Fatalf("result = %+v, want the phase to fail", res)
+	}
+	if primary.CallCount() != retryBudget+1 {
+		t.Errorf("executor calls = %d, want %d", primary.CallCount(), retryBudget+1)
+	}
+}
+
 func TestComprehensiveConverges(t *testing.T) {
 	primary := mock("claude", "nothing to fix\n"+reviewDone)
 	env, _ := newEnv(t, primary, nil, nil)

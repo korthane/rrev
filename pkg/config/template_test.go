@@ -74,15 +74,15 @@ func TestExpandRejectsUnterminatedDirective(t *testing.T) {
 func TestChecklistTruncationStatesThatItTruncated(t *testing.T) {
 	entries := []string{"1. first requirement\n", "2. second requirement\n", "3. third requirement\n"}
 
-	full := renderChecklist(entries, 0)
+	full := renderChecklist(entries, 0, nil)
 	if strings.Contains(full, "TRUNCATED") {
 		t.Errorf("unbudgeted checklist was truncated: %q", full)
 	}
-	if fits := renderChecklist(entries, 1000); fits != full {
+	if fits := renderChecklist(entries, 1000, nil); fits != full {
 		t.Errorf("checklist under budget = %q, want the full checklist", fits)
 	}
 
-	got := renderChecklist(entries, len(entries[0])+len(entries[1]))
+	got := renderChecklist(entries, len(entries[0])+len(entries[1]), nil)
 	if !strings.Contains(got, "TRUNCATED") || !strings.Contains(got, "2 of 3 requirements") {
 		t.Errorf("truncated checklist does not say so: %q", got)
 	}
@@ -94,7 +94,7 @@ func TestChecklistTruncationStatesThatItTruncated(t *testing.T) {
 func TestChecklistTruncationKeepsWholeRequirements(t *testing.T) {
 	entries := []string{"1. a requirement far longer than the budget\n", "2. another\n"}
 
-	got := renderChecklist(entries, 5)
+	got := renderChecklist(entries, 5, nil)
 	if !strings.Contains(got, "1. a requirement far longer than the budget") {
 		t.Errorf("a requirement was cut in half or dropped entirely: %q", got)
 	}
@@ -104,8 +104,23 @@ func TestChecklistTruncationKeepsWholeRequirements(t *testing.T) {
 }
 
 func TestChecklistEmpty(t *testing.T) {
-	if got := renderChecklist(nil, 100); got != noRequirements {
+	if got := renderChecklist(nil, 100, nil); got != noRequirements {
 		t.Errorf("empty checklist = %q, want %q", got, noRequirements)
+	}
+}
+
+func TestChecklistNamesUnparsedSpecs(t *testing.T) {
+	entries := []string{"1. first requirement\n"}
+	unparsed := []string{"openspec/changes/c/specs/auth/spec.md"}
+
+	got := renderChecklist(entries, 0, unparsed)
+	if !strings.Contains(got, "INCOMPLETE") || !strings.Contains(got, unparsed[0]) {
+		t.Errorf("checklist does not name the spec it could not parse: %q", got)
+	}
+
+	empty := renderChecklist(nil, 0, unparsed)
+	if !strings.Contains(empty, unparsed[0]) {
+		t.Errorf("empty checklist does not name the spec it could not parse: %q", empty)
 	}
 }
 

@@ -19,6 +19,10 @@ type Context struct {
 	Degraded bool
 	// Notes records degraded modes, missing artifacts, and unparseable specs.
 	Notes []string
+	// UnparsedSpecs are the delta spec files that yielded no requirements. The
+	// reviewers are told about them so a checklist missing a whole capability
+	// is never mistaken for a change that has none.
+	UnparsedSpecs []string
 }
 
 // Resolve builds the review context for a change: its artifacts, its requirement
@@ -35,8 +39,9 @@ func Resolve(cli CLI, root Root, change Change, disc Discovery) (Context, error)
 	}
 	rc.Notes = append(rc.Notes, arts.Notes...)
 
-	parsed, parseNotes := parseAllSpecs(arts.Specs)
+	parsed, unparsed, parseNotes := parseAllSpecs(arts.Specs)
 	rc.Notes = append(rc.Notes, parseNotes...)
+	rc.UnparsedSpecs = unparsed
 	if reqs, err := cli.ExtractRequirements(root.Dir, change.Name); err == nil && len(reqs) > 0 {
 		rc.Requirements = nameFromParsed(reqs, parsed)
 	} else {
@@ -71,21 +76,18 @@ func (c Context) GoalLine() string {
 
 // parseAllSpecs parses every delta spec, keeping going past a spec it cannot
 // parse and reporting that file instead.
-func parseAllSpecs(specs []Artifact) ([]Requirement, []string) {
-	var (
-		reqs  []Requirement
-		notes []string
-	)
+func parseAllSpecs(specs []Artifact) (reqs []Requirement, unparsed, notes []string) {
 	for _, spec := range specs {
 		parsed, err := ParseDeltaSpec(spec.Capability, spec.Content)
 		if err != nil {
+			unparsed = append(unparsed, spec.Path)
 			notes = append(notes, "could not parse delta spec "+spec.Path+": "+err.Error()+
-				"; its raw text is included in the review context")
+				"; reviewers are told to read the file itself")
 			continue
 		}
 		reqs = append(reqs, parsed...)
 	}
-	return reqs, notes
+	return reqs, unparsed, notes
 }
 
 // nameFromParsed copies requirement and scenario titles onto the CLI's output,

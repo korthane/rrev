@@ -165,6 +165,9 @@ func TestResolveKeepsUnparseableSpecRawText(t *testing.T) {
 	if !slices.ContainsFunc(rc.Artifacts.Specs, func(a openspec.Artifact) bool { return a.Content == raw }) {
 		t.Error("review context lost the unparseable spec's raw text")
 	}
+	if !slices.ContainsFunc(rc.UnparsedSpecs, func(p string) bool { return strings.HasSuffix(p, "specs/auth/spec.md") }) {
+		t.Errorf("unparsed specs = %v, want the file the reviewers must read themselves", rc.UnparsedSpecs)
+	}
 }
 
 // TestContextIsResolvedOnce pins the context's immutability: it is a value, so a

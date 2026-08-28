@@ -95,6 +95,23 @@ func TestPrepareUnknownChange(t *testing.T) {
 	assertNoExecutorRan(t, marker)
 }
 
+// TestPrepareUnknownChangeBeatsEmptyDiff pins the preflight order: a typo in
+// the change name must be reported as such, not hidden behind the empty-diff
+// no-op that would otherwise exit successfully.
+func TestPrepareUnknownChangeBeatsEmptyDiff(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	marker := fakeBin(t, "claude", "codex")
+
+	_, err := prepareIn(t, repo, "--base-ref", "feature", "add-billing")
+	if err == nil {
+		t.Fatal("prepare: want an error for an unknown change")
+	}
+	if !strings.Contains(err.Error(), "add-billing") {
+		t.Errorf("error %q, want it to name the unknown change", err)
+	}
+	assertNoExecutorRan(t, marker)
+}
+
 func TestPrepareBaseRefOverride(t *testing.T) {
 	repo := newFixtureRepo(t, "add-user-auth")
 	fakeBin(t, "claude", "codex")

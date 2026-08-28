@@ -185,6 +185,9 @@ func runVars(start *startup, log *progress.Log) config.Vars {
 	for _, spec := range arts.Specs {
 		vars.Specs = append(vars.Specs, repoPath(root, filepath.Join(review.Root.Dir, spec.Path)))
 	}
+	for _, spec := range review.UnparsedSpecs {
+		vars.UnparsedSpecs = append(vars.UnparsedSpecs, repoPath(root, filepath.Join(review.Root.Dir, spec)))
+	}
 	return vars
 }
 
