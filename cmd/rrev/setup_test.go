@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -318,6 +320,42 @@ func TestPreparePromptCheckSkipsPhasesTheModeNeverRuns(t *testing.T) {
 	writeFile(t, repo, ".rrev/prompts/review_final.txt", "Regression pass for {{NOT_A_VARIABLE}}.\n")
 
 	if _, err := prepareIn(t, repo, "--phase1-only"); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+}
+
+// rrev writes a catch-all ignore rule into its progress directory, so a value
+// that resolves onto the repository root would ignore the whole repository.
+func TestPrepareRejectsProgressDirAtTheRepositoryRoot(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	marker := fakeBin(t, "claude", "codex")
+	writeFile(t, repo, ".rrev/config.ini", "progress_dir = .rrev/..\n")
+
+	_, err := prepareIn(t, repo)
+	if err == nil {
+		t.Fatal("prepare: want an error when the progress directory is the repository root")
+	}
+	for _, want := range []string{"progress_dir", "config.ini"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q, want it to mention %q", err, want)
+		}
+	}
+	assertNoExecutorRan(t, marker)
+}
+
+// The executor runs with the repository root as its working directory, so a
+// relative command must be looked up there rather than in rrev's own.
+func TestPrepareResolvesARelativeCommandAgainstTheRepositoryRoot(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	fakeBin(t, "claude")
+	writeFile(t, repo, "tools/review.sh", "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(filepath.Join(repo, "tools", "review.sh"), 0o700); err != nil { //nolint:gosec // test fixture
+		t.Fatalf("chmod stand-in: %v", err)
+	}
+	writeFile(t, repo, ".rrev/config.ini",
+		"external_review_tool = custom\nexternal_review_command = ./tools/review.sh\n")
+
+	if _, err := prepareIn(t, repo); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
 }

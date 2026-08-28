@@ -24,6 +24,13 @@ jobs:
       - name: test
         run: make test
 
+      # The process-group and Break implementations are Windows-only, so
+      # nothing here compiles them unless we ask for it explicitly.
+      - name: cross-build windows
+        run: |
+          GOOS=windows GOARCH=amd64 go build ./...
+          GOOS=windows GOARCH=386 go build ./...
+
       - name: lint
         uses: golangci/golangci-lint-action@v9
         with:

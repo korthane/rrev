@@ -86,6 +86,9 @@ type Log struct {
 	now      func() time.Time
 
 	mu sync.Mutex
+	// lockWarned keeps a lock rrev cannot take from repeating its warning on
+	// every entry: a run writes tens of them, and the first one says it all.
+	lockWarned bool
 }
 
 // Open opens the progress log for change under dir, creating the directory and
@@ -227,14 +230,23 @@ func (l *Log) append(kind string, fields []kv, detail string) {
 	case err == nil:
 		defer l.lock.release()
 	case errors.Is(err, errLockBusy):
-		l.warn(fmt.Sprintf("progress log %s is busy after %s; appending without the lock", l.path, l.lockWait))
+		l.warnOnce(fmt.Sprintf("progress log %s is busy after %s; appending without the lock", l.path, l.lockWait))
 	default:
-		l.warn(fmt.Sprintf("progress log lock %s: %v; appending without the lock", l.lock.path, err))
+		l.warnOnce(fmt.Sprintf("progress log lock %s: %v; appending without the lock", l.lock.path, err))
 	}
 
 	if err := appendFile(l.path, entry); err != nil {
 		l.warn(fmt.Sprintf("write progress log: %v", err))
 	}
+}
+
+// warnOnce reports a lock the run could not take, once per log.
+func (l *Log) warnOnce(text string) {
+	if l.lockWarned {
+		return
+	}
+	l.lockWarned = true
+	l.warn(text)
 }
 
 func (l *Log) render(kind string, fields []kv, detail string) string {

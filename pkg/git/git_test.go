@@ -576,3 +576,20 @@ func TestDefaultBranchPrefersRemoteWhenLocalHasUnrelatedHistory(t *testing.T) {
 		t.Errorf("ChangedFiles = %v, want the branch's own file", files)
 	}
 }
+
+// git failing to run at all is not the same as the directory not being a
+// repository, and reporting it as one sends the user looking for a repository
+// that is right there.
+func TestNewSurfacesAMissingGitBinaryAsItself(t *testing.T) {
+	isolateGit(t)
+	dir := newRepo(t, "main")
+	t.Setenv("PATH", t.TempDir())
+
+	_, err := git.New(t.Context(), dir)
+	if err == nil {
+		t.Fatal("git.New: want an error when git is not on PATH")
+	}
+	if errors.Is(err, git.ErrNotRepository) {
+		t.Errorf("error %q reported as ErrNotRepository, want git's own failure", err)
+	}
+}

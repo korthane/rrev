@@ -83,7 +83,7 @@ Modes are mutually exclusive; combining two is a startup error.
 | Full pipeline | *(default)* | comprehensive review, external review loop, final review, finalize when enabled |
 | External only | `--external-only` | external review loop, final review, finalize when enabled |
 | First phase only | `--phase1-only` | comprehensive review, then exit; finalize never runs |
-| Report only | `--report-only` | each phase as a single read-only pass, writing a findings report |
+| Report only | `--report-only` | comprehensive and external review as single read-only passes, writing a findings report; the final regression pass is skipped, since no fix was applied that could have regressed anything |
 
 Report-only mode never edits a tracked file, stages, or commits: no tracked file
 and no commit changes. It does write its own artifacts — the findings report at
@@ -165,8 +165,8 @@ Each setting has a flag named after it, with underscores written as hyphens.
 | `base_ref` | `--base-ref` | *(detected)* | ref the review diffs against; empty detects the repository's default branch |
 | `model` | `--model` | *(tool default)* | `model[:effort]` every phase inherits from |
 | `review_model` | `--review-model` | inherits `model` | `model[:effort]` for the comprehensive review phase |
-| `external_model` | `--external-model` | inherits the effort of `model` | `model[:effort]` for the external review loop; an inherited model name is dropped when the external tool differs from the primary executor, so name that tool's model here |
-| `final_model` | `--final-model` | inherits `model` | `model[:effort]` for the final review phase |
+| `external_model` | `--external-model` | inherits `review_model`, then `model` | `model[:effort]` for the external review loop; an inherited model name is dropped when the external tool differs from the primary executor, so name that tool's model here |
+| `final_model` | `--final-model` | inherits `review_model`, then `model` | `model[:effort]` for the final review phase |
 | `finalize_model` | `--finalize-model` | inherits `model` | `model[:effort]` for the finalize step |
 | `max_iterations` | `--max-iterations` | `10` | iteration limit for the comprehensive review phase |
 | `external_max_iterations` | `--external-max-iterations` | `5` | iteration limit for the external review loop |

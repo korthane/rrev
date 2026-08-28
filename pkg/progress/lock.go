@@ -17,6 +17,11 @@ const DefaultLockWait = 2 * time.Second
 // lockPollInterval is how often a waiting writer retries the exclusive create.
 const lockPollInterval = 5 * time.Millisecond
 
+// staleLockAge is how long a lock file may sit untouched before a waiter takes
+// it over. A run killed outright leaves the file behind, and without reclaim
+// every append of every later run would pay the full wait forever.
+const staleLockAge = 2 * time.Minute
+
 // fileLock is an advisory lock built from an exclusively created file, which
 // works the same across platforms and across processes that never share a
 // file descriptor.
@@ -28,6 +33,9 @@ type fileLock struct {
 // on expiry.
 func (l fileLock) acquire(wait time.Duration) error {
 	deadline := time.Now().Add(wait)
+	// One reclaim attempt only: a lock file that cannot be removed would
+	// otherwise spin here forever.
+	reclaimed := false
 	for {
 		f, err := os.OpenFile(l.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
@@ -42,11 +50,26 @@ func (l fileLock) acquire(wait time.Duration) error {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
+		if !reclaimed && l.stale() {
+			reclaimed = true
+			l.release()
+			continue
+		}
 		if time.Now().After(deadline) {
 			return errLockBusy
 		}
 		time.Sleep(lockPollInterval)
 	}
+}
+
+// stale reports whether the lock file has sat untouched long enough that its
+// owner is presumed dead. A missing file is not stale: the next create wins it.
+func (l fileLock) stale() bool {
+	info, err := os.Stat(l.path)
+	if err != nil {
+		return false
+	}
+	return time.Since(info.ModTime()) > staleLockAge
 }
 
 func (l fileLock) release() {

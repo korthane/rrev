@@ -63,13 +63,32 @@ func New(ctx context.Context, dir string) (*Repo, error) {
 	repo := &Repo{dir: dir}
 	root, err := repo.git(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", ErrNotRepository, dir, err)
+		if notRepository(err) {
+			return nil, fmt.Errorf("%w: %s: %w", ErrNotRepository, dir, err)
+		}
+		return nil, err
 	}
 	// Every git command runs from the work-tree root, which is also where the
 	// executors run: a diff issued from a subdirectory is restricted to it when
 	// diff.relative is set, which would hide changes elsewhere on the branch.
 	repo.root, repo.dir = root, root
 	return repo, nil
+}
+
+// notRepository distinguishes git rejecting the directory from git failing to
+// run at all. A missing git binary or a repository git refuses to open, such as
+// one with dubious ownership, must not be reported as "not a git repository":
+// that sends the user looking for a repository that is right there.
+func notRepository(err error) bool {
+	var cmdErr *CommandError
+	if !errors.As(err, &cmdErr) {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(cmdErr.Err, &exitErr) {
+		return false
+	}
+	return strings.Contains(cmdErr.Stderr, "not a git repository")
 }
 
 // Root is the absolute path of the repository work tree.

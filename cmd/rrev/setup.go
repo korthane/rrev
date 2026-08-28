@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -58,6 +59,9 @@ func prepare(ctx context.Context, opts *options, dir string) (*startup, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkProgressDir(repo.Root(), cfg); err != nil {
+		return nil, err
+	}
 
 	baseRef, err := resolveBaseRef(ctx, repo, cfg)
 	if err != nil {
@@ -81,7 +85,7 @@ func prepare(ctx context.Context, opts *options, dir string) (*startup, error) {
 	if err != nil {
 		return nil, fmt.Errorf("external review tool: %w", err)
 	}
-	if err := checkExecutables(cfg, opts.Mode, primary, external); err != nil {
+	if err := checkExecutables(repo.Root(), cfg, opts.Mode, primary, external); err != nil {
 		return nil, err
 	}
 	if err := checkPrompts(cfg, resolved.Assets, opts.Mode, external); err != nil {
@@ -144,7 +148,7 @@ var commandKeys = map[string]string{
 // checkExecutables verifies every executable the run intends to invoke is on
 // PATH. An executor with no binary to check, such as a mock, is skipped, and so
 // is the external tool in a mode whose phases never reach it.
-func checkExecutables(cfg *config.Config, mode processor.Mode, primary, external executor.Executor) error {
+func checkExecutables(root string, cfg *config.Config, mode processor.Mode, primary, external executor.Executor) error {
 	execs := []executor.Executor{primary}
 	if runsExternalPhase(mode) {
 		execs = append(execs, external)
@@ -153,12 +157,36 @@ func checkExecutables(cfg *config.Config, mode processor.Mode, primary, external
 		if e == nil || e.Bin() == "" {
 			continue
 		}
-		if _, err := exec.LookPath(e.Bin()); err != nil {
+		if err := lookExecutable(root, e.Bin()); err != nil {
 			return fmt.Errorf("%s executable %q was not found on PATH (set in %s)",
 				e.Name(), e.Bin(), cfg.Origin(commandKeys[e.Name()]))
 		}
 	}
 	return nil
+}
+
+// lookExecutable resolves a binary the way the run will: exec.Cmd resolves a
+// relative path with a separator in it against Cmd.Dir, which is the repository
+// root rather than rrev's own working directory.
+func lookExecutable(root, bin string) error {
+	if !filepath.IsAbs(bin) && filepath.Base(bin) != bin {
+		bin = filepath.Join(root, bin)
+	}
+	_, err := exec.LookPath(bin)
+	return err
+}
+
+// checkProgressDir rejects a progress directory that resolves onto the
+// repository root or the filesystem root. rrev writes a catch-all ignore rule
+// into that directory, which at the repository root would ignore the whole
+// repository and leave the pipeline's own commits staging nothing.
+func checkProgressDir(root string, cfg *config.Config) error {
+	dir := filepath.Clean(absDir(root, cfg.ProgressDir))
+	if dir != filepath.Clean(root) && filepath.Dir(dir) != dir {
+		return nil
+	}
+	return fmt.Errorf("progress_dir %q (set in %s) resolves to %s, which must be a directory of its own: "+
+		"rrev writes a catch-all ignore rule there", cfg.ProgressDir, cfg.Origin("progress_dir"), dir)
 }
 
 // runsExternalPhase reports whether the mode's phase sequence invokes the

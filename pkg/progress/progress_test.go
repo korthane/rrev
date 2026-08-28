@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -299,6 +300,65 @@ func TestValidationOutcomeRecorded(t *testing.T) {
 	for _, want := range []string{"validation:", "outcome=fail", `command="make test"`, "TestFoo failed"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("log %q does not contain %q", body, want)
+		}
+	}
+}
+
+// A run killed outright leaves its lock behind. Without reclaim every append of
+// every later run would pay the full wait, forever.
+func TestStaleLockIsReclaimed(t *testing.T) {
+	dir := t.TempDir()
+	var warnings []string
+	log := openLog(t, dir, "change", progress.Options{
+		LockWait: 20 * time.Millisecond,
+		Warn:     func(msg string) { warnings = append(warnings, msg) },
+	})
+
+	abandoned := log.Path() + ".lock"
+	if err := os.WriteFile(abandoned, nil, 0o600); err != nil {
+		t.Fatalf("hold lock: %v", err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(abandoned, old, old); err != nil {
+		t.Fatalf("age lock: %v", err)
+	}
+
+	log.Note("written after reclaiming the lock")
+
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %q, want none: a stale lock is taken over, not reported", warnings)
+	}
+	if !strings.Contains(readLog(t, log), "written after reclaiming the lock") {
+		t.Error("entry was not appended")
+	}
+	if _, err := os.Stat(abandoned); !os.IsNotExist(err) {
+		t.Errorf("stale lock still present after release: %v", err)
+	}
+}
+
+// A lock rrev cannot take reports itself once, not once per entry: a run writes
+// tens of entries and the first report says all there is to say.
+func TestHeldLockIsReportedOnlyOnce(t *testing.T) {
+	dir := t.TempDir()
+	var warnings []string
+	log := openLog(t, dir, "change", progress.Options{
+		LockWait: 10 * time.Millisecond,
+		Warn:     func(msg string) { warnings = append(warnings, msg) },
+	})
+	if err := os.WriteFile(log.Path()+".lock", nil, 0o600); err != nil {
+		t.Fatalf("hold lock: %v", err)
+	}
+
+	for i := range 3 {
+		log.Note("entry " + strconv.Itoa(i))
+	}
+
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %q, want exactly one", warnings)
+	}
+	for i := range 3 {
+		if !strings.Contains(readLog(t, log), "entry "+strconv.Itoa(i)) {
+			t.Errorf("entry %d was dropped", i)
 		}
 	}
 }
