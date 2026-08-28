@@ -319,10 +319,14 @@ func ensureIgnoreRule(dir string) error {
 	return nil
 }
 
+// FilePrefix starts the name of every file a log writes, so a caller can tell
+// rrev's own run artifacts apart from a directory's other contents.
+const FilePrefix = "progress-"
+
 // fileName keeps one log per change, so concurrent runs against different
 // changes never share a file.
 func fileName(change string) string {
-	return "progress-" + slug(change) + ".md"
+	return FilePrefix + slug(change) + ".md"
 }
 
 func slug(name string) string {

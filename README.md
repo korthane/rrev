@@ -176,7 +176,7 @@ Each setting has a flag named after it, with underscores written as hyphens.
 | `idle_timeout` | `--idle-timeout` | `0` | bound on a silent stretch of an executor call; 0 disables |
 | `progress_interval` | `--progress-interval` | `30s` | how often to report that a silent executor is still working |
 | `finalize` | `--finalize` | `false` | run the finalize step after the last review phase |
-| `progress_dir` | `--progress-dir` | `.rrev/progress` | directory the per-change progress log is written to |
+| `progress_dir` | `--progress-dir` | `.rrev/progress` | directory the per-change progress log is written to; rrev writes a catch-all ignore rule there, so it must be a directory of its own |
 | `report_file` | `--report-file` | `.rrev/findings.md` | destination of the findings report |
 | `checklist_budget` | `--checklist-budget` | `120000` | maximum characters of requirement checklist expanded into a prompt; 0 is unlimited |
 | `validation_command` | `--validation-command` | *(empty)* | command the executor runs before committing a fix |

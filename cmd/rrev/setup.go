@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/korthane/rrev/pkg/git"
 	"github.com/korthane/rrev/pkg/openspec"
 	"github.com/korthane/rrev/pkg/processor"
+	"github.com/korthane/rrev/pkg/progress"
 )
 
 // startup is what preflight resolved: the repository under review, the settings
@@ -186,12 +188,35 @@ func lookExecutable(root, bin string) error {
 // own commits staging nothing, and above it, whatever tracks the parent.
 func checkProgressDir(root string, cfg *config.Config) error {
 	dir := filepath.Clean(absDir(root, cfg.ProgressDir))
-	if dir != filepath.Clean(root) && filepath.Dir(dir) != dir && !escapes(root, dir) {
-		return nil
+	if dir == filepath.Clean(root) || filepath.Dir(dir) == dir || escapes(root, dir) {
+		return fmt.Errorf("progress_dir %q (set in %s) resolves to %s, which must be a directory of its own "+
+			"inside the repository: rrev writes a catch-all ignore rule there",
+			cfg.ProgressDir, cfg.Origin("progress_dir"), dir)
 	}
-	return fmt.Errorf("progress_dir %q (set in %s) resolves to %s, which must be a directory of its own "+
-		"inside the repository: rrev writes a catch-all ignore rule there",
-		cfg.ProgressDir, cfg.Origin("progress_dir"), dir)
+	if foreign := foreignEntry(dir); foreign != "" {
+		return fmt.Errorf("progress_dir %q (set in %s) already holds %q, which rrev did not write: "+
+			"rrev writes a catch-all ignore rule there, which would keep git from picking up anything "+
+			"new added under that directory",
+			cfg.ProgressDir, cfg.Origin("progress_dir"), foreign)
+	}
+	return nil
+}
+
+// foreignEntry names an entry of dir that rrev did not write, or "" when the
+// directory is missing, unreadable, or holds only its own run artifacts. An
+// unreadable directory is left to the progress log, which degrades rather than
+// ending a review over a log it cannot write.
+func foreignEntry(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if name := e.Name(); name != ".gitignore" && !strings.HasPrefix(name, progress.FilePrefix) {
+			return name
+		}
+	}
+	return ""
 }
 
 // escapes reports whether dir lies outside root.

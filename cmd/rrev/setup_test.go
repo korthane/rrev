@@ -11,6 +11,7 @@ import (
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/processor"
+	"github.com/korthane/rrev/pkg/progress"
 )
 
 // prepareIn parses a command line and runs preflight against dir, which is how
@@ -376,6 +377,40 @@ func TestPrepareRejectsProgressDirOutsideTheRepository(t *testing.T) {
 		t.Errorf("error %q, want it to mention progress_dir", err)
 	}
 	assertNoExecutorRan(t, marker)
+}
+
+// A directory the user already keeps files in is not rrev's to ignore: the
+// catch-all rule would keep git from picking up anything new added there.
+func TestPrepareRejectsProgressDirHoldingOtherFiles(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	marker := fakeBin(t, "claude", "codex")
+	writeFile(t, repo, "notes/plan.md", "# plan\n")
+	writeFile(t, repo, ".rrev/config.ini", "progress_dir = notes\n")
+
+	_, err := prepareIn(t, repo)
+	if err == nil {
+		t.Fatal("prepare: want an error when the progress directory holds files rrev did not write")
+	}
+	for _, want := range []string{"progress_dir", "plan.md"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q, want it to mention %q", err, want)
+		}
+	}
+	assertNoExecutorRan(t, marker)
+}
+
+// A progress directory from an earlier run holds only rrev's own artifacts, and
+// appending to it is the point of keeping the log per change.
+func TestPrepareAcceptsProgressDirFromAnEarlierRun(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	fakeBin(t, "claude", "codex")
+	writeFile(t, repo, "runs/.gitignore", "*\n")
+	writeFile(t, repo, "runs/"+progress.FilePrefix+"add-user-auth.md", "earlier run\n")
+	writeFile(t, repo, ".rrev/config.ini", "progress_dir = runs\n")
+
+	if _, err := prepareIn(t, repo); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
 }
 
 // The executor runs with the repository root as its working directory, so a
