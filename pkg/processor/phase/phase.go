@@ -109,8 +109,10 @@ type Env struct {
 	// Out receives rrev's own phase-level narration; nil discards it.
 	Out io.Writer
 
-	// Break ends the external review loop at the next iteration boundary.
-	Break <-chan struct{}
+	// Break arms the break key and returns the channel the next break signal
+	// closes, which ends the external review loop at the next iteration
+	// boundary; nil where the platform has no break signal.
+	Break func() <-chan struct{}
 	// SinglePass caps every loop at one iteration, which is what report-only
 	// mode needs: with no fixes applied there is nothing for a second pass to
 	// verify.

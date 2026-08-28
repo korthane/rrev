@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
@@ -65,8 +66,9 @@ func launch(ctx context.Context, start *startup, out, errOut io.Writer) status.C
 
 // listen installs the run's signal handlers. An abort cancels the context,
 // which is what terminates the executor's process group; a break only closes
-// the channel the external review loop watches.
-func listen(ctx context.Context) (context.Context, <-chan struct{}, func()) {
+// the channel the external review loop watches. The returned function arms the
+// break for one loop, and is nil where the platform has no break signal.
+func listen(ctx context.Context) (context.Context, func() <-chan struct{}, func()) {
 	runCtx, stopAbort := signal.NotifyContext(ctx, os.Interrupt)
 
 	sig, _, ok := status.BreakSignal()
@@ -75,19 +77,47 @@ func listen(ctx context.Context) (context.Context, <-chan struct{}, func()) {
 	}
 	received := make(chan os.Signal, 1)
 	signal.Notify(received, sig)
-	brk, done := make(chan struct{}), make(chan struct{})
+	brk, done := &breaker{ch: make(chan struct{})}, make(chan struct{})
 	go func() {
-		select {
-		case <-received:
-			close(brk)
-		case <-done:
+		for {
+			select {
+			case <-received:
+				brk.fire()
+			case <-done:
+				return
+			}
 		}
 	}()
-	return runCtx, brk, func() {
+	return runCtx, brk.arm, func() {
 		signal.Stop(received)
 		close(done)
 		stopAbort()
 	}
+}
+
+// breaker delivers break signals to whichever review loop is running. It hands
+// out a fresh channel per loop and replaces it on every signal, so a break sent
+// outside a loop is discarded instead of latching the key dead for the rest of
+// the run.
+type breaker struct {
+	mu sync.Mutex
+	ch chan struct{}
+}
+
+// arm returns the channel the next break closes, dropping any break that
+// already fired.
+func (b *breaker) arm() <-chan struct{} {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.ch
+}
+
+// fire ends the armed loop and re-arms the key for the next one.
+func (b *breaker) fire() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	close(b.ch)
+	b.ch = make(chan struct{})
 }
 
 // openLog opens the progress log, reporting a log that cannot be written rather

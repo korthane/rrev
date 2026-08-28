@@ -25,8 +25,9 @@ type stepResult struct {
 type loopSpec struct {
 	name  string
 	limit int
-	// brk ends the loop at the next iteration boundary; nil never fires.
-	brk <-chan struct{}
+	// arm is called once when the loop starts and returns the channel a user
+	// break closes; nil means this loop cannot be broken.
+	arm func() <-chan struct{}
 	run func(ctx context.Context, iteration, limit int) (stepResult, error)
 }
 
@@ -39,20 +40,22 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 		limit = 1
 	}
 
-	// A break that arrived before this loop started belongs to whatever was
-	// running then; it must not end a loop that has not run an iteration.
-	if interrupted(spec.brk) {
-		spec.brk = nil
+	// Arming here is what makes a break belong to the loop that is running:
+	// one sent while an earlier phase ran was meant for that phase, and the
+	// key stays live for this loop instead of being spent on it.
+	var brk <-chan struct{}
+	if spec.arm != nil {
+		brk = spec.arm()
 	}
 
 	// A break cancels the call in flight rather than waiting for it: a loop the
 	// user ended should stop spending an executor on the iteration it is in.
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if spec.brk != nil {
+	if brk != nil {
 		go func() {
 			select {
-			case <-spec.brk:
+			case <-brk:
 				cancel()
 			case <-runCtx.Done():
 			}
@@ -65,20 +68,20 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 	before := e.snapshot(ctx)
 	stale := 0
 	for n := 1; n <= limit; n++ {
-		if interrupted(spec.brk) {
+		if interrupted(brk) {
 			res.Reason = ReasonUserBreak
 			break
 		}
 		e.Log.IterationStart(spec.name, n, limit)
 		res.Iterations = n
 
-		step, err := e.runStep(runCtx, spec, n, limit)
+		step, err := e.runStep(runCtx, spec, brk, n, limit)
 		res.Findings = append(res.Findings, step.Findings...)
 		res.Rejections = append(res.Rejections, step.Rejections...)
 		if err != nil {
 			res.Reason, res.Err = ReasonFailure, err
 			switch {
-			case interrupted(spec.brk):
+			case interrupted(brk):
 				// The user ending the loop is an outcome, not a failure: the
 				// pipeline carries on with the phase after it.
 				res.Reason, res.Err = ReasonUserBreak, nil
@@ -123,11 +126,11 @@ const retryBudget = 2
 
 // runStep runs one iteration, re-running it when the executor reports a
 // transient failure rather than ending the whole pipeline on a flaky call.
-func (e *Env) runStep(ctx context.Context, spec loopSpec, n, limit int) (stepResult, error) {
+func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, n, limit int) (stepResult, error) {
 	for attempt := 0; ; attempt++ {
 		step, err := spec.run(ctx, n, limit)
 		if err == nil || attempt >= retryBudget || !errors.Is(err, executor.ErrRetryable) ||
-			ctx.Err() != nil || interrupted(spec.brk) {
+			ctx.Err() != nil || interrupted(brk) {
 			return step, err
 		}
 		e.note("%s iteration %d: %v; retrying", Label(spec.name), n, err)

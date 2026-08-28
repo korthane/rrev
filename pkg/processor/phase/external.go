@@ -24,7 +24,7 @@ func External(ctx context.Context, e *Env) Result {
 	return e.drive(ctx, loopSpec{
 		name:  NameExternal,
 		limit: e.Config.ExternalMaxIterations,
-		brk:   e.Break,
+		arm:   e.Break,
 		run: func(ctx context.Context, n, limit int) (stepResult, error) {
 			return e.externalRound(ctx, n, limit, &rounds)
 		},

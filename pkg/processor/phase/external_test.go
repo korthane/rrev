@@ -172,7 +172,7 @@ func TestExternalUserBreakEndsLoop(t *testing.T) {
 		close(brk)
 		return executor.Result{Output: "evaluated"}, nil
 	}
-	env.Break = brk
+	env.Break = func() <-chan struct{} { return brk }
 
 	res := External(context.Background(), env)
 
@@ -188,18 +188,23 @@ func TestExternalUserBreakEndsLoop(t *testing.T) {
 }
 
 // A break the user sent while another phase was running was meant for whatever
-// was running then. The external loop is the only one that watches the channel,
-// so a latched break would skip the phase entirely without it ever starting.
-func TestExternalIgnoresABreakThatPredatesTheLoop(t *testing.T) {
-	brk := make(chan struct{})
-	close(brk)
+// was running then. The loop must therefore arm the break when it starts rather
+// than watch a channel a break from an earlier phase already latched.
+func TestExternalArmsTheBreakWhenTheLoopStarts(t *testing.T) {
 	external := mock("codex", externalDone)
 	primary := mock("claude", "evaluated")
 	env, _ := newEnv(t, primary, external, nil)
-	env.Break = brk
+	armed := 0
+	env.Break = func() <-chan struct{} {
+		armed++
+		return make(chan struct{})
+	}
 
 	res := External(context.Background(), env)
 
+	if armed != 1 {
+		t.Errorf("the break was armed %d times, want once, when the loop started", armed)
+	}
 	if res.Reason != ReasonConverged {
 		t.Fatalf("reason = %q, want %q: the break belonged to an earlier phase", res.Reason, ReasonConverged)
 	}
@@ -249,7 +254,7 @@ func TestExternalBreakCancelsTheCallInFlight(t *testing.T) {
 		<-ctx.Done()
 		return executor.Result{}, ctx.Err()
 	}
-	env.Break = brk
+	env.Break = func() <-chan struct{} { return brk }
 
 	res := External(context.Background(), env)
 
