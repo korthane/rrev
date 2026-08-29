@@ -255,6 +255,7 @@ naming the file and the variable rather than text passed through to the model.
 | `{{VALIDATION_COMMAND}}` | the configured validation command |
 | `{{MODE_RULES}}` | the run mode's rules paragraph |
 | `{{REVIEWER_MODE_RULES}}` | the same paragraph for report-only reviewer prompts |
+| `{{LEDGER}}` | the standing-rejection ledger, most-raised first |
 | `{{PRIOR_FINDINGS}}` | earlier external rounds and their dispositions |
 | `{{EXTERNAL_OUTPUT}}` | the external tool's raw report, for evaluation |
 | `{{OPENSPEC_DIR}}`, `{{CHANGE_DIR}}` | the OpenSpec root and the change directory |
@@ -263,7 +264,9 @@ naming the file and the variable rather than text passed through to the model.
 | `{{ITERATION}}`, `{{MAX_ITERATIONS}}` | the current iteration and its limit |
 
 The checklist is expanded inline and truncated at `checklist_budget`, saying so
-explicitly rather than silently dropping requirements. The diff never is.
+explicitly rather than silently dropping requirements. The ledger is expanded the
+same way and truncated at `ledger_budget`, keeping the most-raised entries. The
+diff never is.
 
 ## Signal contract
 
@@ -289,9 +292,20 @@ of. They are recognised only at the start of a line outside a code fence.
 
 ```
 FINDING:  <critical|major|minor> | <file>:<line> | <reviewer> | <requirement or -> | <summary>
-REJECTED: <file>:<line> | <reviewer> | why it is not a real finding
+REJECTED: <file>:<line> | <reviewer> | what was claimed | why it is not a real finding
 VALIDATION: <pass|fail> | <the command that was run> | what failed, or -
 ```
+
+A line re-raising something the ledger already holds carries that entry's id in
+its opening token, `FINDING[R7]:` or `REJECTED[R7]:`. This is the one thing rrev
+will not work out for itself: file, line and wording all drift between
+iterations while the finding stays the same, so a computed match would merge
+distinct findings as readily as it caught real recurrences. An undeclared line
+is recorded as a new finding, and an id the log does not hold is recorded as new
+with a note — neither costs the finding, only the recurrence count.
+
+For compatibility a three-field `REJECTED:` line still parses, reading its last
+field as the reason and leaving the claim empty.
 
 rrev never runs the validation command itself, so the `VALIDATION` line is the
 only record of whether the fixes were validated.
@@ -308,16 +322,47 @@ Each run appends to `.rrev/progress/progress-<change>.md`, creating the director
 ignore rule so logs are never picked up by the pipeline's own commits. A second
 run against the same change appends to the same file, preserving history.
 
+Each iteration is a titled section carrying its own timestamp — the entries
+inside it carry none — and closes with a one-line summary: findings confirmed by
+severity, rejections split into newly raised and re-raised, the validation
+outcome, and the commit if one was made. A finding reported without a severity or
+a location is counted as unclassified rather than folded into a bucket it does
+not belong to.
+
 The log records the change and goal, the base ref, every phase and iteration
 boundary, the findings reported, which were confirmed and fixed, which were
 rejected and why, the validation outcome each iteration reported, the commits it
-produced, and each loop's termination reason. Every phase prompt is
-given the log's path and told to read it before reporting, so a finding already
-rejected with a stated reason is not re-reported unchanged.
+produced, whether an external review tool ran and what it returned, and each
+loop's termination reason. An external phase that converges in silence and one
+whose tool died quietly are recorded differently, because they call for opposite
+responses.
 
-Concurrent runs serialize their appends, so entries interleave whole. A progress
-directory that cannot be written degrades the run to logging disabled rather
-than aborting it.
+### Standing rejections
+
+A rejection with a stated reason is a durable decision, not an event, so the log
+keeps a ledger of them at its end: one row per finding, carrying its id, every
+location it was raised at, the claim, the reason it was dismissed, and every
+phase and iteration that raised it. A recurrence updates that row instead of
+restating its rationale, and a finding later confirmed and fixed leaves the
+ledger so nobody is told a resolved issue is still standing.
+
+The ledger is expanded into every phase prompt and every reviewer agent, which
+is what it is for. In the run that motivated it, roughly half of each late
+iteration went to re-arguing a dozen questions the log had already answered —
+one of them re-litigated in ten consecutive iterations — while the executor
+tracked the recurrences by hand in prose. Reviewers are shown the settled
+questions and told to name an entry's id rather than report it afresh.
+
+The ledger spans the whole run rather than resetting per phase, because
+re-litigation crosses phases: a final-phase reviewer will re-raise what the
+comprehensive phase rejected.
+
+Concurrent runs serialize their appends, so entries interleave whole; a writer
+that finds the file grown beneath it appends without refreshing the ledger
+rather than rewinding over another run's records. A log written before this
+format existed is appended to exactly as it stands — never rewritten, and never
+parsed back into a ledger. A progress directory that cannot be written degrades
+the run to logging disabled rather than aborting it.
 
 ## Findings report
 

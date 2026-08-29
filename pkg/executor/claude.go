@@ -131,8 +131,14 @@ func (t *claudeTools) agentFor(parentID string) string {
 	return t.agents[parentID]
 }
 
-func (t *claudeTools) start(block claudeBlock) {
+func (t *claudeTools) start(col *collector, block claudeBlock) {
 	call := describeToolCall(block.Name, block.Input)
+	// A sub-agent runs for minutes. Announcing it only once it finishes is the
+	// unexplained pause this reporting exists to prevent, so its launch is
+	// rendered straight away and its outcome follows later.
+	if call.agent != "" {
+		col.activity(call.line(""))
+	}
 	if block.ID == "" {
 		// No id to match a result against, so report it now rather than hold a
 		// line that nothing will ever release.
@@ -210,7 +216,7 @@ func claudeLine(col *collector, tools *claudeTools, line string) error {
 			case "text":
 				col.sayAs(tools.agentFor(event.ParentToolUseID), block.Text)
 			case "tool_use":
-				tools.start(block)
+				tools.start(col, block)
 				col.detail("tool input", string(block.Input))
 			}
 		}

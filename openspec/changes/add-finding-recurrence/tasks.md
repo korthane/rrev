@@ -48,8 +48,8 @@
 
 ## 6. Integration and Documentation
 
-- [ ] 6.1 Add an end-to-end test over a scripted multi-iteration run asserting a declared re-raise increments its ledger entry rather than creating a new one
-- [ ] 6.2 Add an end-to-end test asserting a finding rejected in the comprehensive phase and re-raised in the final phase resolves to one ledger entry recording both phases
-- [ ] 6.3 Add an end-to-end test asserting the console attributes concurrent reviewers separately and renders tool arguments bounded
-- [ ] 6.4 Document the ledger, the identifier contract reviewers must honour, the external-activity records, and the fact that pre-existing logs keep their format, and verify every documented setting exists
-- [ ] 6.5 Verify all requirements from the proposal are implemented, run the full project test suite, and run the project linter with all issues fixed
+- [x] 6.1 Add an end-to-end test over a scripted multi-iteration run asserting a declared re-raise increments its ledger entry rather than creating a new one
+- [x] 6.2 Add an end-to-end test asserting a finding rejected in the comprehensive phase and re-raised in the final phase resolves to one ledger entry recording both phases
+- [x] 6.3 Add an end-to-end test asserting the console attributes concurrent reviewers separately and renders tool arguments bounded
+- [x] 6.4 Document the ledger, the identifier contract reviewers must honour, the external-activity records, and the fact that pre-existing logs keep their format, and verify every documented setting exists
+- [x] 6.5 Verify all requirements from the proposal are implemented, run the full project test suite, and run the project linter with all issues fixed

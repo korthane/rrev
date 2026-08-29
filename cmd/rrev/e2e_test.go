@@ -276,3 +276,186 @@ func addRequirement(t *testing.T, repo, change string) {
 	runGit(t, repo, "add", "-A")
 	runGit(t, repo, "commit", "-m", "specify signing out")
 }
+
+// progressLog returns the whole run journal, which is what a later reviewer and
+// a human both read.
+func progressLog(t *testing.T, repo string) string {
+	t.Helper()
+	entries, err := filepath.Glob(filepath.Join(repo, ".rrev", "progress", "*.md"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("no progress log was written: %v", err)
+	}
+	body, err := os.ReadFile(entries[0]) //nolint:gosec // the path is a test temp file
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	return string(body)
+}
+
+// standingEntries counts the ledger's rows, which is what tells a folded
+// recurrence from a second entry opened for the same argument.
+func standingEntries(log string) int {
+	_, ledger, found := strings.Cut(log, "## Standing rejections")
+	if !found {
+		return 0
+	}
+	n := 0
+	for line := range strings.SplitSeq(ledger, "\n") {
+		if strings.HasPrefix(line, "- **R") {
+			n++
+		}
+	}
+	return n
+}
+
+// A declared re-raise has to land on the entry it names. Opening a second entry
+// for the same argument is the behaviour that produced 97 rejections in one
+// run, two thirds of them re-litigation of a dozen questions.
+func TestEndToEndDeclaredReRaiseUpdatesOneLedgerEntry(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	script := scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1)
+    echo "REJECTED: auth.go:9 | quality | the token is echoed | the value is not key material"
+    commit "fix something real"
+    ;;
+  comprehensive:2)
+    echo "REJECTED[R1]: auth.go:11 | implementation | the token is echoed | still not key material"
+    commit "fix something else"
+    ;;
+  comprehensive:3) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  external-eval:1) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+  final:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `echo "<<<RREV:EXTERNAL_DONE>>>"`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d; output:\n%s", code, out.String())
+	}
+	_ = script
+
+	log := progressLog(t, repo)
+	if n := standingEntries(log); n != 1 {
+		t.Errorf("ledger holds %d standing rejections, want the two raises folded into one:\n%s", n, log)
+	}
+	if want := "raised comprehensive 1, 2"; !strings.Contains(log, want) {
+		t.Errorf("ledger missing %q:\n%s", want, log)
+	}
+	if n := strings.Count(log, "rejected because: the value is not key material"); n > 1 {
+		t.Errorf("the rationale is restated %d times, want one ledger statement:\n%s", n, log)
+	}
+}
+
+// Re-litigation crosses phases: in the run that motivated this, the final
+// phase re-raised findings the comprehensive phase had rejected ten times.
+func TestEndToEndReRaiseAcrossPhasesResolvesToOneEntry(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1)
+    echo "REJECTED: auth.go:9 | quality | the token is echoed | the value is not key material"
+    commit "fix the handler"
+    ;;
+  comprehensive:2) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  external-eval:1) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+  final:1)
+    echo "REJECTED[R1]: auth.go:9 | quality | the token is echoed | still not key material"
+    echo "<<<RREV:REVIEW_DONE>>>"
+    ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `case "$phase:$n" in
+  external:1) echo "FINDING: minor | auth.go:2 | external | - | the error path is unhandled" ;;
+  *) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+esac`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d; output:\n%s", code, out.String())
+	}
+
+	log := progressLog(t, repo)
+	if n := standingEntries(log); n != 1 {
+		t.Errorf("ledger holds %d standing rejections, want the cross-phase raises folded into one:\n%s", n, log)
+	}
+	if want := "raised comprehensive 1; final 1"; !strings.Contains(log, want) {
+		t.Errorf("ledger does not record both phases (%q):\n%s", want, log)
+	}
+}
+
+// A converged external phase that writes nothing is indistinguishable from one
+// whose tool died quietly, and the two call for opposite responses.
+func TestEndToEndSilentExternalPhaseIsRecorded(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  final:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `echo "<<<RREV:EXTERNAL_DONE>>>"`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d; output:\n%s", code, out.String())
+	}
+
+	if want := "external tool `codex`: no findings reported"; !strings.Contains(progressLog(t, repo), want) {
+		t.Errorf("progress log missing %q:\n%s", want, progressLog(t, repo))
+	}
+}
+
+// Seven reviewers running at once rendered as seven identical lines, and a
+// tool call rendered as its bare name. Both are what a user actually watches
+// during the longest phase of a run.
+func TestEndToEndConsoleAttributesAgentsAndBoundsToolArguments(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1)
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","id":"a1","input":{"subagent_type":"conformance"}}]}}'
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","id":"a2","input":{"subagent_type":"quality"}}]}}'
+    printf '%s\n' '{"type":"assistant","parent_tool_use_id":"a1","message":{"content":[{"type":"text","text":"scenario 3 is not addressed"}]}}'
+    printf '%s\n' '{"type":"assistant","parent_tool_use_id":"a2","message":{"content":[{"type":"text","text":"no defects found"}]}}'
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{"command":"go test ./...\nA SECOND LINE THAT MUST NOT BE DISPLAYED"}}]}}'
+    printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":false,"content":"PASS\nLOTS OF OUTPUT THAT MUST NOT BE DISPLAYED"}]}}'
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"<<<RREV:REVIEW_DONE>>>"}]}}'
+    ;;
+  final:1) printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"<<<RREV:REVIEW_DONE>>>"}]}}' ;;
+  *) printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"<<<RREV:TASK_FAILED>>>"}]}}' ;;
+esac`,
+		"codex": `echo "<<<RREV:EXTERNAL_DONE>>>"`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d; output:\n%s", code, out.String())
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"· agent: conformance",
+		"· agent: quality",
+		"[conformance] scenario 3 is not addressed",
+		"[quality] no defects found",
+		"· tool: Bash go test ./... … → ok",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("console missing %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"A SECOND LINE THAT MUST NOT BE DISPLAYED", "LOTS OF OUTPUT THAT MUST NOT BE DISPLAYED"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("console echoed %q, which floods the display:\n%s", unwanted, got)
+		}
+	}
+}
