@@ -154,3 +154,30 @@ func TestCodexRunDropsUnsupportedEffort(t *testing.T) {
 		t.Errorf("stream does not warn about the dropped effort:\n%s", stream.String())
 	}
 }
+
+// codex exposes less per event than claude's stream does, so it shows whatever
+// it has — the command and its exit status — and nothing it would have to guess.
+func TestCodexRendersCommandsAndOutcomes(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{fixture: "codex_item_stream.jsonl"})
+	var stream strings.Builder
+
+	if _, err := (executor.Codex{Command: tool.path}).Run(t.Context(), executor.Request{
+		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
+	}); err != nil {
+		t.Fatalf("run codex: %v", err)
+	}
+
+	got := stream.String()
+	for _, want := range []string{
+		"· tool: command git log main..HEAD",
+		"· tool: command go test ./... … → ok",
+		"· tool: command golangci-lint run → failed: exit 1",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stream missing %q\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "second line") {
+		t.Errorf("a command's later lines reached the display\n%s", got)
+	}
+}

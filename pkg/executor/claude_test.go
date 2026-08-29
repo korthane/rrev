@@ -200,3 +200,118 @@ func TestClaudeRunDropsUnsupportedEffort(t *testing.T) {
 		t.Errorf("stream does not warn about the dropped effort:\n%s", stream.String())
 	}
 }
+
+// A phase runs its reviewers concurrently, and a bare tool name renders them
+// identically. The launch has to name the agent it started.
+func TestClaudeNamesTheAgentEachTaskLaunches(t *testing.T) {
+	stream := runToolFixture(t)
+
+	for _, want := range []string{"· agent: conformance", "· agent: quality"} {
+		if !strings.Contains(stream, want) {
+			t.Errorf("stream missing %q\n%s", want, stream)
+		}
+	}
+}
+
+// Where the stream says which sub-agent produced a line, that attribution is
+// what tells one concurrent reviewer from another.
+func TestClaudeAttributesSubAgentText(t *testing.T) {
+	stream := runToolFixture(t)
+
+	for _, want := range []string{"[conformance] Scenario 3 is not addressed.", "[quality] Found a nil dereference."} {
+		if !strings.Contains(stream, want) {
+			t.Errorf("stream missing %q\n%s", want, stream)
+		}
+	}
+}
+
+// The attribution is for the display only: report lines and signals are parsed
+// out of the collected text, and a prefix in there would corrupt both.
+func TestSubAgentAttributionStaysOutOfTheCollectedOutput(t *testing.T) {
+	result := runToolFixtureResult(t)
+
+	if strings.Contains(result.Output, "[conformance]") {
+		t.Errorf("display attribution leaked into the parsed output:\n%s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Scenario 3 is not addressed.") {
+		t.Errorf("the sub-agent's text must still be collected:\n%s", result.Output)
+	}
+}
+
+// A tool call renders the argument that distinguishes it, bounded to one line:
+// heredocs and multi-line commands arrive here routinely.
+func TestClaudeRendersBoundedToolArguments(t *testing.T) {
+	stream := runToolFixture(t)
+
+	if !strings.Contains(stream, "· tool: Bash go test ./... …") {
+		t.Errorf("stream missing the bounded command\n%s", stream)
+	}
+	if strings.Contains(stream, "must never reach the display") {
+		t.Errorf("a command's later lines reached the display\n%s", stream)
+	}
+	if !strings.Contains(stream, "· tool: Read pkg/config/resolve.go") {
+		t.Errorf("stream missing the read path\n%s", stream)
+	}
+}
+
+// The outcome is what a reader needs; the output would flood the display.
+func TestClaudeRendersOutcomeWithoutToolOutput(t *testing.T) {
+	stream := runToolFixture(t)
+
+	if !strings.Contains(stream, "go test ./... … → ok") {
+		t.Errorf("stream missing the success outcome\n%s", stream)
+	}
+	if !strings.Contains(stream, "→ failed: no such file or directory") {
+		t.Errorf("stream missing the failure detail\n%s", stream)
+	}
+	if strings.Contains(stream, "plenty more output") {
+		t.Errorf("tool output was echoed to the display\n%s", stream)
+	}
+}
+
+// Debug is where the caps come off, and the only place they do.
+func TestFullToolArgumentsAndOutputAppearOnlyUnderDebug(t *testing.T) {
+	plain := runToolFixture(t)
+	if strings.Contains(plain, "plenty more output") || strings.Contains(plain, "must never reach the display") {
+		t.Fatalf("full detail leaked without debug\n%s", plain)
+	}
+
+	tool := newFakeTool(t, fakeToolOpts{fixture: "claude_tools.jsonl"})
+	var stream strings.Builder
+	_, err := (executor.Claude{Command: tool.path, Debug: true}).Run(t.Context(), executor.Request{
+		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
+	})
+	if err != nil {
+		t.Fatalf("run claude: %v", err)
+	}
+	for _, want := range []string{"must never reach the display", "plenty more output"} {
+		if !strings.Contains(stream.String(), want) {
+			t.Errorf("debug output missing %q\n%s", want, stream.String())
+		}
+	}
+}
+
+func runToolFixture(t *testing.T) string {
+	t.Helper()
+	tool := newFakeTool(t, fakeToolOpts{fixture: "claude_tools.jsonl"})
+	var stream strings.Builder
+	if _, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{
+		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
+	}); err != nil {
+		t.Fatalf("run claude: %v", err)
+	}
+	return stream.String()
+}
+
+func runToolFixtureResult(t *testing.T) executor.Result {
+	t.Helper()
+	tool := newFakeTool(t, fakeToolOpts{fixture: "claude_tools.jsonl"})
+	var stream strings.Builder
+	result, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{
+		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
+	})
+	if err != nil {
+		t.Fatalf("run claude: %v", err)
+	}
+	return result
+}

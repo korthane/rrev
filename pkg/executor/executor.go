@@ -80,14 +80,30 @@ type collector struct {
 	// touch reports rendered output to the watchdog, which is set while a
 	// command runs; nothing else renders, so it is nil until then.
 	touch func()
+	// debug turns on the unabridged rendering. Normal output is deliberately
+	// bounded — a diff or a test run would flood the display — so the full
+	// arguments and output of a tool call are only ever shown here.
+	debug bool
 }
 
-func (c *collector) say(text string) {
+func (c *collector) say(text string) { c.sayAs("", text) }
+
+// sayAs collects the model's text verbatim while rendering it under the
+// sub-agent that produced it. The attribution is display-only on purpose: the
+// collected text is what signals and report lines are parsed from, and a
+// prefix in there would corrupt both.
+func (c *collector) sayAs(agent, text string) {
 	text = strings.TrimRight(text, "\n")
 	if text == "" {
 		return
 	}
-	c.line(text)
+	c.text.WriteString(text)
+	c.text.WriteString("\n")
+	if agent == "" {
+		c.render(text)
+		return
+	}
+	c.render("[" + agent + "] " + text)
 }
 
 // line records raw output verbatim, blank lines included, for a tool whose
@@ -99,6 +115,25 @@ func (c *collector) line(text string) {
 }
 
 func (c *collector) activity(note string) { c.render("· " + note) }
+
+// activityAs attributes a note to the sub-agent that produced it, where the
+// stream said which one that was.
+func (c *collector) activityAs(agent, note string) {
+	if agent == "" {
+		c.activity(note)
+		return
+	}
+	c.render("· [" + agent + "] " + note)
+}
+
+// detail renders only under debug, where the caps that keep normal output
+// readable are lifted.
+func (c *collector) detail(label, text string) {
+	if !c.debug || strings.TrimSpace(text) == "" {
+		return
+	}
+	c.render("· " + label + ": " + strings.TrimRight(text, "\n"))
+}
 
 // final records a tool's closing summary, which usually repeats the last
 // message it already streamed.

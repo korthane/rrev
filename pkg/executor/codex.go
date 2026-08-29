@@ -69,6 +69,11 @@ type codexEvent struct {
 	Item *struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
+		// Command and ExitCode are what codex reports for a shell item. Both
+		// are optional: codex exposes less per event than claude's stream does,
+		// and the display degrades to the bare kind rather than guessing.
+		Command  string `json:"command"`
+		ExitCode *int   `json:"exit_code"`
 	} `json:"item"`
 }
 
@@ -91,7 +96,25 @@ func codexLine(col *collector, line string) {
 	// Only completed items are rendered; a started item repeats as a completed
 	// one, and rendering both would duplicate the model's text.
 	case event.Item != nil && event.Type == "item.completed":
+		if event.Item.Type == "command_execution" || event.Item.Command != "" {
+			col.activity(codexCommandLine(event.Item.Command, event.Item.ExitCode))
+			return
+		}
 		codexPart(col, event.Item.Type, event.Item.Text)
+	}
+}
+
+// codexCommandLine renders a shell item the way claude's tool calls render:
+// the command that distinguishes it, then its outcome, never its output.
+func codexCommandLine(command string, exitCode *int) string {
+	call := toolCall{name: "command", arg: boundArg(command)}
+	switch {
+	case exitCode == nil:
+		return call.line("")
+	case *exitCode == 0:
+		return call.line("ok")
+	default:
+		return call.line(fmt.Sprintf("failed: exit %d", *exitCode))
 	}
 }
 
