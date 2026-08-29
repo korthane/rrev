@@ -47,6 +47,10 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 	vars := e.iterVars(n, limit)
 	vars.PriorFindings = renderPriorFindings(*rounds)
 
+	// Recorded before the call, not only after: a run killed mid-review leaves
+	// the same unexplained silence in the log that it leaves on the console,
+	// and the tool's own findings are written by the call itself.
+	e.Log.ExternalTool(e.External.Name(), "invoked", "")
 	report, err := e.review(ctx, reviewCall{
 		phase:    NameExternal,
 		prompt:   PromptExternal,

@@ -1,5 +1,11 @@
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a1", "input": {"subagent_type": "conformance"}}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls -la"}}]}}
-{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "id": "t1", "input": {"file_path": "pkg/éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé/resolve.go"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "id": "t1", "input": {"file_path": "pkgs/éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé/resolve.go"}}]}}
 {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": false, "content": "ok"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a2", "input": {"description": "look for defects"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Mystery", "id": "t2", "input": {"whatever": "unlisted"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t2", "is_error": true, "content": ""}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "never-launched", "is_error": false, "content": "orphan result body"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "id": "t3", "input": {"command": "echo \u001b[31mred\u001b[0m\rrewritten"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t3", "is_error": false, "content": "ok"}]}}
 {"type": "result", "subtype": "success", "is_error": false, "result": "done"}

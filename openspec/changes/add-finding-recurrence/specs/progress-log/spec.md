@@ -38,7 +38,7 @@ The progress log SHALL maintain a ledger of rejected findings in which each dist
 - **WHEN** a reader opens the log
 - **THEN** the ledger appears as one section listing every standing rejection, rather than requiring the reader to reconstruct it from chronological entries
 
-#### Scenario: Confirmed finding leaves the ledger
+#### Scenario: Confirmed finding is marked resolved in the ledger
 - **WHEN** a finding previously rejected is later confirmed and fixed
 - **THEN** its ledger entry records that it was subsequently confirmed, so a reader is not told a fixed issue is still standing
 

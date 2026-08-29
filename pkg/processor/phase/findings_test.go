@@ -2,7 +2,10 @@ package phase
 
 import (
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/korthane/rrev/pkg/config"
 )
 
 func TestParseReport(t *testing.T) {
@@ -159,6 +162,134 @@ func TestReportTokenToleratesSpacingAroundTheDeclaration(t *testing.T) {
 		}
 		if findings[0].ReRaises != "R3" {
 			t.Errorf("%q declared re-raise = %q, want R3", line, findings[0].ReRaises)
+		}
+	}
+}
+
+// slotOf names the field a report template's placeholder describes, using the
+// prompt's own words. It is what lets the test tell a reordered template from a
+// renamed one.
+func slotOf(field string) string {
+	switch text := strings.ToLower(field); {
+	case strings.Contains(text, "<file>"):
+		return "location"
+	case strings.Contains(text, "critical") || strings.Contains(text, "major"):
+		return "severity"
+	case strings.Contains(text, "pass|fail"):
+		return "outcome"
+	case strings.Contains(text, "agent") || text == "external":
+		return "reviewer"
+	case strings.Contains(text, "requirement"):
+		return "requirement"
+	case strings.Contains(text, "summary"):
+		return "summary"
+	case strings.Contains(text, "claimed"):
+		return "claim"
+	case strings.Contains(text, "real finding"):
+		return "reason"
+	case strings.Contains(text, "command"):
+		return "command"
+	case strings.Contains(text, "what failed"):
+		return "detail"
+	default:
+		return ""
+	}
+}
+
+// The prompts document a field order and the parser splits on it, with nothing
+// binding the two together. A prompt edit that reordered the last two fields
+// would file the claim as the rationale - the text the ledger then publishes to
+// every later reviewer as the reason a question was settled.
+func TestShippedReportTemplatesMatchTheParser(t *testing.T) {
+	assets := config.Assets{ProjectDir: t.TempDir(), UserDir: t.TempDir()}
+	checked := 0
+	for _, name := range assets.PromptNames() {
+		asset, err := assets.Prompt(name)
+		if err != nil {
+			t.Fatalf("load prompt %s: %v", name, err)
+		}
+		for line := range strings.SplitSeq(asset.Content, "\n") {
+			kind, rest, ok := strings.Cut(line, ": ")
+			if !ok || !strings.Contains(line, "<") {
+				continue
+			}
+			if kind != "FINDING" && kind != "REJECTED" && kind != "VALIDATION" {
+				continue
+			}
+			checked++
+			checkReportTemplate(t, name, kind, rest)
+		}
+	}
+	if checked < 3 {
+		t.Fatalf("only %d report templates were checked; the prompts should document all three kinds", checked)
+	}
+}
+
+// splitTemplateFields splits a template on its field separator, leaving the
+// pipes inside a placeholder alone: `<critical|major|minor>` is one field.
+func splitTemplateFields(template string) []string {
+	var fields []string
+	depth, start := 0, 0
+	for i, r := range template {
+		switch r {
+		case '<':
+			depth++
+		case '>':
+			depth--
+		case '|':
+			if depth == 0 {
+				fields = append(fields, template[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(fields, template[start:])
+}
+
+// checkReportTemplate fills a template's fields with markers and reads the
+// result back through the parser the executor's real report goes through.
+func checkReportTemplate(t *testing.T, prompt, kind, template string) {
+	t.Helper()
+	markers := map[string]string{
+		"location": "pkg/example.go:42", "severity": "major", "outcome": "fail",
+		"reviewer": "quality", "requirement": "3 Recorded content", "summary": "the summary text",
+		"claim": "the claim text", "reason": "the reason text",
+		"command": "go test ./...", "detail": "the detail text",
+	}
+	var built []string
+	var slots []string
+	for _, field := range splitTemplateFields(template) {
+		slot := slotOf(strings.TrimSpace(field))
+		if slot == "" {
+			t.Fatalf("%s: %s template field %q says nothing about what belongs there", prompt, kind, field)
+		}
+		slots = append(slots, slot)
+		built = append(built, markers[slot])
+	}
+
+	findings, rejections, validations := ParseReport(kind + ": " + strings.Join(built, " | "))
+	var got map[string]string
+	switch {
+	case len(findings) == 1:
+		f := findings[0]
+		got = map[string]string{"severity": f.Severity, "location": location(f.File, f.Line),
+			"reviewer": f.Reviewer, "requirement": f.Requirement, "summary": f.Summary}
+	case len(rejections) == 1:
+		r := rejections[0]
+		got = map[string]string{"location": location(r.File, r.Line), "reviewer": r.Reviewer,
+			"claim": r.Claim, "reason": r.Reason}
+	case len(validations) == 1:
+		v := validations[0]
+		got = map[string]string{"outcome": v.Outcome, "command": v.Command, "detail": v.Detail}
+	default:
+		t.Fatalf("%s: the %s template does not parse as one report line: %q", prompt, kind, template)
+	}
+	if len(got) != len(slots) {
+		t.Errorf("%s: the %s template documents %d fields, the parser reads %d", prompt, kind, len(slots), len(got))
+	}
+	for _, slot := range slots {
+		if got[slot] != markers[slot] {
+			t.Errorf("%s: the %s template's %s field parsed as %q, want %q", prompt, kind, slot, got[slot], markers[slot])
 		}
 	}
 }

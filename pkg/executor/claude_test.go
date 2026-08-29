@@ -315,3 +315,37 @@ func runToolFixtureResult(t *testing.T) executor.Result {
 	}
 	return result
 }
+
+// Nearly every tool call in a review happens inside one of the concurrent
+// reviewers, so the outcome line needs the same attribution its text gets.
+func TestClaudeAttributesToolOutcomesToTheSubAgent(t *testing.T) {
+	stream := runToolFixture(t)
+
+	if !strings.Contains(stream, "· [conformance] tool: Grep func Open → failed: no matches under pkg") {
+		t.Errorf("stream missing the attributed tool outcome:\n%s", stream)
+	}
+	// The stream says nothing about who ran this one, so it stays with the phase.
+	if !strings.Contains(stream, "· tool: Read pkg/config/resolve.go → failed") {
+		t.Errorf("an unattributed call must still render:\n%s", stream)
+	}
+}
+
+// A result arrives either as a string or as content blocks. Reading only the
+// first block would drop detail from the failure line and from the debug record
+// that promises the tool's full output.
+func TestClaudeReadsEveryBlockOfAToolResult(t *testing.T) {
+	if plain := runToolFixture(t); strings.Contains(plain, "a second block") {
+		t.Fatalf("full detail leaked without debug\n%s", plain)
+	}
+
+	tool := newFakeTool(t, fakeToolOpts{fixture: "claude_tools.jsonl"})
+	var stream strings.Builder
+	if _, err := (executor.Claude{Command: tool.path, Debug: true}).Run(t.Context(), executor.Request{
+		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
+	}); err != nil {
+		t.Fatalf("run claude: %v", err)
+	}
+	if !strings.Contains(stream.String(), "a second block the debug record must keep") {
+		t.Errorf("debug output kept only the first content block:\n%s", stream.String())
+	}
+}

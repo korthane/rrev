@@ -175,6 +175,14 @@ func (e Expander) ledgerSites(asset Asset) int {
 	return n
 }
 
+// parseRef reads one {{...}} body. Both the expansion and the budget pre-pass
+// go through it, so a directive can never be spelled one way for the prompt
+// that gets written and another for the budget it is fitted to.
+func parseRef(body string) (name, arg string, isDirective bool) {
+	name, arg, isDirective = strings.Cut(body, ":")
+	return strings.ToUpper(strings.TrimSpace(name)), arg, isDirective
+}
+
 // scanTemplate walks a template once, counting its ledger references and
 // collecting the agents it embeds, using the same directive spelling the
 // expansion itself accepts.
@@ -190,8 +198,7 @@ func scanTemplate(content string) (ledgers int, agents []string) {
 			return ledgers, agents
 		}
 		rest = tail
-		name, arg, isDirective := strings.Cut(body, ":")
-		name = strings.ToUpper(strings.TrimSpace(name))
+		name, arg, isDirective := parseRef(body)
 		switch {
 		case !isDirective && name == varLedger:
 			ledgers++
@@ -228,8 +235,7 @@ func (e Expander) expand(asset Asset, allowAgents bool) (string, error) {
 
 func (e Expander) substitute(asset Asset, values map[string]string, body string, allowAgents bool) (string, error) {
 	ref := varOpen + strings.TrimSpace(body) + varClose
-	name, arg, isDirective := strings.Cut(body, ":")
-	name = strings.ToUpper(strings.TrimSpace(name))
+	name, arg, isDirective := parseRef(body)
 
 	if isDirective {
 		if name != directiveAgent && name != directiveAgents {
@@ -328,7 +334,7 @@ func (v Vars) values() map[string]string {
 		"VALIDATION_COMMAND":  orElse(v.ValidationCommand, emptyValue),
 		"MODE_RULES":          orElse(v.ModeRules, defaultModeRules),
 		"REVIEWER_MODE_RULES": orElse(v.ReviewerModeRules, defaultReviewerModeRules),
-		"LEDGER":              renderLedger(v.Ledger, v.LedgerBudget),
+		"LEDGER":              renderLedger(v.Ledger, v.LedgerBudget, v.ProgressLog),
 		"PRIOR_FINDINGS":      orElse(v.PriorFindings, noPriorFindings),
 		"EXTERNAL_OUTPUT":     orElse(v.ExternalOutput, noExternalOutput),
 		"OPENSPEC_DIR":        orElse(v.OpenSpecDir, missingPath),
@@ -360,10 +366,28 @@ func artifactPaths(v Vars) []string {
 // arrive most-raised first, so a cut keeps what is being re-litigated hardest,
 // and says it was cut for the same reason the checklist does: a reviewer told
 // its ledger is partial can say so, one silently handed a short list cannot.
-func renderLedger(entries []string, budget int) string {
+func renderLedger(entries []string, budget int, logPath string) string {
 	if len(entries) == 0 {
 		return noLedger
 	}
+	kept := fitEntries(entries, budget)
+	shown := strings.Join(entries[:kept], "")
+	if kept < len(entries) {
+		// The path is spelled out rather than named: an agent definition
+		// carries the ledger but not {{PROGRESS_LOG}}, and truncation bites
+		// hardest there, since the budget is shared across every site.
+		shown += fmt.Sprintf("[TRUNCATED: this ledger was cut at %d characters. %d of %d standing rejections are"+
+			" shown, most-raised first; %d are missing from this prompt. Read %s for the rest, and say in your"+
+			" report that your ledger was truncated.]\n",
+			budget, kept, len(entries), len(entries)-kept, orElse(logPath, "the progress log"))
+	}
+	return shown
+}
+
+// fitEntries counts how many entries fit in budget characters. A single entry
+// larger than the whole budget is still kept: a section cut to nothing reads as
+// a run with nothing to report, which is the opposite of what it means.
+func fitEntries(entries []string, budget int) int {
 	kept, used := 0, 0
 	for _, entry := range entries {
 		if budget > 0 && kept > 0 && used+len(entry) > budget {
@@ -372,13 +396,7 @@ func renderLedger(entries []string, budget int) string {
 		used += len(entry)
 		kept++
 	}
-	shown := strings.Join(entries[:kept], "")
-	if kept < len(entries) {
-		shown += fmt.Sprintf("[TRUNCATED: this ledger was cut at %d characters. %d of %d standing rejections are"+
-			" shown, most-raised first; %d are missing from this prompt. Read %s for the rest, and say in your"+
-			" report that your ledger was truncated.]\n", budget, kept, len(entries), len(entries)-kept, "the progress log")
-	}
-	return shown
+	return kept
 }
 
 // renderChecklist fits the checklist into budget characters, saying so when it
@@ -388,14 +406,7 @@ func renderChecklist(entries []string, budget int, unparsed []string) string {
 	if len(entries) == 0 {
 		return noRequirements + unparsedBanner(unparsed)
 	}
-	kept, used := 0, 0
-	for _, entry := range entries {
-		if budget > 0 && kept > 0 && used+len(entry) > budget {
-			break
-		}
-		used += len(entry)
-		kept++
-	}
+	kept := fitEntries(entries, budget)
 	shown := strings.Join(entries[:kept], "\n")
 	if kept < len(entries) {
 		shown += fmt.Sprintf("\n[TRUNCATED: this checklist was cut at %d characters. %d of %d requirements are shown;"+

@@ -229,8 +229,10 @@ when it failed:
 ```
 
 The tool's own output never appears: a diff or a test run would flood the
-display. An argument spanning several lines or running past the display width
-is cut to its first line and marked `…`. `--debug` is the one place these caps
+display. An argument spanning several lines or longer than 100 bytes is cut to
+its first line and marked `…`; that bound is fixed rather than read from the
+terminal. Control characters are stripped, so neither a command nor a tool's
+error text can repaint the display. `--debug` is the one place these caps
 come off, recording each reported call's full arguments and output.
 
 How much of this appears depends on the executor: claude's `stream-json` carries
@@ -294,9 +296,11 @@ naming the file and the variable rather than text passed through to the model.
 | `{{ITERATION}}`, `{{MAX_ITERATIONS}}` | the current iteration and its limit |
 
 The checklist is expanded inline and truncated at `checklist_budget`, saying so
-explicitly rather than silently dropping requirements. The ledger is expanded the
-same way and truncated at `ledger_budget`, keeping the most-raised entries. The
-diff never is.
+explicitly rather than silently dropping requirements, and each expansion of it
+gets that budget in full. The ledger announces a cut the same way and keeps the
+most-raised entries, but `ledger_budget` is shared across every expansion in one
+prompt rather than applied per copy (see [Standing rejections](#standing-rejections)).
+The diff never is.
 
 ## Signal contract
 
@@ -335,7 +339,9 @@ is recorded as a new finding, and an id the log does not hold is recorded as new
 with a note — neither costs the finding, only the recurrence count.
 
 For compatibility a three-field `REJECTED:` line still parses, reading its last
-field as the reason and leaving the claim empty.
+field as the reason and leaving the claim empty. A rejection whose reason is
+missing is recorded with one stating that, rather than dropped from the ledger:
+withheld from later reviewers, it is the finding most certain to come back.
 
 rrev never runs the validation command itself, so the `VALIDATION` line is the
 only record of whether the fixes were validated.
@@ -367,16 +373,25 @@ loop's termination reason. An external phase that converges in silence and one
 whose tool died quietly are recorded differently, because they call for opposite
 responses.
 
+Every finding the log records carries an identifier — `R1`, `R2`, … — assigned
+when it is first recorded and shown on its entry. They run in one sequence for
+the whole run and continue past the highest id a log already holds, so a second
+run never re-issues one. A finding that was confirmed, or reported without a
+disposition, has an identifier but no ledger row: only a rejection with a stated
+reason becomes one.
+
 ### Standing rejections
 
 A rejection with a stated reason is a durable decision, not an event, so the log
 keeps a ledger of them at its end: one row per finding, carrying its id, every
 location it was raised at, the claim, the reason it was dismissed, and every
 phase and iteration that raised it. A recurrence updates that row instead of
-restating its rationale, and a finding later confirmed and fixed keeps its row
-marked as resolved, so nobody is told a fixed issue is still standing and nobody
-finds an entry they saw earlier silently gone. Reviewers are shown the standing
-rows only.
+restating its rationale, and the rationale it keeps is the one that first
+settled the question rather than whatever the latest re-rejection restated. A
+finding later confirmed and fixed keeps its row marked as resolved, so nobody is
+told a fixed issue is still standing and nobody finds an entry they saw earlier
+silently gone — until it is rejected again, which makes it standing once more.
+Reviewers are shown the standing rows only.
 
 The ledger is expanded into every review phase prompt and every reviewer agent,
 which is what it is for. In the run that motivated it, roughly half of each late

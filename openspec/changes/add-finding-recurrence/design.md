@@ -37,11 +37,11 @@ Alternatives: a sidecar ledger file; a human-facing log plus a separate reviewer
 
 The two audiences want the ledger for the same reason. A person skimming wants to see "these twelve things keep coming back"; a reviewer needs to see them so it stops raising them. Splitting the artifact would mean writing the same content twice and letting the copies drift. One document with the ledger at a fixed position serves both, and it keeps the `progress-log` capability's existing promise that the log *is* the reviewer's context.
 
-This does mean the log is no longer purely append-only — a recurrence updates an existing ledger entry in place. That interacts with the file lock: a read-modify-write under the lock, rather than an append. The lock already exists and already bounds its wait; the change is that a writer now reads the file first.
+This does mean the log is no longer purely append-only — a recurrence updates an existing ledger entry in place. That interacts with the file lock: the ledger section is rewritten under the lock, rather than appended. The lock already exists and already bounds its wait; the change is that a writer now truncates to the offset where it last wrote the ledger before appending, so it never rewinds over a byte it did not write.
 
 ### The ledger is a rendered projection, not the source of truth
 
-Ledger entries are derived from the recorded findings. The alternative — mutating a ledger section as the authoritative store — makes the file its own database and every write a parse. Instead the iteration entries stay the record, and the ledger section is re-rendered from them on each write. A corrupted or hand-edited ledger section is recoverable; a corrupted record is not.
+Ledger entries are derived from the recorded findings as they are made. The alternative — mutating a ledger section in the file as the authoritative store — makes the log its own database and every write a parse. Instead the iteration entries stay the record, the run holds the entries derived from them, and the ledger section is re-rendered on each write. Nothing reads the log back except a scan for the highest identifier it holds, so a hand-edited ledger section is overwritten rather than trusted; a hand-edited record is left alone.
 
 The cost is rewriting the ledger section on every finding. Ledgers are small (twelve entries in the run that motivated this) and writes are already serialized by the lock, so this is cheap in practice, but it does mean the write path is O(ledger) rather than O(1).
 

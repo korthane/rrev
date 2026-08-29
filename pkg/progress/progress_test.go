@@ -408,3 +408,32 @@ func TestHeldLockIsReportedOnlyOnce(t *testing.T) {
 		}
 	}
 }
+
+// A finding that names a severity but no location is as unclassifiable as one
+// naming neither: the summary must not file it under that severity.
+func TestFindingWithoutALocationIsUnclassified(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Confirmed(progress.Finding{Reviewer: "quality", Severity: "major"}, "fixed")
+	log.LoopEnd("comprehensive", "converged", 1)
+
+	if want := "_confirmed 1 (1 unclassified)"; !strings.Contains(readLog(t, log), want) {
+		t.Errorf("summary missing %q\n--- log ---\n%s", want, readLog(t, log))
+	}
+}
+
+// The iteration summary is what a reader skims; a validation outcome recorded
+// inside the iteration has to reach it, not only the entry it was written as.
+func TestIterationSummaryCarriesTheValidationOutcome(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Confirmed(progress.Finding{Reviewer: "quality", Severity: "major", File: "a.go", Line: 3}, "fixed")
+	log.Validation(progress.Validation{Outcome: "fail", Command: "go test ./...", Detail: "one test failed"})
+	log.LoopEnd("comprehensive", "converged", 1)
+
+	if want := "· validation fail_"; !strings.Contains(readLog(t, log), want) {
+		t.Errorf("summary missing %q\n--- log ---\n%s", want, readLog(t, log))
+	}
+}

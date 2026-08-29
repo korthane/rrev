@@ -24,6 +24,9 @@ const ignoreBody = "# rrev progress logs are run artifacts, not source.\n*\n"
 // column zero with its timestamp and a reader can split the log on that.
 const indent = "  "
 
+// noReasonGiven stands in for a rejection the executor reported without one.
+const noReasonGiven = "(no reason given)"
+
 // RunInfo identifies what a run reviewed, written once at the top of a run.
 type RunInfo struct {
 	Change  string
@@ -212,7 +215,7 @@ func (l *Log) Finding(f Finding) {
 	if !l.Enabled() {
 		return
 	}
-	e, note := l.track(f, "")
+	e, note := l.track(f, reported, "")
 	l.emit(l.bullet("reported", f, e) + "\n" + noteLine(note))
 }
 
@@ -224,13 +227,7 @@ func (l *Log) Confirmed(f Finding, action string) {
 	if !l.Enabled() {
 		return
 	}
-	e, note := l.track(f, "")
-	l.mu.Lock()
-	e.Confirmed = true
-	if l.cur != nil {
-		l.cur.countConfirmed(f)
-	}
-	l.mu.Unlock()
+	e, note := l.track(f, confirmed, "")
 	suffix := ""
 	if action != "" {
 		suffix = " — " + action
@@ -245,15 +242,13 @@ func (l *Log) Rejected(f Finding, reason string) {
 	if !l.Enabled() {
 		return
 	}
-	e, note := l.track(f, reason)
-	l.mu.Lock()
-	if l.cur != nil {
-		// A note means the declared id did not resolve, so a new entry was
-		// opened; counting that as a re-raise would contradict the entry
-		// beside it and inflate the recurrence rate a reader judges by.
-		l.cur.countRejected(f.ReRaises != "" && note == "")
+	// A rejection whose reason went missing still has to reach the ledger:
+	// withheld from later reviewers, it is the one finding guaranteed to be
+	// raised again unchanged.
+	if strings.TrimSpace(reason) == "" {
+		reason = noReasonGiven
 	}
-	l.mu.Unlock()
+	e, note := l.track(f, rejected, reason)
 	l.emit(l.bullet("rejected", f, e) + "\n" + indent + oneLine(reason) + "\n" + noteLine(note))
 }
 
@@ -320,8 +315,21 @@ func (l *Log) Note(text string) {
 	l.emit("\n- note: " + oneLine(text) + "\n")
 }
 
-// track settles the finding's ledger entry and folds what it reports into it.
-func (l *Log) track(f Finding, rationale string) (*ledgerEntry, string) {
+// disposition is what the executor decided about a finding. It settles both how
+// the ledger entry stands and which of the iteration's counters moves, so the
+// two can never disagree about the same record.
+type disposition int
+
+const (
+	reported disposition = iota
+	confirmed
+	rejected
+)
+
+// track settles the finding's ledger entry and folds what it reports into it,
+// under one lock: resolving an entry and counting it in two acquisitions would
+// let a concurrent recorder interleave between them.
+func (l *Log) track(f Finding, d disposition, rationale string) (*ledgerEntry, string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	e, note := l.resolve(f)
@@ -329,11 +337,35 @@ func (l *Log) track(f Finding, rationale string) (*ledgerEntry, string) {
 	if e.Claim == "" {
 		e.Claim = f.Summary
 	}
-	if rationale != "" {
-		e.Rationale = rationale
+	switch d {
+	case confirmed:
+		e.Confirmed = true
+	case rejected:
+		// The rationale that first settled the question is the one a reviewer
+		// has to answer. A later re-rejection tends to restate it as "as
+		// recorded above", which would hollow out every prompt built from it.
+		if e.Rationale == "" {
+			e.Rationale = rationale
+		}
+		// Confirming is not final: a finding fixed in one iteration and
+		// re-raised in the next is rejected again, and keeping it retired
+		// would withhold that reason from every later reviewer.
+		e.Confirmed = false
+	case reported:
 	}
-	if l.cur != nil {
-		e.addRaise(raise{Phase: l.cur.phase, Iteration: l.cur.n})
+	if l.cur == nil {
+		return e, note
+	}
+	e.addRaise(raise{Phase: l.cur.phase, Iteration: l.cur.n})
+	switch d {
+	case confirmed:
+		l.cur.countConfirmed(f)
+	case rejected:
+		// A note means the declared id did not resolve, so a new entry was
+		// opened; counting that as a re-raise would contradict the entry
+		// beside it and inflate the recurrence rate a reader judges by.
+		l.cur.countRejected(f.ReRaises != "" && note == "")
+	case reported:
 	}
 	return e, note
 }

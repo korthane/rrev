@@ -21,7 +21,7 @@ While an executor runs, rrev SHALL stream its activity to the terminal so the us
 
 #### Scenario: Tool argument bounded
 - **WHEN** a tool's distinguishing argument spans multiple lines or exceeds the display width
-- **THEN** rrev renders its first line truncated to the configured width and marks it as truncated, so a multi-line command cannot break the display
+- **THEN** rrev renders its first line truncated to a fixed width and marks it as truncated, so a multi-line command cannot break the display
 
 #### Scenario: Tool outcome without output
 - **WHEN** a reported tool call completes

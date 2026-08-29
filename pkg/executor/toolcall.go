@@ -37,10 +37,12 @@ var toolArgKeys = map[string][]string{
 	"Agent":        {"subagent_type", "description"},
 }
 
-// agentTools launch a sub-agent, so their argument names the agent rather than
-// describing a call. That name is the one piece of attribution the stream
-// offers for a phase running its reviewers concurrently.
-var agentTools = map[string]bool{"Task": true, "Agent": true}
+// agentKeys names, per sub-agent-launching tool, the one input field that may
+// stand for the agent. That name is the only attribution the stream offers for
+// a phase running its reviewers concurrently, and a launch that omits the field
+// contributes none: a free-text description used as an agent name would label
+// every line of that agent with a sentence.
+var agentKeys = map[string]string{"Task": "subagent_type", "Agent": "subagent_type"}
 
 // toolCall is one invocation, held from its launch until its result so both can
 // be reported on a single line.
@@ -48,6 +50,14 @@ type toolCall struct {
 	name  string
 	arg   string
 	agent string
+	// launch marks a sub-agent launch, which is reported as it happens whether
+	// or not the stream named the agent: it runs for minutes, and announcing it
+	// only once it finishes is the unexplained pause this reporting prevents.
+	launch bool
+	// parent names the sub-agent that made the call, empty when the stream did
+	// not say. It is held on the call because a result can be reported long
+	// after the launch that identified it.
+	parent string
 	// shown marks a call already rendered at launch, so the flush that reports
 	// unanswered calls does not print it a second time.
 	shown bool
@@ -55,7 +65,7 @@ type toolCall struct {
 
 // describeToolCall reads the distinguishing argument out of a tool's input.
 func describeToolCall(name string, input json.RawMessage) toolCall {
-	call := toolCall{name: name}
+	call := toolCall{name: name, launch: agentKeys[name] != ""}
 	if len(input) == 0 {
 		return call
 	}
@@ -69,7 +79,7 @@ func describeToolCall(name string, input json.RawMessage) toolCall {
 			continue
 		}
 		call.arg = boundArg(text)
-		if agentTools[name] {
+		if key == agentKeys[name] {
 			call.agent = call.arg
 		}
 		break
@@ -82,7 +92,7 @@ func describeToolCall(name string, input json.RawMessage) toolCall {
 func boundArg(text string) string {
 	text = strings.TrimSpace(text)
 	first, _, multiline := strings.Cut(text, "\n")
-	first = strings.TrimSpace(first)
+	first = strings.TrimSpace(sanitize(first))
 	if len(first) > toolArgWidth {
 		return strings.TrimSpace(cutRunes(first, toolArgWidth)) + truncationMark
 	}
@@ -90,6 +100,23 @@ func boundArg(text string) string {
 		return first + " " + truncationMark
 	}
 	return first
+}
+
+// sanitize drops the control characters that would escape a bounded line. Both
+// the argument and the failure detail carry text rrev did not author - a
+// filename, a command, a tool's stderr - where a carriage return undoes the
+// line and an escape sequence repaints the terminal.
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t':
+			return ' '
+		case r < 0x20 || r == 0x7f:
+			return -1
+		default:
+			return r
+		}
+	}, s)
 }
 
 // cutRunes shortens s to at most n bytes without splitting a rune, so a

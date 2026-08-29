@@ -585,3 +585,32 @@ func TestExternalToolFailureIsRecordedWithItsCause(t *testing.T) {
 		}
 	}
 }
+
+// A run killed mid-review leaves the log as silent as the console was. The
+// invocation is recorded before the call so the log says which tool was running
+// when it stopped, and so a reader meets the tool ahead of its findings.
+func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
+	external := mock("codex", "FINDING: major | pkg/a.go:7 | external | - | the token is echoed", externalDone)
+	env, _ := newEnv(t, mock("claude", externalDone), external, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	External(context.Background(), env)
+
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	got := string(data)
+	invoked := strings.Index(got, "external tool `codex`: invoked")
+	finding := strings.Index(got, "the token is echoed")
+	if invoked < 0 || finding < 0 {
+		t.Fatalf("the log records the invocation at %d and the finding at %d:\n%s", invoked, finding, got)
+	}
+	if finding < invoked {
+		t.Errorf("the tool's findings were recorded before the invocation that produced them:\n%s", got)
+	}
+}

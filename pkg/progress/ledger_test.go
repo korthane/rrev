@@ -217,3 +217,76 @@ func TestUnresolvedDeclarationCountsAsNewlyRaised(t *testing.T) {
 		t.Errorf("an unresolved declaration was counted as a repeat\n--- log ---\n%s", got)
 	}
 }
+
+// Confirming is not the end of the argument: a finding fixed in one iteration
+// and re-raised in the next is rejected again, and a ledger that kept it
+// retired would withhold that reason from every later reviewer - which is the
+// re-litigation loop the ledger exists to close.
+func TestRejectingAPreviouslyConfirmedFindingMakesItStandAgain(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Confirmed(progress.Finding{Reviewer: "quality", Severity: "major", File: "a.go", Line: 7}, "fixed")
+	log.IterationStart("comprehensive", 2, 10)
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "testing", File: "a.go", Line: 7}, "already fixed in iteration 1")
+
+	got := readLog(t, log)
+	if strings.Contains(got, "no longer standing") {
+		t.Errorf("a re-rejected entry must not stay retired\n--- log ---\n%s", got)
+	}
+	entries := log.PromptEntries()
+	if len(entries) != 1 || !strings.Contains(entries[0], "already fixed in iteration 1") {
+		t.Errorf("PromptEntries = %q, want the standing reason handed to the next reviewer", entries)
+	}
+}
+
+// A rejection whose reason went missing is the one finding guaranteed to come
+// back unchanged, so it still has to reach the ledger and say what it lacks.
+func TestRejectionWithoutAReasonStillEntersTheLedger(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "  ")
+
+	got := readLog(t, log)
+	if !strings.Contains(got, "rejected: (no reason given)") {
+		t.Errorf("a reasonless rejection left the ledger\n--- log ---\n%s", got)
+	}
+	if strings.Contains(got, "\n  \n") {
+		t.Errorf("a blank continuation line was written\n--- log ---\n%q", got)
+	}
+}
+
+// The rationale a prompt carries is the one that settled the question. A later
+// re-rejection tends to restate it as "as recorded above", and adopting that
+// would hollow out the entry every reviewer reads.
+func TestLedgerKeepsTheRationaleThatSettledTheQuestion(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "the value is not key material")
+	log.IterationStart("comprehensive", 2, 10)
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "quality", File: "a.go", Line: 7}, "as recorded above")
+
+	entries := log.PromptEntries()
+	if len(entries) != 1 || !strings.Contains(entries[0], "the value is not key material") {
+		t.Errorf("PromptEntries = %q, want the first rationale kept", entries)
+	}
+	if strings.Contains(entries[0], "as recorded above") {
+		t.Errorf("a restatement replaced the settling rationale: %q", entries[0])
+	}
+}
+
+// Re-rendering the ledger on every write must not inflate what a reader and a
+// truncated prompt both rank entries by.
+func TestRepeatedRaisesWithinOneIterationCountOnce(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "testing", File: "a.go", Line: 7}, "out of scope")
+
+	if want, got := "raised comprehensive 1\n", readLog(t, log); !strings.Contains(got, want) {
+		t.Errorf("one iteration counted twice\n--- log ---\n%s", got)
+	}
+}

@@ -165,12 +165,18 @@ func (l *Log) renderLedger() string {
 
 func writeLedgerRow(b *strings.Builder, e *ledgerEntry) {
 	fmt.Fprintf(b, "- **%s** `%s` — raised %s\n", e.ID, strings.Join(e.Locations, ", "), describeRaises(e.Raises))
-	// A rejection reported without a separate claim carries the reason as its
-	// only text; printing it twice tells the reader nothing.
-	if e.Claim != "" && oneLine(e.Claim) != oneLine(e.Rationale) {
+	if e.showClaim() {
 		fmt.Fprintf(b, "  claim: %s\n", oneLine(e.Claim))
 	}
 	fmt.Fprintf(b, "  rejected: %s\n", oneLine(e.Rationale))
+}
+
+// showClaim reports whether the claim says anything the rationale does not. A
+// rejection reported without a separate claim carries the reason as its only
+// text; printing it twice tells the reader nothing. The log and the prompt ask
+// this the same way, so the two can never describe one entry differently.
+func (e *ledgerEntry) showClaim() bool {
+	return e.Claim != "" && oneLine(e.Claim) != oneLine(e.Rationale)
 }
 
 // describeRaises names every phase and iteration that raised the entry, which
@@ -221,7 +227,7 @@ func (l *Log) PromptEntries() []string {
 	for _, e := range entries {
 		var b strings.Builder
 		fmt.Fprintf(&b, "- %s  %s  (raised %s)\n", e.ID, strings.Join(e.Locations, ", "), describeRaises(e.Raises))
-		if e.Claim != "" && oneLine(e.Claim) != oneLine(e.Rationale) {
+		if e.showClaim() {
 			fmt.Fprintf(&b, "    claim: %s\n", oneLine(e.Claim))
 		}
 		fmt.Fprintf(&b, "    rejected because: %s\n", oneLine(e.Rationale))

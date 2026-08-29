@@ -102,3 +102,30 @@ func TestLedgerBudgetBoundsTheWholePromptNotEachCopy(t *testing.T) {
 		t.Errorf("%d of 3 cut ledgers said they were cut", n)
 	}
 }
+
+// A budget too small for even one entry must still hand over one. A section
+// cut to nothing reads as a run with nothing standing, which is the opposite
+// of what a cut means.
+func TestBudgetSmallerThanOneEntryStillKeepsIt(t *testing.T) {
+	entries := ledgerEntries(3)
+	got := expandLedger(t, Vars{Ledger: entries, LedgerBudget: 1})
+
+	if !strings.Contains(got, "- R1") {
+		t.Errorf("an entry larger than the budget was dropped entirely\n--- got ---\n%s", got)
+	}
+	if !strings.Contains(got, "TRUNCATED") {
+		t.Errorf("a cut ledger must say it was cut\n--- got ---\n%s", got)
+	}
+}
+
+// The reviewer agents carry the ledger but not {{PROGRESS_LOG}}, and the budget
+// is divided across sites, so truncation bites hardest exactly where a bare
+// "read the progress log" names nothing the reader can open.
+func TestTruncatedLedgerNamesTheLogItWasCutFrom(t *testing.T) {
+	entries := ledgerEntries(20)
+	got := expandLedger(t, Vars{Ledger: entries, LedgerBudget: len(entries[0]) * 3, ProgressLog: ".rrev/progress/p.md"})
+
+	if !strings.Contains(got, "Read .rrev/progress/p.md for the rest") {
+		t.Errorf("the truncation notice does not name the log\n--- got ---\n%s", got)
+	}
+}

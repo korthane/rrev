@@ -41,7 +41,7 @@
 - [x] 5.2 Surface whatever equivalent the codex output format exposes, without assuming parity with claude
 - [x] 5.3 Attribute a streamed line to its reviewer agent as well as its phase where the format identifies the agent, falling back to the phase alone where it does not, verified by tests over both cases
 - [x] 5.4 Render a tool call's distinguishing argument - command for a shell call, path for a file read or write, agent name for a sub-agent launch, pattern for a search
-- [x] 5.5 Bound a tool argument to its first line truncated to the configured width, marked as truncated, verified by a test over a multi-line heredoc command
+- [x] 5.5 Bound a tool argument to its first line truncated to a fixed width, marked as truncated, verified by a test over a multi-line heredoc command
 - [x] 5.6 Render a tool call's outcome and its failure detail without rendering the tool's output content, verified by a test asserting a large output is not echoed
 - [x] 5.7 Extend debug output to include full tool arguments and output, verified by a test asserting they appear only under debug
 - [x] 5.8 Write tests for new functionality and run project tests - must pass before next task

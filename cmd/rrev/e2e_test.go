@@ -343,10 +343,15 @@ esac`,
 	if want := "raised comprehensive 1, 2"; !strings.Contains(log, want) {
 		t.Errorf("ledger missing %q:\n%s", want, log)
 	}
-	// The ledger states a rationale once however often the finding is raised;
-	// `rejected because:` is the prompt's wording, not the log's.
-	if n := strings.Count(log, "rejected: still not key material"); n != 1 {
-		t.Errorf("the rationale appears %d times, want one ledger statement:\n%s", n, log)
+	// The ledger states one rationale however often the finding is raised, and
+	// it is the one that settled the question rather than whatever the latest
+	// re-rejection restated. `rejected because:` is the prompt's wording.
+	if n := strings.Count(log, "rejected: the value is not key material"); n != 1 {
+		t.Errorf("the settling rationale appears %d times, want one ledger statement:\n%s", n, log)
+	}
+	_, ledger, _ := strings.Cut(log, "## Standing rejections")
+	if strings.Contains(ledger, "still not key material") {
+		t.Errorf("the re-rejection restated the ledger's rationale:\n%s", log)
 	}
 }
 

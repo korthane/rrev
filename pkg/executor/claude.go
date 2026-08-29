@@ -131,20 +131,23 @@ func (t *claudeTools) agentFor(parentID string) string {
 	return t.agents[parentID]
 }
 
-func (t *claudeTools) start(col *collector, block claudeBlock) {
+func (t *claudeTools) start(col *collector, parentID string, block claudeBlock) {
 	call := describeToolCall(block.Name, block.Input)
+	// The parent is kept on the call so the flush that reports unanswered ones
+	// attributes them as accurately as the launch did.
+	call.parent = t.agentFor(parentID)
 	// A sub-agent runs for minutes. Announcing it only once it finishes is the
 	// unexplained pause this reporting exists to prevent, so its launch is
 	// rendered straight away and its outcome follows later.
-	if call.agent != "" {
-		col.activity(call.line(""))
+	if call.launch {
+		col.activityAs(call.parent, call.line(""))
 		call.shown = true
 	}
 	if block.ID == "" {
 		// No id to match a result against, so report it now rather than hold a
 		// line that nothing will ever release.
 		if !call.shown {
-			col.activity(call.line(""))
+			col.activityAs(call.parent, call.line(""))
 		}
 		return
 	}
@@ -174,7 +177,7 @@ func (t *claudeTools) finish(block claudeBlock) (string, bool) {
 func (t *claudeTools) flush(col *collector) {
 	for _, id := range t.order {
 		if call := t.pending[id]; !call.shown {
-			col.activity(call.line(""))
+			col.activityAs(call.parent, call.line(""))
 		}
 	}
 	t.order, t.pending = nil, map[string]toolCall{}
@@ -194,12 +197,15 @@ func claudeResultText(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &blocks); err != nil {
 		return ""
 	}
+	var texts []string
 	for _, b := range blocks {
 		if b.Text != "" {
-			return b.Text
+			texts = append(texts, b.Text)
 		}
 	}
-	return ""
+	// Every block, not the first: debug records a tool's full output, and the
+	// displayed failure detail is bounded to one line after this returns.
+	return strings.Join(texts, "\n")
 }
 
 func claudeLine(col *collector, tools *claudeTools, line string) error {
@@ -222,7 +228,7 @@ func claudeLine(col *collector, tools *claudeTools, line string) error {
 			case "text":
 				col.sayAs(tools.agentFor(event.ParentToolUseID), block.Text)
 			case "tool_use":
-				tools.start(col, block)
+				tools.start(col, event.ParentToolUseID, block)
 				col.detail("tool input", string(block.Input))
 			}
 		}
