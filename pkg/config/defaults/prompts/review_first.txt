@@ -56,7 +56,10 @@ nothing.
 
 ### 3.1 Deduplicate
 Merge findings that name the same file:line and the same issue, keeping every
-reporting agent's name on the merged finding.
+reporting agent's name on the merged finding. An agent that recognized a
+standing rejection names it in a `Re-raises: R7` field; keep that id on the
+merged finding, since it is the agent's own declaration and not something you
+should have to re-derive.
 
 ### 3.2 Verify every finding against the real code
 For each finding, open the cited location, read the surrounding context, and
@@ -92,6 +95,8 @@ REJECTED: <file>:<line> | <agent> | <what was claimed> | <why it is not a real f
 
 Re-raising something from the standing-rejection list? Put its id in the opening
 token: `FINDING[R7]:` or `REJECTED[R7]:`. Leave the token bare for anything new.
+A finding that reached you with a `Re-raises: R7` field is one of these: carry
+that id into the opening token rather than dropping it.
 
 
 Report the validation command's outcome once, so the progress log records

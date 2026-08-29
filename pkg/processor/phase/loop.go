@@ -232,8 +232,9 @@ type reviewCall struct {
 // verified against real code before fixing is recorded as confirmed, while an
 // unverified report from the independent tool is recorded as reported only. A
 // rejection carries its reason, which is what a later round is shown instead of
-// the finding itself, and a validation outcome is recorded as reported: rrev
-// does not run the validation command itself.
+// the finding itself, and only a verified call may make one. A validation
+// outcome is recorded as reported: rrev does not run the validation command
+// itself.
 func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection, validations []Validation) {
 	// The fallback is written back into the slice, not into a copy: the same
 	// findings become the run's result and the report's Reviewer column.
@@ -250,6 +251,13 @@ func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection
 	for i := range rejections {
 		if rejections[i].Reviewer == "" {
 			rejections[i].Reviewer = call.exec.Name()
+		}
+		// Only a verified call may dismiss. A rejection becomes a standing
+		// ledger entry shown to every later reviewer, so accepting one from the
+		// unverified second opinion would silence them on a claim nobody
+		// checked against the code.
+		if !call.verified {
+			continue
 		}
 		e.Log.Rejected(rejections[i].entry(), rejections[i].Reason)
 	}

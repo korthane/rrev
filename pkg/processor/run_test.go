@@ -284,6 +284,21 @@ func TestFindingsDeduplicatedAcrossPhases(t *testing.T) {
 	}
 }
 
+// A declared re-raise is the strongest evidence rrev has that two reports are
+// the same finding, so it must not be the thing that splits them: the id is not
+// part of a finding's identity.
+func TestFindingsDeduplicatedAcrossADeclaredReRaise(t *testing.T) {
+	bare := phase.Finding{Severity: "major", File: "a.go", Line: 3, Reviewer: "quality", Summary: "leaks a handle"}
+	declared := bare
+	declared.ReRaises = "R9"
+
+	got := addFindings(addFindings(nil, []phase.Finding{bare}), []phase.Finding{declared})
+
+	if len(got) != 1 {
+		t.Errorf("findings = %+v, want the re-raise folded into the finding it re-raises", got)
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	body, err := os.ReadFile(filepath.Clean(path))

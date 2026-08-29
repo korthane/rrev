@@ -13,4 +13,9 @@
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a3", "input": {"subagent_type": "typed-only"}}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a4", "input": {"subagent_type": "long-named", "description": "review-the-authentication-middleware-changes-in-detail"}}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a5", "input": {"subagent_type": "general-purpose", "description": "review the tests"}}]}}
+{"type": "assistant", "parent_tool_use_id": "a3", "message": {"content": [{"type": "text", "text": "the unnamed reviewer speaks"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a6", "input": {"subagent_type": "general-purpose", "description": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}]}}
+{"type": "assistant", "parent_tool_use_id": "a6", "message": {"content": [{"type": "text", "text": "spoken at the bound"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a7", "input": {"subagent_type": "general-purpose", "description": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}]}}
+{"type": "assistant", "parent_tool_use_id": "a7", "message": {"content": [{"type": "text", "text": "spoken past the bound"}]}}
 {"type": "result", "subtype": "success", "is_error": false, "result": "done"}

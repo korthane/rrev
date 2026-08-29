@@ -181,3 +181,15 @@ func TestTruncatedLedgerNamesTheLogItWasCutFrom(t *testing.T) {
 		t.Errorf("the truncation notice does not name the log\n--- got ---\n%s", got)
 	}
 }
+
+// Agent definitions carry no {{PROGRESS_LOG}}, and truncation bites hardest
+// there. With no resolved path to name, the notice still has to point somewhere
+// rather than trail off into an empty string.
+func TestTruncatedLedgerWithoutALogPathStillPointsSomewhere(t *testing.T) {
+	entries := ledgerEntries(20)
+	got := expandLedger(t, Vars{Ledger: entries, LedgerBudget: len(entries[0]) * 3})
+
+	if !strings.Contains(got, "Read the progress log for the rest") {
+		t.Errorf("the truncation notice names no log at all\n--- got ---\n%s", got)
+	}
+}

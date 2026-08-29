@@ -340,6 +340,44 @@ func TestClaudeAttributesToolOutcomesToTheSubAgent(t *testing.T) {
 	}
 }
 
+// A killed or truncated stream ends with no result event, so the in-stream
+// flush never runs. The flush after the command is what stops a call held for
+// its outcome from vanishing with it, leaving the unexplained pause this
+// reporting exists to prevent.
+func TestClaudeFlushesHeldCallsWhenTheStreamEndsWithoutAResult(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{fixture: "claude_no_result.jsonl"})
+	var stream strings.Builder
+	if _, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{
+		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
+	}); err != nil {
+		t.Fatalf("run claude: %v", err)
+	}
+
+	if !strings.Contains(stream.String(), "· tool: Bash go build ./...") {
+		t.Errorf("a call held for its outcome was lost when the stream ended:\n%s", stream.String())
+	}
+}
+
+// A sub-agent launch is announced when it starts and again when it ends, and
+// the ending is the only line that says whether the reviewer actually
+// succeeded. A failed launch's result is that agent's whole report, so it is
+// bounded like any other failure detail rather than echoed.
+func TestClaudeReportsSubAgentLaunchCompletion(t *testing.T) {
+	stream := runToolFixture(t)
+
+	if !strings.Contains(stream, "· agent: testing → ok") {
+		t.Errorf("a completed sub-agent launch renders no outcome:\n%s", stream)
+	}
+	if !strings.Contains(stream, "· agent: conformance → failed: agent failed: budget exhausted") {
+		t.Errorf("a failed sub-agent launch renders no cause:\n%s", stream)
+	}
+	for _, unwanted := range []string{"which must not be echoed", "must stay off the display"} {
+		if strings.Contains(stream, unwanted) {
+			t.Errorf("a sub-agent's report body reached the display (%q):\n%s", unwanted, stream)
+		}
+	}
+}
+
 // A result arrives either as a string or as content blocks. Reading only the
 // first block would drop detail from the failure line and from the debug record
 // that promises the tool's full output.

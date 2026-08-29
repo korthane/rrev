@@ -81,6 +81,8 @@ REJECTED: <file>:<line> | <agent> | <what was claimed> | <why it is not a real f
 
 Re-raising something from the standing-rejection list? Put its id in the opening
 token: `FINDING[R7]:` or `REJECTED[R7]:`. Leave the token bare for anything new.
+A finding that reached you with a `Re-raises: R7` field is one of these: carry
+that id into the opening token rather than dropping it.
 
 
 Report the validation command's outcome once, so the progress log records

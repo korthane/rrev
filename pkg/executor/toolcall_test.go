@@ -53,6 +53,44 @@ func TestUnansweredAgentLaunchIsReportedOnce(t *testing.T) {
 	}
 }
 
+// The width bound decides whether a custom agent is ever attributed, so it has
+// to bite one past the limit rather than at it: an off-by-one here silently
+// drops every line of a reviewer whose name is exactly as long as allowed.
+func TestAgentNameIsTakenAtTheWidthBoundAndNotPastIt(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	atBound := strings.Repeat("a", 32)
+	if !strings.Contains(stream, "["+atBound+"] spoken at the bound") {
+		t.Errorf("a name exactly at the bound was refused:\n%s", stream)
+	}
+	if !strings.Contains(stream, "spoken past the bound") {
+		t.Fatalf("the over-long agent's line never rendered:\n%s", stream)
+	}
+	if strings.Contains(stream, "["+strings.Repeat("b", 33)+"]") {
+		t.Errorf("a name one past the bound was taken as attribution:\n%s", stream)
+	}
+}
+
+// A line emitted under a launch rrev refused to name falls back to the phase
+// alone. Labelling it with the raw tool-use id would read as attribution that
+// succeeded rather than as the fallback the format's silence calls for.
+func TestLineUnderAnUnnamedLaunchCarriesNoAttribution(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	const said = "the unnamed reviewer speaks"
+	if !strings.Contains(stream, said) {
+		t.Fatalf("the sub-agent's line never rendered:\n%s", stream)
+	}
+	for line := range strings.SplitSeq(stream, "\n") {
+		if !strings.Contains(line, said) {
+			continue
+		}
+		if strings.Contains(line, "[") {
+			t.Errorf("a line under an unnamed launch was attributed anyway:\n%s", line)
+		}
+	}
+}
+
 // A launch that does not name its agent must not borrow the description for
 // the name: every line of that agent would then be labelled with a sentence.
 func TestUnnamedAgentLaunchIsReportedWithoutAnAgentName(t *testing.T) {

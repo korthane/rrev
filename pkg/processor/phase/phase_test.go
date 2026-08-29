@@ -374,6 +374,38 @@ func TestSinglePassLogsFindingsAsNotFixed(t *testing.T) {
 	}
 }
 
+// A cancelled or throttled call may still have reported before it died. The
+// report is held back so a retry cannot record a superseded attempt, which
+// makes the failure path the one place holding it back could lose it outright.
+func TestFailedCallStillRecordsWhatItReported(t *testing.T) {
+	reported := "FINDING: major | pkg/a.go:9 | quality | - | the handle outlives the request\n" +
+		"REJECTED: pkg/b.go:2 | quality | the cast is unchecked | the type is fixed by the caller"
+	primary := &executor.Mock{Tool: "claude", Responses: []executor.Response{
+		{Output: reported, Err: errors.New("claude exited with status 1")},
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := Comprehensive(context.Background(), env)
+
+	if res.Reason != ReasonFailure {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonFailure)
+	}
+	body := readFile(t, log.Path())
+	for _, want := range []string{"the handle outlives the request", "the cast is unchecked"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a failed call's report was lost, %q missing:\n%s", want, body)
+		}
+	}
+	if n := strings.Count(body, "the handle outlives the request"); n != 1 {
+		t.Errorf("finding recorded %d times, want exactly one copy", n)
+	}
+}
+
 // changingHandler makes every iteration look like it committed something, so a
 // loop that would otherwise be a stalemate runs to its own terminating
 // condition.
@@ -617,12 +649,14 @@ func TestExternalToolFailureIsRecordedWithItsCause(t *testing.T) {
 	}
 }
 
-// A run killed mid-review leaves the log as silent as the console was. The
-// invocation is recorded before the call so the log says which tool was running
-// when it stopped, and so a reader meets the tool ahead of its findings.
-func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
-	external := mock("codex", "FINDING: major | pkg/a.go:7 | external | - | the token is echoed", externalDone)
-	env, _ := newEnv(t, mock("claude", externalDone), external, nil)
+// A rejection becomes a standing ledger entry every later reviewer is shown.
+// The external tool's claims are never checked against the code, so one from it
+// would silence every later reviewer on a claim nobody verified. The prompt
+// tells it not to; the ledger must not depend on it complying.
+func TestUnverifiedRejectionDoesNotEnterTheLedger(t *testing.T) {
+	reported := "REJECTED: pkg/a.go:7 | external | the mutex is held twice | it is not\n" + externalDone
+	external := mock("codex", reported)
+	env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
 	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
 	if err != nil {
 		t.Fatalf("open progress log: %v", err)
@@ -635,14 +669,45 @@ func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read progress log: %v", err)
 	}
-	got := string(data)
-	invoked := strings.Index(got, "external tool `codex`: invoked")
-	finding := strings.Index(got, "the token is echoed")
-	if invoked < 0 || finding < 0 {
-		t.Fatalf("the log records the invocation at %d and the finding at %d:\n%s", invoked, finding, got)
+	if strings.Contains(string(data), "the mutex is held twice") {
+		t.Errorf("an unverified rejection reached the log, and with it the ledger:\n%s", data)
 	}
-	if finding < invoked {
-		t.Errorf("the tool's findings were recorded before the invocation that produced them:\n%s", got)
+	if len(log.PromptEntries()) != 0 {
+		t.Errorf("ledger = %v, want no standing entry from an unverified call", log.PromptEntries())
+	}
+}
+
+// A run killed mid-review leaves the log as silent as the console was. The
+// invocation is recorded before the call so the log says which tool was running
+// when it stopped, and so a reader meets the tool ahead of its findings.
+func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
+	const reported = "FINDING: major | pkg/a.go:7 | external | - | the token is echoed"
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	var duringCall bool
+	external := &executor.Mock{Tool: "codex", Handler: func(_ context.Context, _ executor.Request) (executor.Result, error) {
+		body, readErr := os.ReadFile(log.Path())
+		duringCall = readErr == nil && strings.Contains(string(body), "external tool `codex`: invoked")
+		return executor.Result{Output: reported, Signal: executor.Detect(reported)}, nil
+	}}
+	env, _ := newEnv(t, mock("claude", externalDone), external, nil)
+	env.Log = log
+
+	External(context.Background(), env)
+
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	got := string(data)
+	// Ordering in the finished log proves nothing: the report is written by a
+	// deferred call, so the findings land last however late the invocation was
+	// recorded. What the requirement is about is a run that never reaches the
+	// end, so the claim is checked from inside the call itself.
+	if !duringCall {
+		t.Error("the invocation was not in the log while the tool was still running, so a run killed mid-call records nothing")
 	}
 	if !strings.Contains(got, "external tool `codex`: reported 1 finding(s)") {
 		t.Errorf("the ordinary outcome must say what the tool returned:\n%s", got)

@@ -236,7 +236,10 @@ when it failed:
 The line prefix is the phase. `·` marks rrev's account of what the tool is
 doing, as against the model's own words; `[agent]` names the reviewer when the
 executor's format identified one. Reviewer agents are launched with their name
-in the call's description, which is what rrev reads that attribution from.
+in the call's description, which is what rrev reads that attribution from. Only
+a bare token under 32 bytes is taken as a name: a description the executor
+filled with a phrase instead, or an agent whose own name is longer than that,
+contributes no attribution and its lines carry the phase alone.
 
 The tool's own output never appears: a diff or a test run would flood the
 display. An argument spanning several lines or longer than 100 bytes is cut to
@@ -355,6 +358,12 @@ distinct findings as readily as it caught real recurrences. An undeclared line
 is recorded as a new finding, and an id the log does not hold is recorded as new
 with a note — neither costs the finding, only the recurrence count.
 
+A reviewer agent writes no report lines of its own: the phase's executor reads
+its report and turns each finding into one. So the shipped agents are asked for
+the id as its own `Re-raises: R7` field, which the executor carries into the
+opening token; an id buried in an agent's prose does not survive that hop. A
+replacement agent that drops the field costs recurrences, not findings.
+
 For compatibility a three-field `REJECTED:` line still parses, reading its last
 field as the reason and leaving the claim empty. A rejection whose reason is
 missing is recorded with one stating that, rather than dropped from the ledger:
@@ -390,7 +399,8 @@ rejected and why, the validation outcome each iteration reported, the commits it
 produced, whether an external review tool ran and what it returned, and each
 loop's termination reason. An external phase that converges in silence and one
 whose tool died quietly are recorded differently, because they call for opposite
-responses.
+responses. A progress directory that cannot be written degrades the run to
+logging disabled rather than aborting it.
 
 Every finding the log records carries an identifier — `R1`, `R2`, … — assigned
 when it is first recorded and shown on its entry. They run in one sequence for
@@ -435,8 +445,7 @@ refreshing the ledger rather than rewinding over another run's records. A log
 written before this format existed is appended to exactly as it stands — never
 rewritten, and never parsed back into a ledger. No ledger is: a second run
 against the same change starts with an empty one and suppresses only what it
-rejects itself, though its reviewers are still pointed at the whole log. A progress directory that cannot
-be written degrades the run to logging disabled rather than aborting it.
+rejects itself, though its reviewers are still pointed at the whole log.
 
 ## Findings report
 

@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"content":[{"type":"text","text":"starting the review"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{"command":"go build ./..."}}]}}

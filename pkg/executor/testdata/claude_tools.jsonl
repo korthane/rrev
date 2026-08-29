@@ -11,4 +11,6 @@
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","id":"a3","input":{"subagent_type":"general-purpose","description":"testing"}}]}}
 {"type":"assistant","parent_tool_use_id":"a3","message":{"content":[{"type":"tool_use","name":"Glob","id":"t4","input":{"pattern":"*_test.go"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t4","is_error":false,"content":"ok"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a3","is_error":false,"content":"the sub-agent report, which must not be echoed"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a1","is_error":true,"content":"agent failed: budget exhausted\nand a second line of the report that must stay off the display"}]}}
 {"type":"result","subtype":"success","is_error":false,"result":"done"}

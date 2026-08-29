@@ -197,9 +197,18 @@ func (r *Runner) note(format string, args ...any) {
 // addFindings appends the findings a phase reported, dropping the ones an
 // earlier phase already reported identically: the same issue surviving into the
 // final pass is one finding, not two.
+//
+// The declared ledger id is not part of a finding's identity. A finding raised
+// bare in one phase and re-raised with `FINDING[R7]:` in a later one is the
+// same issue, and comparing the declaration would split precisely the case
+// where rrev has the strongest evidence that it is not.
 func addFindings(all, found []phase.Finding) []phase.Finding {
+	same := func(a, b phase.Finding) bool {
+		a.ReRaises, b.ReRaises = "", ""
+		return a == b
+	}
 	for _, f := range found {
-		if !slices.Contains(all, f) {
+		if !slices.ContainsFunc(all, func(x phase.Finding) bool { return same(x, f) }) {
 			all = append(all, f)
 		}
 	}
