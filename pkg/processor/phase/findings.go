@@ -197,10 +197,13 @@ func parseRejection(reRaises, rest string) Rejection {
 	r := Rejection{ReRaises: reRaises, Reviewer: field(fields, 1)}
 	r.File, r.Line = parseLocation(field(fields, 0))
 	if len(fields) < 4 {
-		r.Reason = field(fields, 2)
+		r.Reason = undash(field(fields, 2))
 		return r
 	}
-	r.Claim, r.Reason = undash(field(fields, 2)), field(fields, 3)
+	// The reason is undashed like every other field: `-` is the templates' own
+	// stand-in for an absent one, and left literal it would settle the ledger
+	// entry with a rationale no later rejection can replace.
+	r.Claim, r.Reason = undash(field(fields, 2)), undash(field(fields, 3))
 	return r
 }
 

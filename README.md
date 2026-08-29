@@ -234,6 +234,12 @@ when it failed:
 [comprehensive] · tool: Bash go test ./... … → ok
 ```
 
+A call is reported once its result arrives, so its line carries the outcome
+rather than appearing twice. Sub-agent launches are the exception: a reviewer
+runs for minutes, so the launch is announced as it happens and its outcome
+follows on a second line. A run cut short still reports the calls that were in
+flight, without an outcome.
+
 The line prefix is the phase. `·` marks rrev's account of what the tool is
 doing, as against the model's own words; `[agent]` names the reviewer when the
 executor's format identified one. Reviewer agents are launched with their name
@@ -414,9 +420,9 @@ logging disabled rather than aborting it.
 Every finding the log records carries an identifier — `R1`, `R2`, … — assigned
 when it is first recorded and shown on its entry. They run in one sequence for
 the whole run and continue past the highest id a log already holds, so a second
-run never re-issues one. A finding that was confirmed, or reported without a
-disposition, has an identifier but no ledger row: only a rejection with a stated
-reason becomes one.
+run never re-issues one. A finding only ever reported, or confirmed without
+having been rejected first, has an identifier but no ledger row. Every rejection
+gets one, including a rejection that arrived with no reason.
 
 ### Standing rejections
 

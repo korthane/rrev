@@ -28,4 +28,8 @@
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Agent", "input": {"subagent_type": "general-purpose", "description": "hunt for races"}}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "input": {"subagent_type": "general-purpose", "description": "idless"}}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "\u001b[2J\u001b[31mSpoofed", "input": {"command": "true"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a8", "input": {"subagent_type": "general-purpose", "description": "\u001b[31mrogue\rwriter"}}]}}
+{"type": "assistant", "parent_tool_use_id": "a8", "message": {"content": [{"type": "text", "text": "spoken under a rogue name"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "\u001b", "id": "t5", "input": {"command": "true"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t5", "is_error": false}]}}
 {"type": "result", "subtype": "success", "is_error": false, "result": "done"}

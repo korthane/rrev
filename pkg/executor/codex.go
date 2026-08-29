@@ -128,7 +128,7 @@ func codexPart(col *collector, kind, text string) {
 		col.say(text)
 	case "agent_reasoning", "reasoning":
 		col.activity("thinking")
-	case "exec_command_begin", "command_execution":
+	case "exec_command_begin":
 		col.activity("command")
 	}
 }

@@ -193,3 +193,19 @@ func TestTruncatedLedgerWithoutALogPathStillPointsSomewhere(t *testing.T) {
 		t.Errorf("the truncation notice names no log at all\n--- got ---\n%s", got)
 	}
 }
+
+// finalize.txt carries no {{LEDGER}}, and README documents an override written
+// before the ledger existed as valid. Both leave zero expansion sites, which
+// the budget is divided by.
+func TestLedgerFreeAssetExpandsUnderANonZeroBudget(t *testing.T) {
+	exp, projectDir := expanderFor(t, ExecutorClaude, Vars{Ledger: ledgerEntries(3), LedgerBudget: 40000})
+	writeAsset(t, projectDir, KindPrompt, "review_first", "no ledger here")
+
+	got, err := exp.Prompt("review_first")
+	if err != nil {
+		t.Fatalf("expand prompt: %v", err)
+	}
+	if got != "no ledger here" {
+		t.Errorf("expanded to %q, want the template unchanged", got)
+	}
+}

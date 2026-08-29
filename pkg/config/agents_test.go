@@ -35,6 +35,10 @@ func fullVars() Vars {
 		Requirements:      []string{"1. [ADDED] auth: Sign in\n   - Valid password: WHEN ... THEN ...\n"},
 		Iteration:         1,
 		MaxIterations:     10,
+		Ledger:            []string{"- R1  pkg/a.go:1  (raised comprehensive 1)\n    rejected because: it is fine\n"},
+		// A real budget, so expanding an asset that carries no {{LEDGER}}
+		// exercises the division rather than skipping past it.
+		LedgerBudget: 40000,
 	}
 }
 

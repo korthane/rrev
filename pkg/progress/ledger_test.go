@@ -123,7 +123,7 @@ func TestConfirmingAPreviouslyRejectedFindingRetiresItsEntry(t *testing.T) {
 	log.Confirmed(progress.Finding{ReRaises: "R1", Reviewer: "quality", Severity: "major", File: "a.go", Line: 7}, "fixed")
 
 	got := readLog(t, log)
-	if !strings.Contains(got, "since confirmed and fixed; no longer standing") {
+	if !strings.Contains(got, "since confirmed; no longer standing") {
 		t.Errorf("the entry must record that it was subsequently confirmed\n--- log ---\n%s", got)
 	}
 	// The prompt ledger is the list of open questions, so a retired entry must
@@ -514,5 +514,19 @@ func TestFindingWithoutARationaleNeverEntersTheLedger(t *testing.T) {
 	}
 	if entries := log.PromptEntries(); len(entries) != 0 {
 		t.Errorf("PromptEntries = %q, want none: nothing was rejected", entries)
+	}
+}
+
+// A finding recorded before any iteration is open still gets a ledger row, and
+// the row still has to say something about where it came from rather than
+// trailing off after "raised".
+func TestEntryRaisedOutsideAnIterationSaysSo(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "the buffer is copied first")
+	log.LoopEnd("comprehensive", "converged", 1)
+
+	if got := readLog(t, log); !strings.Contains(got, "raised not yet") {
+		t.Errorf("a ledger row raised outside an iteration names no origin\n--- log ---\n%s", got)
 	}
 }

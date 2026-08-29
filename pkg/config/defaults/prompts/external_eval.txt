@@ -82,6 +82,11 @@ REJECTED: <file>:<line> | external | <what was claimed> | <why it is not a real 
 Re-raising something from the standing-rejection list? Put its id in the opening
 token: `FINDING[R7]:` or `REJECTED[R7]:`. Leave the token bare for anything new.
 
+A finding the tool reported under an id of its own — its line opened with
+`FINDING[R7]:` — is one of these: carry that id into your own opening token
+rather than dropping it. Dropping it files your disposition against a second
+entry for the finding you are disposing of.
+
 
 A rejection with no reason is not a rejection. The reason is what stops the same
 finding coming back unchanged.

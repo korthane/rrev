@@ -308,6 +308,35 @@ func TestRejectionWithoutAClaimCarriesNoClaim(t *testing.T) {
 	}
 }
 
+// `-` is the templates' own stand-in for an absent field, shown to the executor
+// on the FINDING line beside this one. Read literally it would publish `claim:
+// -` into every later prompt and pin a rationale no re-rejection can replace,
+// since only an empty reason may be overwritten.
+func TestDashedRejectionFieldsReadAsAbsent(t *testing.T) {
+	_, rejections, _ := ParseReport("REJECTED: pkg/a.go:7 | quality | - | -")
+	if len(rejections) != 1 {
+		t.Fatalf("parsed %d rejections, want 1", len(rejections))
+	}
+	if got := rejections[0].entry().Summary; got != "" {
+		t.Errorf("entry claim = %q, want empty rather than a literal dash", got)
+	}
+	if got := rejections[0].Reason; got != "" {
+		t.Errorf("reason = %q, want empty rather than a literal dash", got)
+	}
+}
+
+// The three-field form takes its last field as the reason, so a dash lands
+// there instead of on the claim.
+func TestDashedThreeFieldRejectionReasonReadsAsAbsent(t *testing.T) {
+	_, rejections, _ := ParseReport("REJECTED: pkg/a.go:7 | quality | -")
+	if len(rejections) != 1 {
+		t.Fatalf("parsed %d rejections, want 1", len(rejections))
+	}
+	if got := rejections[0].Reason; got != "" {
+		t.Errorf("reason = %q, want empty rather than a literal dash", got)
+	}
+}
+
 func TestRejectionWithAClaimCarriesIt(t *testing.T) {
 	_, rejections, _ := ParseReport("REJECTED: pkg/a.go:7 | quality | the buffer is aliased | it is copied before the goroutine starts")
 	if len(rejections) != 1 {

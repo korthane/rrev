@@ -259,6 +259,29 @@ func TestAgentLaunchWithoutAnIdIsReportedOnce(t *testing.T) {
 	}
 }
 
+// The agent name becomes a prefix repeated on every line that agent produces,
+// so it is the widest of the routes a model-chosen string has to the display.
+func TestControlCharactersAreStrippedFromTheAgentName(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if !strings.Contains(stream, "spoken under a rogue name") {
+		t.Errorf("the line under the rogue-named agent went missing:\n%s", stream)
+	}
+	if strings.ContainsAny(stream, "\x1b\r") {
+		t.Errorf("a control character reached the display through the agent name:\n%q", stream)
+	}
+}
+
+// A name that survives sanitizing as nothing still has to read as a tool call
+// rather than as a rendering fault the user has to interpret.
+func TestToolWhoseNameSanitizesAwayStillReadsAsACall(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if !strings.Contains(stream, "· tool: (unnamed)") {
+		t.Errorf("a tool with no usable name rendered no stand-in:\n%s", stream)
+	}
+}
+
 // The tool's name comes from the model's own JSON, like the argument beside it.
 // Written out verbatim it is a second route to the repainted display the
 // argument's sanitizing closes, and it can forge another agent's attribution.

@@ -23,7 +23,7 @@ var startsLikeRecord = regexp.MustCompile(`^- \*\*rejected\*\* `)
 
 // ledgerRow is a whole line of a rendered ledger entry: its heading row, or one
 // of the indented claim and rationale lines beneath it.
-var ledgerRow = regexp.MustCompile("^(- \\*\\*R\\d+\\*\\* `[^`]*` — raised .+|  (claim|rejected|since): .+|  since confirmed and fixed; no longer standing)$")
+var ledgerRow = regexp.MustCompile("^(- \\*\\*R\\d+\\*\\* `[^`]*` — raised .+|  (claim|rejected): .+|  since confirmed; no longer standing)$")
 
 func openLog(t *testing.T, dir, change string, opts progress.Options) *progress.Log {
 	t.Helper()
@@ -486,5 +486,28 @@ func TestForeignRecordSurvivesTheNextLedgerRewrite(t *testing.T) {
 	}
 	if !strings.Contains(got, "already handled upstream") {
 		t.Errorf("the later record was lost\n--- log ---\n%s", got)
+	}
+}
+
+// Losing the log is the one failure the user has to hear about: silently
+// swallowing it leaves a run whose history stops mid-way and no reason why.
+func TestAWriteThatCannotLandIsReported(t *testing.T) {
+	dir := t.TempDir()
+	var warnings []string
+	log := openLog(t, dir, "change", progress.Options{Warn: func(msg string) { warnings = append(warnings, msg) }})
+
+	// A directory where the log file was fails the open every write goes
+	// through, whatever the user's permissions are.
+	if err := os.Remove(log.Path()); err != nil {
+		t.Fatalf("remove log: %v", err)
+	}
+	if err := os.Mkdir(log.Path(), 0o700); err != nil {
+		t.Fatalf("replace log with a directory: %v", err)
+	}
+
+	log.Note("this cannot land")
+
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "write progress log") {
+		t.Errorf("warnings = %q, want one report that the write failed", warnings)
 	}
 }

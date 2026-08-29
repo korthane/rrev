@@ -186,4 +186,12 @@ func TestCodexRendersCommandsAndOutcomes(t *testing.T) {
 	if strings.Contains(got, "second line") {
 		t.Errorf("a command's later lines reached the display\n%s", got)
 	}
+	// A shell item codex names but gives no command for still ran, so its
+	// outcome is worth reporting; its text is the output, which never is.
+	if !strings.Contains(got, "· tool: command → ok") {
+		t.Errorf("a shell item carrying no command reported no outcome\n%s", got)
+	}
+	if strings.Contains(got, "must never be echoed") {
+		t.Errorf("a shell item's output reached the display\n%s", got)
+	}
 }

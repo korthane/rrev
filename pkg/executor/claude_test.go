@@ -303,6 +303,16 @@ func TestFullToolArgumentsAndOutputAppearOnlyUnderDebug(t *testing.T) {
 
 // runFixture replays a recorded claude stream, returning both the run's result
 // and everything that reached the display.
+// A sub-agent keeps emitting under its launch id after that launch has been
+// answered, so the name has to outlive the pending call it was read from.
+func TestAgentLinesStayAttributedAfterItsLaunchIsAnswered(t *testing.T) {
+	stream := runToolFixture(t)
+
+	if !strings.Contains(stream, "[testing] still speaking after its launch was answered") {
+		t.Errorf("a line after the launch result lost its attribution:\n%s", stream)
+	}
+}
+
 func runFixture(t *testing.T, fixture string) (executor.Result, string) {
 	t.Helper()
 	tool := newFakeTool(t, fakeToolOpts{fixture: fixture})

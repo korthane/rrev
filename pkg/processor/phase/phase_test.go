@@ -714,6 +714,36 @@ func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
 	}
 }
 
+// The two calls' reports are held back and written together, and the order they
+// are written in is the order the log reads and the order identifiers are
+// issued in. The tool's own claims must land ahead of the evaluation disposing
+// of them, or the log answers a question it has not yet asked.
+func TestTheToolsFindingsAreLoggedBeforeTheEvaluationOfThem(t *testing.T) {
+	const reported = "FINDING: major | pkg/a.go:7 | external | - | the token is echoed"
+	const disposed = "REJECTED: pkg/a.go:7 | external | the token is echoed | it is redacted before the log write\n" + externalDone
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env, _ := newEnv(t, mock("claude", disposed), mock("codex", reported), nil)
+	env.Log = log
+
+	External(context.Background(), env)
+
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	got := string(data)
+	tool, eval := strings.Index(got, "**reported**"), strings.Index(got, "**rejected**")
+	if tool < 0 || eval < 0 {
+		t.Fatalf("the log is missing one of the two reports:\n%s", got)
+	}
+	if tool > eval {
+		t.Errorf("the evaluation was logged before the finding it disposes of:\n%s", got)
+	}
+}
+
 // A tool that ran but wrote nothing rrev can read as a review is not the quiet
 // convergence it resembles. Recording both as "no findings reported" is the
 // silence-reads-as-a-clean-pass confusion the recorded-activity requirement

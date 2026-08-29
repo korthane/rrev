@@ -158,7 +158,7 @@ func (l *Log) renderLedger() string {
 	}
 	for _, e := range retired {
 		writeLedgerRow(&b, e)
-		b.WriteString("  since confirmed and fixed; no longer standing\n")
+		b.WriteString("  since confirmed; no longer standing\n")
 	}
 	return b.String()
 }
