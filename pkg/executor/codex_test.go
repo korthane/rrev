@@ -172,6 +172,9 @@ func TestCodexRendersCommandsAndOutcomes(t *testing.T) {
 		"· tool: command git log main..HEAD",
 		"· tool: command go test ./... … → ok",
 		"· tool: command golangci-lint run → failed: exit 1",
+		// A shell item codex types as something other than command_execution:
+		// the command is what identifies the call, whatever the item is called.
+		"· tool: command gofmt -l . → ok",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("stream missing %q\n%s", want, got)

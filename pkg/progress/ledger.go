@@ -164,11 +164,26 @@ func (l *Log) renderLedger() string {
 }
 
 func writeLedgerRow(b *strings.Builder, e *ledgerEntry) {
-	fmt.Fprintf(b, "- **%s** `%s` — raised %s\n", e.ID, strings.Join(e.Locations, ", "), describeRaises(e.Raises))
+	fmt.Fprintf(b, "- **%s** `%s` — raised %s\n", e.ID, e.where(), describeRaises(e.Raises))
 	if e.showClaim() {
 		fmt.Fprintf(b, "  claim: %s\n", oneLine(e.Claim))
 	}
 	fmt.Fprintf(b, "  rejected: %s\n", oneLine(e.Rationale))
+}
+
+// noLocation stands in for an entry whose findings named no file. A row that
+// renders an empty location leaves the reader nothing to anchor the entry to,
+// and says it in a way that reads as a rendering fault rather than as the
+// missing field it is.
+const noLocation = "(no location given)"
+
+// where names every location the entry was raised at. The log and the prompt
+// ask this the same way, so the two can never place one entry differently.
+func (e *ledgerEntry) where() string {
+	if len(e.Locations) == 0 {
+		return noLocation
+	}
+	return strings.Join(e.Locations, ", ")
 }
 
 // showClaim reports whether the entry has a claim to show. A rejection reported
@@ -224,7 +239,7 @@ func (l *Log) PromptEntries() []string {
 	out := make([]string, 0, len(entries))
 	for _, e := range entries {
 		var b strings.Builder
-		fmt.Fprintf(&b, "- %s  %s  (raised %s)\n", e.ID, strings.Join(e.Locations, ", "), describeRaises(e.Raises))
+		fmt.Fprintf(&b, "- %s  %s  (raised %s)\n", e.ID, e.where(), describeRaises(e.Raises))
 		if e.showClaim() {
 			fmt.Fprintf(&b, "    claim: %s\n", oneLine(e.Claim))
 		}

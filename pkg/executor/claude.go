@@ -1,7 +1,6 @@
 package executor
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -241,8 +240,13 @@ func claudeLine(col *collector, tools *claudeTools, line string) error {
 				continue
 			}
 			if rendered, parent, ok := tools.finish(block); ok {
-				col.activityAs(cmp.Or(tools.agentFor(event.ParentToolUseID), parent), rendered)
-				col.detail("tool output", claudeResultText(block.Content))
+				col.activityAs(parent, rendered)
+				// Decoded only under debug: the result carries the tool's whole
+				// output, and re-decoding megabytes to discard them is what
+				// every non-debug run would otherwise pay per tool call.
+				if col.debug {
+					col.detail("tool output", claudeResultText(block.Content))
+				}
 			}
 		}
 	case "result":

@@ -33,21 +33,22 @@ var toolArgKeys = map[string][]string{
 	"WebFetch":     {"url"},
 	"WebSearch":    {"query"},
 	"Skill":        {"skill"},
-	"Task":         {"subagent_type", "description"},
-	"Agent":        {"subagent_type", "description"},
+	// description first: rrev's reviewers are passed as ad-hoc definitions, so
+	// subagent_type carries one generic value for all seven and reading it
+	// first would render the seven concurrent launches as seven identical
+	// lines - the symptom this table exists to remove.
+	"Task":  {agentNameKey, "subagent_type"},
+	"Agent": {agentNameKey, "subagent_type"},
 }
 
-// agentKeys names, per sub-agent-launching tool, the input fields that may name
-// the agent. Only description qualifies, because rrev's own prompts ask the
-// executor to put the agent's name there. subagent_type is deliberately absent:
-// rrev's reviewers are passed as ad-hoc definitions rather than registered
-// types, so it carries one generic value for all seven, and labelling them all
-// alike reads as attribution that succeeded rather than the phase-only fallback
-// the design calls for.
-var agentKeys = map[string][]string{
-	"Task":  {"description"},
-	"Agent": {"description"},
-}
+// agentNameKey is the input field rrev's own prompts ask the executor to put
+// the agent's name in. subagent_type is deliberately not consulted for
+// attribution: labelling all seven reviewers alike reads as attribution that
+// succeeded rather than the phase-only fallback the design calls for.
+const agentNameKey = "description"
+
+// launchTools are the tools that start a sub-agent.
+var launchTools = map[string]bool{"Task": true, "Agent": true}
 
 // agentNameWidth bounds a value accepted as an agent name. A free-text
 // description used as one would label every line of that agent with a
@@ -73,7 +74,7 @@ type toolCall struct {
 
 // describeToolCall reads the distinguishing argument out of a tool's input.
 func describeToolCall(name string, input json.RawMessage) toolCall {
-	call := toolCall{name: name, launch: len(agentKeys[name]) > 0}
+	call := toolCall{name: name, launch: launchTools[name]}
 	if len(input) == 0 {
 		return call
 	}
@@ -89,27 +90,26 @@ func describeToolCall(name string, input json.RawMessage) toolCall {
 		call.arg = boundArg(text)
 		break
 	}
-	call.agent = agentName(fields, agentKeys[name])
+	if call.launch {
+		call.agent = agentName(fields)
+	}
 	return call
 }
 
-// agentName picks the field that names the sub-agent, taking the first that
-// reads as a name rather than as prose. Attribution is never guessed: a launch
+// agentName reads the field naming the sub-agent, taking it only when it reads
+// as a name rather than as prose. Attribution is never guessed: a launch
 // offering nothing name-like contributes none, and its lines fall back to the
 // phase alone.
-func agentName(fields map[string]any, keys []string) string {
-	for _, key := range keys {
-		text, ok := fields[key].(string)
-		if !ok {
-			continue
-		}
-		text = strings.TrimSpace(sanitize(text))
-		if text == "" || len(text) > agentNameWidth || strings.Contains(text, " ") {
-			continue
-		}
-		return text
+func agentName(fields map[string]any) string {
+	text, ok := fields[agentNameKey].(string)
+	if !ok {
+		return ""
 	}
-	return ""
+	text = strings.TrimSpace(sanitize(text))
+	if text == "" || len(text) > agentNameWidth || strings.Contains(text, " ") {
+		return ""
+	}
+	return text
 }
 
 // boundArg reduces an argument to one bounded line. Only the first line is

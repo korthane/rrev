@@ -17,7 +17,7 @@ The console and log problems have the same root — attribution at too coarse a 
 - Parsing or migrating existing flat-format logs. New format, new logs.
 - Making the log machine-readable as a data interchange format. It is a document that a model and a person both read; JSON would serve neither better.
 - Parity between claude and codex in what the console can show. Whatever each format exposes is what gets shown.
-- Changing when a loop terminates. See "Termination was considered and rejected" below.
+- Changing when a loop terminates, beyond refusing to read an unreadable external round as convergence. See "Termination was considered and rejected" below.
 
 ## Decisions
 

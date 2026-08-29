@@ -12,4 +12,5 @@
 {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t4", "is_error": false, "content": "ok"}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a3", "input": {"subagent_type": "typed-only"}}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a4", "input": {"subagent_type": "long-named", "description": "review-the-authentication-middleware-changes-in-detail"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a5", "input": {"subagent_type": "general-purpose", "description": "review the tests"}}]}}
 {"type": "result", "subtype": "success", "is_error": false, "result": "done"}

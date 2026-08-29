@@ -94,15 +94,30 @@ func TestSubAgentTypeIsNotBorrowedAsAnAgentName(t *testing.T) {
 }
 
 // The bound is what keeps a description from labelling every one of an agent's
-// lines with a sentence; a long unbroken one passes the no-spaces test.
+// lines with a sentence; a long unbroken one passes the no-spaces test. It is
+// still the argument that distinguishes the launch, just not an agent name.
 func TestOverLongDescriptionIsNotUsedAsAnAgentName(t *testing.T) {
 	stream := runToolEdgeFixture(t)
 
-	if !strings.Contains(stream, "· tool: Task long-named") {
+	if !strings.Contains(stream, "· tool: Task review-the-authentication-middleware-changes-in-detail") {
 		t.Errorf("a launch with an over-long description went unreported:\n%s", stream)
 	}
 	if strings.Contains(stream, "agent: review-the-authentication") {
 		t.Errorf("a description past the bound was used as an agent name:\n%s", stream)
+	}
+}
+
+// The description is read ahead of subagent_type for the rendered argument too,
+// not only for attribution: rrev's reviewers share one subagent_type, so
+// reading it first renders seven concurrent launches as seven identical lines.
+func TestProseDescriptionStillDistinguishesALaunch(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if !strings.Contains(stream, "· tool: Task review the tests") {
+		t.Errorf("a launch described in prose was not distinguished:\n%s", stream)
+	}
+	if strings.Contains(stream, "Task general-purpose") {
+		t.Errorf("the shared subagent_type was rendered as the distinguishing argument:\n%s", stream)
 	}
 }
 

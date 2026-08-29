@@ -408,3 +408,88 @@ func TestRealRationaleReplacesTheMissingReasonPlaceholder(t *testing.T) {
 		t.Errorf("the placeholder outlived a stated reason: %q", entries[0])
 	}
 }
+
+// The claim is what a reviewer matches its own finding against. The symmetric
+// rationale invariant is pinned above; without this one a re-raise reported in
+// the three-field form could blank the claim of the entry it names.
+func TestLedgerKeepsTheClaimTheFirstRaiseSupplied(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7,
+		Summary: "the echoed character is key material"}, "it is a prompt, not a secret")
+	log.IterationStart("comprehensive", 2, 10)
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "testing", File: "a.go", Line: 7}, "still not a secret")
+
+	entries := log.PromptEntries()
+	if len(entries) != 1 || !strings.Contains(entries[0], "claim: the echoed character is key material") {
+		t.Errorf("PromptEntries = %q, want the first claim kept", entries)
+	}
+}
+
+// A finding re-raised at one line is the common case, so an entry that lists
+// that line once per raise would bury the cross-location signal a merged entry
+// is meant to show, in every copy of every prompt.
+func TestOneLocationRaisedRepeatedlyIsListedOnce(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+	log.IterationStart("comprehensive", 2, 10)
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "testing", File: "a.go", Line: 7}, "out of scope")
+	log.IterationStart("comprehensive", 3, 10)
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+
+	if want, got := "- **R1** `a.go:7` — raised comprehensive 1, 2, 3\n", readLog(t, log); !strings.Contains(got, want) {
+		t.Errorf("ledger row missing %q\n--- log ---\n%s", want, got)
+	}
+	if got := log.PromptEntries(); len(got) != 1 || countOf(got[0], "a.go:7") != 1 {
+		t.Errorf("PromptEntries = %q, want one entry naming the location once", got)
+	}
+}
+
+// A rejection reported with no location still has to be actionable: an entry
+// rendered with an empty location leaves a reviewer nothing to anchor it to.
+func TestEntryWithoutALocationSaysSo(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", Summary: "the design is wrong"}, "out of scope")
+
+	if want, got := "- **R1** `(no location given)` —", readLog(t, log); !strings.Contains(got, want) {
+		t.Errorf("ledger row missing %q\n--- log ---\n%s", want, got)
+	}
+	if got := log.PromptEntries(); len(got) != 1 || !strings.Contains(got[0], "(no location given)") {
+		t.Errorf("PromptEntries = %q, want the missing location named", got)
+	}
+}
+
+// showClaim guards both renderers. The log's arm is pinned elsewhere; without
+// this one the prompt could drift into printing a bare "claim:" line on every
+// claimless entry, which is the divergence showClaim exists to prevent.
+func TestPromptEntryOmitsTheClaimLineWhenThereIsNoClaim(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+
+	got := log.PromptEntries()
+	if len(got) != 1 || strings.Contains(got[0], "claim:") {
+		t.Errorf("PromptEntries = %q, want no claim line for a claimless entry", got)
+	}
+}
+
+// A rejection's summary is the ledger entry's claim, so repeating it on the
+// record line would print the same sentence twice in every iteration section.
+func TestRejectionRecordLineLeavesTheClaimToTheLedger(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7,
+		Summary: "the buffer is unbounded"}, "bounded by the caller")
+
+	if got := readLog(t, log); countOf(got, "the buffer is unbounded") != 1 {
+		t.Errorf("the claim is written %d times, want once (the ledger row)\n--- log ---\n%s",
+			countOf(got, "the buffer is unbounded"), got)
+	}
+}

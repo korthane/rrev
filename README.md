@@ -104,7 +104,12 @@ reporting convergence.
    reported, fixes what it confirms, and records why it rejected the rest. Later
    rounds carry the earlier rounds' dispositions, so a rejected finding does not
    come back unchanged. Skipped when the primary executor and the external tool
-   would be the same model reading its own work.
+   would be the same model reading its own work. A round converges only on what
+   the external tool itself said: a tool that returns neither a finding nor
+   `<<<RREV:EXTERNAL_DONE>>>` wrote nothing rrev can read as a review, and that
+   round does not converge even if the evaluation that followed it signalled
+   done. The loop then runs on to `external_max_iterations` and the run ends
+   unconverged, rather than filing a broken tool as a clean pass.
 3. **Final review** — a narrow regression pass restricted to critical and major
    issues, to catch what the earlier fixes broke. Skipped when nothing was
    changed that could have regressed.
@@ -323,7 +328,7 @@ fence, so a model quoting the protocol does not end a loop.
 | Marker | Meaning |
 | --- | --- |
 | `<<<RREV:REVIEW_DONE>>>` | this review iteration found nothing; the phase converged |
-| `<<<RREV:EXTERNAL_DONE>>>` | the external review loop reached agreement |
+| `<<<RREV:EXTERNAL_DONE>>>` | the external review loop reached agreement (read from both calls: the evaluation's marker cannot end a round whose tool output carried neither a finding nor the marker) |
 | `<<<RREV:TASK_FAILED>>>` | unrecoverable failure; the pipeline stops and reports the phase |
 
 **Emitting no marker is not success.** rrev reads a missing marker as "work was
@@ -363,7 +368,8 @@ findings report and the progress log; a rejection with a stated reason becomes a
 standing ledger entry that every later review phase and every reviewer agent is
 shown, so a dismissed finding does not come back unchanged. A replacement
 prompt or an `external_review_command` script that emits neither produces an
-empty report and an empty log.
+empty report, and the progress log records the round as `output not understood`
+rather than as a converged one.
 
 ## Progress log
 

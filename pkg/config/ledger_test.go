@@ -147,6 +147,29 @@ func TestEachSiteKeepsAnEntryWhenTheDividedBudgetIsTiny(t *testing.T) {
 	}
 }
 
+// A budget smaller than the number of sites divides to zero, and zero is how
+// fitEntries spells "unlimited". Without the floor a small ledger_budget would
+// expand the whole ledger at every site with no truncation notice - the exact
+// multiplication the division exists to stop, inverted.
+func TestBudgetSmallerThanTheSiteCountStillBoundsEachSite(t *testing.T) {
+	entries := ledgerEntries(20)
+	exp, projectDir := expanderFor(t, ExecutorClaude, Vars{Ledger: entries, LedgerBudget: 1})
+	writeAsset(t, projectDir, KindAgent, "alpha", "{{LEDGER}}")
+	writeAsset(t, projectDir, KindPrompt, "review_first", "{{LEDGER}}\n{{AGENT: alpha}}")
+
+	got, err := exp.Prompt("review_first")
+	if err != nil {
+		t.Fatalf("expand prompt: %v", err)
+	}
+
+	if strings.Contains(got, "- R2 ") {
+		t.Errorf("a site carried more than one entry on a sub-site budget\n--- got ---\n%s", got)
+	}
+	if n := strings.Count(got, "TRUNCATED"); n != 2 {
+		t.Errorf("%d of 2 cut ledgers said they were cut\n--- got ---\n%s", n, got)
+	}
+}
+
 // The reviewer agents carry the ledger but not {{PROGRESS_LOG}}, and the budget
 // is divided across sites, so truncation bites hardest exactly where a bare
 // "read the progress log" names nothing the reader can open.

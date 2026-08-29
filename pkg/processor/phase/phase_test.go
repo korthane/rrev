@@ -422,6 +422,37 @@ func TestProgressLogRecordsFindingsAndTermination(t *testing.T) {
 	}
 }
 
+// rrev never runs the validation command itself, so the reported VALIDATION
+// line is the only record of whether the fixes were validated. The whole wire -
+// parsed report, held-back write, log, iteration summary - has to be exercised
+// end to end or it could stop reaching the log with a green suite.
+func TestReportedValidationOutcomeReachesTheLog(t *testing.T) {
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	primary := mock("claude",
+		"FINDING: major | pkg/a.go:42 | quality | - | the buffer is unbounded\n"+
+			"VALIDATION: fail | make test | TestFoo failed",
+		reviewDone)
+	env, repo := newEnv(t, primary, nil, nil)
+	env.Log = log
+	primary.Handler = changingHandler(primary, repo)
+
+	Comprehensive(context.Background(), env)
+
+	body := readFile(t, log.Path())
+	for _, want := range []string{
+		"- validation **fail** `make test`",
+		"TestFoo failed",
+		"· validation fail ·",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("progress log is missing %q\n%s", want, body)
+		}
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	body, err := os.ReadFile(filepath.Clean(path))
@@ -643,6 +674,12 @@ func TestExternalToolOutputRrevCannotInterpretIsRecordedAsSuch(t *testing.T) {
 	}
 	if strings.Contains(got, "external tool `codex`: no findings reported") {
 		t.Errorf("uninterpretable output was filed as a clean empty return:\n%s", got)
+	}
+	// The requirement asks for the failure *and its cause*: an outcome word on
+	// its own leaves a reader knowing the round failed but not what about it
+	// rrev could not read.
+	if !strings.Contains(got, "no findings and no completion signal in the tool's output") {
+		t.Errorf("the outcome was recorded without its cause:\n%s", got)
 	}
 }
 

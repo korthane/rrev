@@ -76,7 +76,10 @@ One line per finding:
 FINDING: <critical|major|minor> | <file>:<line> | external | <requirement or -> | <summary>
 
 Re-raising something from the standing-rejection list? Put its id in the opening
-token: `FINDING[R7]:` or `REJECTED[R7]:`. Leave the token bare for anything new.
+token: `FINDING[R7]:`. Leave the token bare for anything new. You report only;
+do not write `REJECTED:` lines. Dismissing a finding is the primary executor's
+call, and a rejection from this second opinion would enter the standing ledger
+that every later reviewer is shown, silencing them on a claim nobody verified.
 
 
 Follow each with a short paragraph: what is wrong, why it matters, and what would
