@@ -136,19 +136,14 @@ func (t *claudeTools) start(col *collector, parentID string, block claudeBlock) 
 	// The parent is kept on the call so the flush that reports unanswered ones
 	// attributes them as accurately as the launch did.
 	call.parent = t.agentFor(parentID)
-	// A sub-agent runs for minutes. Announcing it only once it finishes is the
-	// unexplained pause this reporting exists to prevent, so its launch is
-	// rendered straight away and its outcome follows later.
-	if call.launch {
+	// A sub-agent runs for minutes, so its launch is announced straight away
+	// and its outcome follows later: announcing it only once it finishes is the
+	// unexplained pause this reporting exists to prevent. A call with no id has
+	// nothing that will ever release it, so it is reported now too.
+	if call.launch || block.ID == "" {
 		col.activityAs(call.parent, call.line(""))
 	}
 	if block.ID == "" {
-		// No id to match a result against, so report it now rather than hold a
-		// line that nothing will ever release. A launch was already rendered
-		// above; only a launch ever is.
-		if !call.launch {
-			col.activityAs(call.parent, call.line(""))
-		}
 		return
 	}
 	t.pending[block.ID] = call
@@ -231,7 +226,11 @@ func claudeLine(col *collector, tools *claudeTools, line string) error {
 				col.sayAs(tools.agentFor(event.ParentToolUseID), block.Text)
 			case "tool_use":
 				tools.start(col, event.ParentToolUseID, block)
-				col.detail("tool input", string(block.Input))
+				// Decoded only under debug, for the same reason the result is
+				// below: a Write carries the whole file body in its input.
+				if col.debug {
+					col.detail("tool input", string(block.Input))
+				}
 			}
 		}
 	case "user":

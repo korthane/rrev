@@ -345,11 +345,12 @@ func TestConcurrentWritersProduceWholeEntries(t *testing.T) {
 			t.Fatalf("line is neither a whole record, a reason, nor a well-formed ledger line: %q", line)
 		}
 	}
-	// Every record and every reason must survive whole. Ledger sections may
-	// also be present: writers that lost the tail to a competitor append
-	// without one, so how many appear is a timing detail, not a contract.
-	if want := writers * entries; records != want || details < want {
-		t.Errorf("records = %d, whole reasons = %d, want %d records and at least that many reasons", records, details, want)
+	// Every record and its reason must survive whole, exactly once each: a
+	// ledger row renders the rationale as `rejected: …`, so only a record's own
+	// reason line is counted here however many ledger sections the contention
+	// left behind.
+	if want := writers * entries; records != want || details != want {
+		t.Errorf("records = %d, whole reasons = %d, want %d of each", records, details, want)
 	}
 }
 

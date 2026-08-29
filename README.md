@@ -208,7 +208,8 @@ external review tool with no `external_review_command` to run.
 through a shell: quotes and shell operators are not interpreted, and preflight
 checks the first field is on `PATH`. Wrap anything needing a shell in a script
 file. rrev writes the review prompt to the script's stdin and treats its stdout
-as the findings.
+as the findings — findings only, since a `REJECTED:` line from an unverified
+second opinion is discarded rather than logged.
 
 Colour is disabled by `no_color`, by a non-empty `NO_COLOR`, by `TERM=dumb`, and
 whenever output is not a terminal.
@@ -237,9 +238,9 @@ The line prefix is the phase. `·` marks rrev's account of what the tool is
 doing, as against the model's own words; `[agent]` names the reviewer when the
 executor's format identified one. Reviewer agents are launched with their name
 in the call's description, which is what rrev reads that attribution from. Only
-a bare token under 32 bytes is taken as a name: a description the executor
-filled with a phrase instead, or an agent whose own name is longer than that,
-contributes no attribution and its lines carry the phase alone.
+a bare token no longer than 32 bytes is taken as a name: a description the
+executor filled with a phrase instead, or an agent whose own name is longer than
+that, contributes no attribution and its lines carry the phase alone.
 
 The tool's own output never appears: a diff or a test run would flood the
 display. An argument spanning several lines or longer than 100 bytes is cut to
@@ -368,6 +369,14 @@ For compatibility a three-field `REJECTED:` line still parses, reading its last
 field as the reason and leaving the claim empty. A rejection whose reason is
 missing is recorded with one stating that, rather than dropped from the ledger:
 withheld from later reviewers, it is the finding most certain to come back.
+
+Only a verified report may reject. The comprehensive, final, evaluation and
+finalize calls check each claim against the real code before reporting, so their
+`REJECTED:` lines are recorded and become ledger entries. The external review
+tool is an unverified second opinion, so a `REJECTED:` line in its output is
+discarded rather than logged — accepting one would silence every later
+reviewer on a claim nobody checked. The shipped `external_review.txt` tells the
+tool to report findings only, and a replacement prompt should say the same.
 
 rrev never runs the validation command itself, so the `VALIDATION` line is the
 only record of whether the fixes were validated.

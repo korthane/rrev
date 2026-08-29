@@ -74,7 +74,7 @@ type toolCall struct {
 
 // describeToolCall reads the distinguishing argument out of a tool's input.
 func describeToolCall(name string, input json.RawMessage) toolCall {
-	call := toolCall{name: name, launch: launchTools[name]}
+	call := toolCall{name: toolName(name), launch: launchTools[name]}
 	if len(input) == 0 {
 		return call
 	}
@@ -110,6 +110,20 @@ func agentName(fields map[string]any) string {
 		return ""
 	}
 	return text
+}
+
+// unnamedTool stands in for a name that survives sanitizing as nothing, so the
+// line still reads as a tool call rather than as a rendering fault.
+const unnamedTool = "(unnamed)"
+
+// toolName reduces the tool's own name for display. The name comes from the
+// model's JSON like the argument beside it, so it is stripped and bounded the
+// same way rather than written out verbatim.
+func toolName(name string) string {
+	if bounded := boundArg(name); bounded != "" {
+		return bounded
+	}
+	return unnamedTool
 }
 
 // boundArg reduces an argument to one bounded line. Only the first line is

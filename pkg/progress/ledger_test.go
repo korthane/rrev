@@ -9,8 +9,6 @@ import (
 	"github.com/korthane/rrev/pkg/progress"
 )
 
-func countOf(s, sub string) int { return strings.Count(s, sub) }
-
 // An identifier is what a reviewer quotes back to declare a re-raise, so it has
 // to be visible next to the finding it names.
 func TestFirstFindingIsAssignedAnIdentifier(t *testing.T) {
@@ -67,10 +65,10 @@ func TestRationaleIsStatedOnceAcrossRepeatedRaises(t *testing.T) {
 
 	got := readLog(t, log)
 	// Once per raise inside the iteration sections, plus once in the ledger.
-	if n := countOf(got, reason); n != 4 {
+	if n := strings.Count(got, reason); n != 4 {
 		t.Errorf("reason appears %d times, want 3 records plus exactly 1 ledger statement\n--- log ---\n%s", n, got)
 	}
-	if n := countOf(got, "rejected: "+reason); n != 1 {
+	if n := strings.Count(got, "rejected: "+reason); n != 1 {
 		t.Errorf("ledger states the rationale %d times, want exactly 1", n)
 	}
 }
@@ -149,7 +147,7 @@ func TestSecondRunDoesNotReuseAnEarlierRunsIdentifiers(t *testing.T) {
 	second.Rejected(progress.Finding{Reviewer: "quality", File: "b.go", Line: 3}, "also out of scope")
 
 	got := readLog(t, second)
-	if countOf(got, "**rejected** `R1`") != 1 {
+	if strings.Count(got, "**rejected** `R1`") != 1 {
 		t.Errorf("the second run re-issued R1\n--- log ---\n%s", got)
 	}
 	if !strings.Contains(got, "**rejected** `R2` `b.go:3`") {
@@ -443,7 +441,7 @@ func TestOneLocationRaisedRepeatedlyIsListedOnce(t *testing.T) {
 	if want, got := "- **R1** `a.go:7` — raised comprehensive 1, 2, 3\n", readLog(t, log); !strings.Contains(got, want) {
 		t.Errorf("ledger row missing %q\n--- log ---\n%s", want, got)
 	}
-	if got := log.PromptEntries(); len(got) != 1 || countOf(got[0], "a.go:7") != 1 {
+	if got := log.PromptEntries(); len(got) != 1 || strings.Count(got[0], "a.go:7") != 1 {
 		t.Errorf("PromptEntries = %q, want one entry naming the location once", got)
 	}
 }
@@ -488,8 +486,33 @@ func TestRejectionRecordLineLeavesTheClaimToTheLedger(t *testing.T) {
 	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7,
 		Summary: "the buffer is unbounded"}, "bounded by the caller")
 
-	if got := readLog(t, log); countOf(got, "the buffer is unbounded") != 1 {
+	if got := readLog(t, log); strings.Count(got, "the buffer is unbounded") != 1 {
 		t.Errorf("the claim is written %d times, want once (the ledger row)\n--- log ---\n%s",
-			countOf(got, "the buffer is unbounded"), got)
+			strings.Count(got, "the buffer is unbounded"), got)
+	}
+}
+
+// Only a rejection with a stated rationale is standing. A finding merely
+// reported carries none, which is what keeps the external tool's unverified
+// claims out of the ledger and so out of every later reviewer's prompt: shown
+// there, they would silence the reviewers on a claim nobody checked.
+func TestFindingWithoutARationaleNeverEntersTheLedger(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Finding(progress.Finding{Reviewer: "external", File: "a.go", Line: 7, Summary: "the handle leaks"})
+	log.Confirmed(progress.Finding{Reviewer: "quality", File: "b.go", Line: 9, Summary: "the cast is unchecked"}, "fixed")
+
+	got := readLog(t, log)
+	if strings.Contains(got, "## Standing rejections") {
+		t.Errorf("a run that rejected nothing carries a ledger section:\n%s", got)
+	}
+	for _, want := range []string{"the handle leaks", "the cast is unchecked"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the log lost %q, which it still has to record:\n%s", want, got)
+		}
+	}
+	if entries := log.PromptEntries(); len(entries) != 0 {
+		t.Errorf("PromptEntries = %q, want none: nothing was rejected", entries)
 	}
 }

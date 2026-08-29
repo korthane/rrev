@@ -18,4 +18,14 @@
 {"type": "assistant", "parent_tool_use_id": "a6", "message": {"content": [{"type": "text", "text": "spoken at the bound"}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a7", "input": {"subagent_type": "general-purpose", "description": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}]}}
 {"type": "assistant", "parent_tool_use_id": "a7", "message": {"content": [{"type": "text", "text": "spoken past the bound"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Write", "input": {"file_path": "pkg/out.go"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Edit", "input": {"file_path": "pkg/edit.go"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "NotebookEdit", "input": {"notebook_path": "notes.ipynb"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "BashOutput", "input": {"bash_id": "bash_42"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "WebFetch", "input": {"url": "https://example.com/spec"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "WebSearch", "input": {"query": "go race detector"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Skill", "input": {"skill": "code-review"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Agent", "input": {"subagent_type": "general-purpose", "description": "hunt for races"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "input": {"subagent_type": "general-purpose", "description": "idless"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "\u001b[2J\u001b[31mSpoofed", "input": {"command": "true"}}]}}
 {"type": "result", "subtype": "success", "is_error": false, "result": "done"}

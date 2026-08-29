@@ -60,9 +60,8 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 		vars:     vars,
 		renderAs: e.External.Name(),
 	})
-	outcome, detail := externalOutcome(report, err)
+	outcome, detail, unreadable := externalOutcome(report, err)
 	e.Log.ExternalTool(e.External.Name(), outcome, detail)
-	unreadable := outcome == outcomeUnreadable
 
 	if err != nil || report.Converged {
 		// A round that ends here was never evaluated, so the tool's own claims
@@ -107,27 +106,25 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 	return eval, err
 }
 
-// outcomeUnreadable is the outcome of a round the loop must not read as
-// convergence: the tool ran, but nothing it wrote was a review.
-const outcomeUnreadable = "output not understood"
-
 // externalOutcome describes what came back from the external tool. A tool that
 // reports nothing and a tool that died look the same from the loop's side —
 // both simply fail to produce findings — so the log has to tell them apart or a
-// quiet failure reads as a clean pass.
-func externalOutcome(report stepResult, err error) (outcome, detail string) {
+// quiet failure reads as a clean pass. It returns whether the round was
+// unreadable as well as saying so, since rewording the message must not change
+// what the loop then does about it.
+func externalOutcome(report stepResult, err error) (outcome, detail string, unreadable bool) {
 	switch {
 	case err != nil:
-		return "failed", err.Error()
+		return "failed", err.Error(), false
 	case len(report.Findings) > 0:
-		return fmt.Sprintf("reported %d finding(s)", len(report.Findings)), ""
+		return fmt.Sprintf("reported %d finding(s)", len(report.Findings)), "", false
 	case !report.Converged:
 		// Neither a finding nor the done signal: the tool ran, but nothing in
 		// what it wrote could be read as a review. Recording that as "no
 		// findings" would file it as the clean convergence it is not.
-		return outcomeUnreadable, "no findings and no completion signal in the tool's output"
+		return "output not understood", "no findings and no completion signal in the tool's output", true
 	default:
-		return "no findings reported", ""
+		return "no findings reported", "", false
 	}
 }
 

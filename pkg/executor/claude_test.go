@@ -238,7 +238,7 @@ func TestEveryLineOfASubAgentBlockIsAttributed(t *testing.T) {
 // The attribution is for the display only: report lines and signals are parsed
 // out of the collected text, and a prefix in there would corrupt both.
 func TestSubAgentAttributionStaysOutOfTheCollectedOutput(t *testing.T) {
-	result := runToolFixtureResult(t)
+	result, _ := runFixture(t, "claude_tools.jsonl")
 
 	if strings.Contains(result.Output, "[conformance]") {
 		t.Errorf("display attribution leaked into the parsed output:\n%s", result.Output)
@@ -301,21 +301,11 @@ func TestFullToolArgumentsAndOutputAppearOnlyUnderDebug(t *testing.T) {
 	}
 }
 
-func runToolFixture(t *testing.T) string {
+// runFixture replays a recorded claude stream, returning both the run's result
+// and everything that reached the display.
+func runFixture(t *testing.T, fixture string) (executor.Result, string) {
 	t.Helper()
-	tool := newFakeTool(t, fakeToolOpts{fixture: "claude_tools.jsonl"})
-	var stream strings.Builder
-	if _, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{
-		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
-	}); err != nil {
-		t.Fatalf("run claude: %v", err)
-	}
-	return stream.String()
-}
-
-func runToolFixtureResult(t *testing.T) executor.Result {
-	t.Helper()
-	tool := newFakeTool(t, fakeToolOpts{fixture: "claude_tools.jsonl"})
+	tool := newFakeTool(t, fakeToolOpts{fixture: fixture})
 	var stream strings.Builder
 	result, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{
 		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
@@ -323,7 +313,13 @@ func runToolFixtureResult(t *testing.T) executor.Result {
 	if err != nil {
 		t.Fatalf("run claude: %v", err)
 	}
-	return result
+	return result, stream.String()
+}
+
+func runToolFixture(t *testing.T) string {
+	t.Helper()
+	_, stream := runFixture(t, "claude_tools.jsonl")
+	return stream
 }
 
 // Nearly every tool call in a review happens inside one of the concurrent

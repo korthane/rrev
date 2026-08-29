@@ -406,3 +406,33 @@ func TestExternalEvaluationUsesTheReviewModel(t *testing.T) {
 		t.Errorf("external review model = %q, want %q", got, "gpt-5-codex")
 	}
 }
+
+// The external round returns before the evaluation on both a failure and an
+// early convergence, and each carries the tool's own report back so it still
+// reaches the log. A round that drops it loses every finding the tool reported
+// from the log, the ledger, and so from every later reviewer's prompt.
+func TestExternalRoundEndingEarlyStillRecordsWhatTheToolReported(t *testing.T) {
+	const reported = "FINDING: major | pkg/a.go:10 | external | - | the handle outlives the request"
+	for name, response := range map[string]executor.Response{
+		"failed":    {Output: reported, Err: errors.New("codex exited with status 1")},
+		"converged": {Output: reported + "\n" + externalDone},
+	} {
+		t.Run(name, func(t *testing.T) {
+			primary := mock("claude", reviewDone)
+			external := &executor.Mock{Tool: "codex", Responses: []executor.Response{response}}
+			env, _ := newEnv(t, primary, external, nil)
+			log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+			if err != nil {
+				t.Fatalf("open progress log: %v", err)
+			}
+			env.Log = log
+
+			External(context.Background(), env)
+
+			body := readFile(t, log.Path())
+			if n := strings.Count(body, "the handle outlives the request"); n != 1 {
+				t.Errorf("the tool's report was recorded %d times, want exactly one copy:\n%s", n, body)
+			}
+		})
+	}
+}

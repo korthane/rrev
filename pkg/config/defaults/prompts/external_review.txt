@@ -29,13 +29,10 @@ against it, not against your own idea of what the code should be.
 ## Prior rounds
 
 Read the progress log at {{PROGRESS_LOG}} before reporting. It records every
-earlier finding, which were fixed, and which were rejected with the reason.
+earlier finding, which were fixed, and which were rejected with the reason. The
+rejections are also listed below, so you need not reconstruct them.
 
 {{PRIOR_FINDINGS}}
-
-Do not re-report a finding that was already rejected unless you can say why the
-recorded reason is wrong. If you still disagree, say so explicitly and argue the
-point rather than repeating the original wording.
 
 ## Standing rejections
 

@@ -4,20 +4,12 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
-
-	"github.com/korthane/rrev/pkg/executor"
 )
 
 func runToolEdgeFixture(t *testing.T) string {
 	t.Helper()
-	tool := newFakeTool(t, fakeToolOpts{fixture: "claude_tool_edges.jsonl"})
-	var stream strings.Builder
-	if _, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{
-		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
-	}); err != nil {
-		t.Fatalf("run claude: %v", err)
-	}
-	return stream.String()
+	_, stream := runFixture(t, "claude_tool_edges.jsonl")
+	return stream
 }
 
 // The width cap exists to stop a long argument breaking the display, so cutting
@@ -232,5 +224,51 @@ func TestTabsInAToolArgumentBecomeSpaces(t *testing.T) {
 	}
 	if strings.Contains(stream, "\t") {
 		t.Errorf("a tab reached the display:\n%q", stream)
+	}
+}
+
+// Every entry in the argument table is a JSON key rrev must have spelled the way
+// the executor writes it. A wrong one degrades to the no-argument rendering the
+// table exists to remove, and does it silently, looking like intended behaviour.
+func TestEveryToolRendersItsDistinguishingArgument(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	for _, want := range []string{
+		"· tool: Write pkg/out.go",
+		"· tool: Edit pkg/edit.go",
+		"· tool: NotebookEdit notes.ipynb",
+		"· tool: BashOutput bash_42",
+		"· tool: WebFetch https://example.com/spec",
+		"· tool: WebSearch go race detector",
+		"· tool: Skill code-review",
+		"· tool: Agent hunt for races",
+	} {
+		if !strings.Contains(stream, want) {
+			t.Errorf("stream missing %q, so its input key is wrong:\n%s", want, stream)
+		}
+	}
+}
+
+// A launch with no id is both announced as a launch and released immediately.
+// The two are one decision, and reporting it twice doubles every agent line.
+func TestAgentLaunchWithoutAnIdIsReportedOnce(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if n := strings.Count(stream, "agent: idless"); n != 1 {
+		t.Errorf("an id-less launch rendered %d times, want 1:\n%s", n, stream)
+	}
+}
+
+// The tool's name comes from the model's own JSON, like the argument beside it.
+// Written out verbatim it is a second route to the repainted display the
+// argument's sanitizing closes, and it can forge another agent's attribution.
+func TestControlCharactersAreStrippedFromTheToolName(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if !strings.Contains(stream, "· tool: [2J[31mSpoofed") {
+		t.Errorf("stream missing the sanitized tool name:\n%s", stream)
+	}
+	if strings.ContainsAny(stream, "\x1b\r") {
+		t.Errorf("a control character reached the display:\n%q", stream)
 	}
 }

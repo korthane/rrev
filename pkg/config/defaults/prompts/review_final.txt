@@ -15,8 +15,8 @@ Progress log: {{PROGRESS_LOG}}
 ## Step 1: Read the context
 
 Read the progress log at {{PROGRESS_LOG}} first: it lists what earlier phases
-changed and which findings were already rejected and why. Do not re-report those
-unless you can say why the recorded reason is wrong.
+changed and which findings were already rejected and why. The rejections are
+also listed below, so you need not reconstruct them.
 
 Then get the branch context:
 - `git log {{BASE_REF}}..HEAD --oneline` - the commits under review
