@@ -38,13 +38,15 @@ var toolArgKeys = map[string][]string{
 }
 
 // agentKeys names, per sub-agent-launching tool, the input fields that may name
-// the agent, most preferred first. description leads because rrev's own prompts
-// ask the executor to put the agent's name there: subagent_type names a
-// registered agent type, and rrev's reviewers are passed as ad-hoc definitions,
-// so it carries the same generic value for all seven.
+// the agent. Only description qualifies, because rrev's own prompts ask the
+// executor to put the agent's name there. subagent_type is deliberately absent:
+// rrev's reviewers are passed as ad-hoc definitions rather than registered
+// types, so it carries one generic value for all seven, and labelling them all
+// alike reads as attribution that succeeded rather than the phase-only fallback
+// the design calls for.
 var agentKeys = map[string][]string{
-	"Task":  {"description", "subagent_type"},
-	"Agent": {"description", "subagent_type"},
+	"Task":  {"description"},
+	"Agent": {"description"},
 }
 
 // agentNameWidth bounds a value accepted as an agent name. A free-text

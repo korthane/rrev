@@ -103,7 +103,13 @@ func (c *collector) sayAs(agent, text string) {
 		c.render(text)
 		return
 	}
-	c.render("[" + agent + "] " + text)
+	// Every line carries the attribution, not just the first: the printer
+	// prefixes each line it splits out with the phase alone, so a paragraph
+	// rendered as one block would leave all but its opening line
+	// indistinguishable from the other reviewers running beside it.
+	for line := range strings.SplitSeq(text, "\n") {
+		c.render("[" + agent + "] " + line)
+	}
 }
 
 // line records raw output verbatim, blank lines included, for a tool whose

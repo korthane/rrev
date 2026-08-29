@@ -271,26 +271,42 @@ func expandPrompt(t *testing.T, name string) string {
 	return got
 }
 
+// ledgerPrompts are the prompts whose reviewers report findings and so must be
+// shown what is already settled. finalize is deliberately absent: it runs after
+// review has converged and reports nothing.
+var ledgerPrompts = map[string]bool{
+	"review_first":    true,
+	"external_review": true,
+	"external_eval":   true,
+	"review_final":    true,
+	"finalize":        false,
+}
+
 // A prompt that shows the ledger but never says how to name an entry leaves the
 // reviewer with the same prose-only escape hatch the ledger exists to replace.
+// Which prompts carry it is asserted in both directions: a prompt that silently
+// loses {{LEDGER}} goes on re-arguing settled questions with nothing to fail.
 func TestPromptsShowingTheLedgerAlsoSayHowToNameAnEntry(t *testing.T) {
 	assets := embeddedPrompts(t)
-	shown := 0
 	for _, name := range assets.PromptNames() {
 		prompt, err := assets.Prompt(name)
 		if err != nil {
 			t.Fatalf("prompt %q: %v", name, err)
 		}
-		if !strings.Contains(prompt.Content, "{{LEDGER}}") {
+		want, known := ledgerPrompts[name]
+		if !known {
+			t.Errorf("prompt %q is not listed in ledgerPrompts, so nothing decides whether it carries the ledger", name)
 			continue
 		}
-		shown++
+		if got := strings.Contains(prompt.Content, "{{LEDGER}}"); got != want {
+			t.Errorf("prompt %q expands the ledger = %v, want %v", name, got, want)
+		}
+		if !want {
+			continue
+		}
 		if !strings.Contains(prompt.Content, "opening token") {
 			t.Errorf("prompt %q expands the ledger but never tells the reviewer to name an entry's id", name)
 		}
-	}
-	if shown == 0 {
-		t.Error("no shipped prompt expands the ledger, so no reviewer is ever shown what was settled")
 	}
 }
 

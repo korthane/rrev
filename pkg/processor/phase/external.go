@@ -62,12 +62,13 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 	})
 	outcome, detail := externalOutcome(report, err)
 	e.Log.ExternalTool(e.External.Name(), outcome, detail)
+	unreadable := outcome == outcomeUnreadable
 
 	if err != nil || report.Converged {
 		// A round that ends here was never evaluated, so the tool's own claims
 		// stay out of the phase's result; they are already in the progress log
 		// as reported-only entries.
-		return stepResult{Converged: report.Converged, output: report.output}, err
+		return stepResult{Converged: report.Converged, output: report.output, writeReport: report.writeReport}, err
 	}
 
 	evalVars := vars
@@ -87,11 +88,28 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 	})
 	*rounds = recordRound(*rounds, round{n: n, reported: report.Findings, confirmed: eval.Findings, rejections: eval.Rejections})
 
+	// Both calls' reports are written together, so a round re-run after a
+	// transient failure in the evaluation records neither the tool's findings
+	// nor the evaluation the retry supersedes.
+	eval.writeReport = writeReports(report.writeReport, eval.writeReport)
+
+	// A round whose output could not be read as a review is not this phase
+	// converging on silence, however little the evaluator then found in it:
+	// ending here would file a broken tool as a clean pass, which is the
+	// confusion the recorded outcome above exists to remove.
+	if unreadable {
+		eval.Converged = false
+	}
+
 	// The external tool's own findings are the primary executor's input, not
 	// the loop's result: only what the executor confirmed counts as a finding
 	// of this phase.
 	return eval, err
 }
+
+// outcomeUnreadable is the outcome of a round the loop must not read as
+// convergence: the tool ran, but nothing it wrote was a review.
+const outcomeUnreadable = "output not understood"
 
 // externalOutcome describes what came back from the external tool. A tool that
 // reports nothing and a tool that died look the same from the loop's side —
@@ -107,7 +125,7 @@ func externalOutcome(report stepResult, err error) (outcome, detail string) {
 		// Neither a finding nor the done signal: the tool ran, but nothing in
 		// what it wrote could be read as a review. Recording that as "no
 		// findings" would file it as the clean convergence it is not.
-		return "output not understood", "no findings and no completion signal in the tool's output"
+		return outcomeUnreadable, "no findings and no completion signal in the tool's output"
 	default:
 		return "no findings reported", ""
 	}

@@ -252,6 +252,13 @@ one of them can be replaced by placing a file with the same name in
 `.rrev/prompts/` or `.rrev/agents/` (project) or under the user configuration
 directory. Overriding one file leaves every other one on its default.
 
+An override is used exactly as written. One written before the standing-rejection
+ledger existed carries no `{{LEDGER}}`, and a variable a file never mentions is
+not an error — only an unrecognized one is — so that reviewer is shown nothing
+that was settled and names no identifiers, and each of its re-raises opens a
+fresh ledger entry. To bring an override up to date, copy the standing-rejections
+block and the id instruction across from the shipped default.
+
 | Prompt | Phase |
 | --- | --- |
 | `review_first.txt` | comprehensive review |

@@ -66,6 +66,46 @@ func TestUnnamedAgentLaunchIsReportedWithoutAnAgentName(t *testing.T) {
 	}
 }
 
+// The flush reports only the calls the stream never answered. Re-reporting an
+// answered one renders it from an entry already taken, producing a bare
+// "tool:" line per call - the display flooding this reporting exists to avoid.
+func TestFlushRendersNoEmptyToolLine(t *testing.T) {
+	for name, stream := range map[string]string{"edges": runToolEdgeFixture(t), "tools": runToolFixture(t)} {
+		for line := range strings.SplitSeq(stream, "\n") {
+			if strings.HasSuffix(strings.TrimRight(line, " "), "tool:") {
+				t.Errorf("%s fixture rendered a tool line with no call behind it:\n%s", name, stream)
+			}
+		}
+	}
+}
+
+// subagent_type names a registered agent type, and rrev passes its reviewers
+// as ad-hoc definitions, so it reads the same for all seven. Borrowing it would
+// label every reviewer alike, which looks like attribution that worked.
+func TestSubAgentTypeIsNotBorrowedAsAnAgentName(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if !strings.Contains(stream, "· tool: Task typed-only") {
+		t.Errorf("a launch naming only its type went unreported:\n%s", stream)
+	}
+	if strings.Contains(stream, "agent: typed-only") {
+		t.Errorf("a subagent_type was used as an agent name:\n%s", stream)
+	}
+}
+
+// The bound is what keeps a description from labelling every one of an agent's
+// lines with a sentence; a long unbroken one passes the no-spaces test.
+func TestOverLongDescriptionIsNotUsedAsAnAgentName(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if !strings.Contains(stream, "· tool: Task long-named") {
+		t.Errorf("a launch with an over-long description went unreported:\n%s", stream)
+	}
+	if strings.Contains(stream, "agent: review-the-authentication") {
+		t.Errorf("a description past the bound was used as an agent name:\n%s", stream)
+	}
+}
+
 // A tool absent from the argument table renders with no argument rather than a
 // guessed one, and its failure still reports as a failure.
 func TestUnlistedToolRendersWithoutAnArgument(t *testing.T) {

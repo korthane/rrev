@@ -345,7 +345,8 @@ esac`,
 	}
 	// The ledger states one rationale however often the finding is raised, and
 	// it is the one that settled the question rather than whatever the latest
-	// re-rejection restated. `rejected because:` is the prompt's wording.
+	// re-rejection restated. `rejected:` is the log's wording; the prompt
+	// spells the same field `rejected because:`.
 	if n := strings.Count(log, "rejected: the value is not key material"); n != 1 {
 		t.Errorf("the settling rationale appears %d times, want one ledger statement:\n%s", n, log)
 	}
@@ -426,8 +427,8 @@ func TestEndToEndConsoleAttributesAgentsAndBoundsToolArguments(t *testing.T) {
 	scriptExecutors(t, map[string]string{
 		"claude": `case "$phase:$n" in
   comprehensive:1)
-    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","id":"a1","input":{"subagent_type":"conformance"}}]}}'
-    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","id":"a2","input":{"subagent_type":"quality"}}]}}'
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","id":"a1","input":{"subagent_type":"general-purpose","description":"conformance"}}]}}'
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","id":"a2","input":{"subagent_type":"general-purpose","description":"quality"}}]}}'
     printf '%s\n' '{"type":"assistant","parent_tool_use_id":"a1","message":{"content":[{"type":"text","text":"scenario 3 is not addressed"}]}}'
     printf '%s\n' '{"type":"assistant","parent_tool_use_id":"a2","message":{"content":[{"type":"text","text":"no defects found"}]}}'
     printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{"command":"go test ./...\nA SECOND LINE THAT MUST NOT BE DISPLAYED"}}]}}'

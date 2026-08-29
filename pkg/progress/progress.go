@@ -20,8 +20,8 @@ const ignoreFile = ".gitignore"
 
 const ignoreBody = "# rrev progress logs are run artifacts, not source.\n*\n"
 
-// indent prefixes the continuation lines of an entry, so every entry starts at
-// column zero with its timestamp and a reader can split the log on that.
+// indent prefixes the continuation lines of an entry - a rejection's reason, a
+// note - so a bullet stays one scannable item.
 const indent = "  "
 
 // noReasonGiven stands in for a rejection the executor reported without one.
@@ -73,8 +73,9 @@ type Options struct {
 	now func() time.Time
 }
 
-// Log is the append-only progress log for one change. A disabled Log accepts
-// every call and writes nothing, so a run whose progress directory is
+// Log is the progress log for one change: records are appended, and the ledger
+// section at the end of the file is re-rendered behind each one. A disabled Log
+// accepts every call and writes nothing, so a run whose progress directory is
 // unwritable needs no special-casing downstream.
 type Log struct {
 	path     string
@@ -216,7 +217,7 @@ func (l *Log) Finding(f Finding) {
 		return
 	}
 	e, note := l.track(f, reported, "")
-	l.emit(l.bullet("reported", f, e) + "\n" + noteLine(note))
+	l.emit(l.bullet(reported, f, e) + "\n" + noteLine(note))
 }
 
 // Confirmed records a finding the executor verified against real code, with
@@ -232,7 +233,7 @@ func (l *Log) Confirmed(f Finding, action string) {
 	if action != "" {
 		suffix = " — " + action
 	}
-	l.emit(l.bullet("confirmed", f, e) + suffix + "\n" + noteLine(note))
+	l.emit(l.bullet(confirmed, f, e) + suffix + "\n" + noteLine(note))
 }
 
 // Rejected records a finding dismissed as a false positive. The reason is the
@@ -249,7 +250,7 @@ func (l *Log) Rejected(f Finding, reason string) {
 		reason = noReasonGiven
 	}
 	e, note := l.track(f, rejected, reason)
-	l.emit(l.bullet("rejected", f, e) + "\n" + indent + oneLine(reason) + "\n" + noteLine(note))
+	l.emit(l.bullet(rejected, f, e) + "\n" + indent + oneLine(reason) + "\n" + noteLine(note))
 }
 
 // ExternalTool records that an external review tool ran and what came back.
@@ -326,6 +327,18 @@ const (
 	rejected
 )
 
+// String is the word a record leads with, so a disposition is named once.
+func (d disposition) String() string {
+	switch d {
+	case confirmed:
+		return "confirmed"
+	case rejected:
+		return "rejected"
+	default:
+		return "reported"
+	}
+}
+
 // track settles the finding's ledger entry and folds what it reports into it,
 // under one lock: resolving an entry and counting it in two acquisitions would
 // let a concurrent recorder interleave between them.
@@ -374,9 +387,9 @@ func (l *Log) track(f Finding, d disposition, rationale string) (*ledgerEntry, s
 
 // bullet renders one finding as a list item. The identifier leads because it is
 // what a reviewer has to quote back, and what a reader follows into the ledger.
-func (l *Log) bullet(kind string, f Finding, e *ledgerEntry) string {
+func (l *Log) bullet(d disposition, f Finding, e *ledgerEntry) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "- **%s** `%s`", kind, e.ID)
+	fmt.Fprintf(&b, "- **%s** `%s`", d, e.ID)
 	if f.Severity != "" {
 		fmt.Fprintf(&b, " %s", f.Severity)
 	}
@@ -389,7 +402,9 @@ func (l *Log) bullet(kind string, f Finding, e *ledgerEntry) string {
 	if f.Reviewer != "" {
 		fmt.Fprintf(&b, " — %s", f.Reviewer)
 	}
-	if kind != "rejected" && f.Summary != "" {
+	// A rejection carries its reason on the line below, and the summary a
+	// reviewer wrote for it is already the ledger entry's claim.
+	if d != rejected && f.Summary != "" {
 		fmt.Fprintf(&b, ": %s", oneLine(f.Summary))
 	}
 	return b.String()
@@ -486,12 +501,7 @@ func (l *Log) closeIteration() {
 	l.emit(it.summary())
 }
 
-func (l *Log) stamp() string {
-	if l == nil || l.now == nil {
-		return ""
-	}
-	return l.now().Format(time.RFC3339)
-}
+func (l *Log) stamp() string { return l.now().Format(time.RFC3339) }
 
 // emit writes one record and re-renders the ledger behind it, both under the
 // cross-process lock. The ledger sits at the end of the file and is replaced by

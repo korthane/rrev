@@ -118,6 +118,35 @@ func TestBudgetSmallerThanOneEntryStillKeepsIt(t *testing.T) {
 	}
 }
 
+// Dividing the budget across sites can leave each one less than a single
+// entry, and the floor is what keeps those copies from reading as a run with
+// nothing standing. The singular {{AGENT:}} form must be counted too: a site
+// the division misses expands at the full budget, which is the multiplication
+// the division exists to stop.
+func TestEachSiteKeepsAnEntryWhenTheDividedBudgetIsTiny(t *testing.T) {
+	entries := ledgerEntries(3)
+	exp, projectDir := expanderFor(t, ExecutorClaude, Vars{Ledger: entries, LedgerBudget: 2})
+	writeAsset(t, projectDir, KindAgent, "alpha", "{{LEDGER}}")
+	writeAsset(t, projectDir, KindPrompt, "review_first", "{{LEDGER}}\n{{AGENT: alpha}}")
+
+	got, err := exp.Prompt("review_first")
+	if err != nil {
+		t.Fatalf("expand prompt: %v", err)
+	}
+
+	if n := strings.Count(got, "- R1 "); n != 2 {
+		t.Errorf("the ledger expanded at %d sites, want the prompt and its agent\n--- got ---\n%s", n, got)
+	}
+	// One entry each and no more: a budget of 2 divided over two sites buys a
+	// single entry per copy, and anything further means the floor overpaid.
+	if strings.Contains(got, "- R2 ") {
+		t.Errorf("a site carried more than the divided budget allows\n--- got ---\n%s", got)
+	}
+	if n := strings.Count(got, "TRUNCATED"); n != 2 {
+		t.Errorf("%d of 2 cut ledgers said they were cut\n--- got ---\n%s", n, got)
+	}
+}
+
 // The reviewer agents carry the ledger but not {{PROGRESS_LOG}}, and the budget
 // is divided across sites, so truncation bites hardest exactly where a bare
 // "read the progress log" names nothing the reader can open.

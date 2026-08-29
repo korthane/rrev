@@ -124,6 +124,9 @@ type Expander struct {
 	Assets   Assets
 	Executor string
 	Vars     Vars
+	// ledger is what {{LEDGER}} expands to. Expand sets it to a sentinel so
+	// the sites can be counted before the ledger is fitted to them.
+	ledger string
 }
 
 // Prompt resolves a phase prompt by name and expands it.
@@ -137,81 +140,44 @@ func (e Expander) Prompt(name string) (string, error) {
 
 // Expand substitutes variables and agent references in an already-resolved
 // prompt.
+//
+// The ledger is expanded last, against a budget divided by the number of sites
+// the finished prompt actually holds. ledger_budget is documented as a cap on
+// what one prompt carries, and a prompt embedding seven reviewer agents expands
+// the ledger eight times, so budgeting each copy separately would let the
+// prompt run to eight times the configured size.
 func (e Expander) Expand(asset Asset) (string, error) {
-	e.Vars.LedgerBudget = e.perSiteLedgerBudget(asset)
-	return e.expand(asset, true)
+	e.ledger = ledgerSentinel
+	out, err := e.expand(asset, true)
+	if err != nil {
+		return "", err
+	}
+	sites := strings.Count(out, ledgerSentinel)
+	if sites == 0 {
+		return out, nil
+	}
+	budget := e.Vars.LedgerBudget
+	if budget > 0 {
+		budget = max(budget/sites, 1)
+	}
+	return strings.ReplaceAll(out, ledgerSentinel, renderLedger(e.Vars.Ledger, budget, e.Vars.ProgressLog)), nil
 }
 
-// perSiteLedgerBudget divides ledger_budget across every {{LEDGER}} site the
-// prompt expands. The setting is documented as a cap on what one prompt
-// carries, and a prompt embedding seven reviewer agents expands the ledger
-// eight times, so budgeting each copy separately would let the prompt run to
-// eight times the configured size.
-func (e Expander) perSiteLedgerBudget(asset Asset) int {
-	if e.Vars.LedgerBudget <= 0 {
-		return e.Vars.LedgerBudget
-	}
-	sites := e.ledgerSites(asset)
-	if sites <= 1 {
-		return e.Vars.LedgerBudget
-	}
-	return max(e.Vars.LedgerBudget/sites, 1)
-}
+// ledgerSentinel stands in for the ledger until every site is expanded and can
+// be counted. The NULs keep it from colliding with template or ledger text.
+const ledgerSentinel = "\x00" + varLedger + "\x00"
 
-// ledgerSites counts the ledger references the prompt expands, following agent
-// directives one level down; an agent may not reference other agents.
-func (e Expander) ledgerSites(asset Asset) int {
-	n, agents := scanTemplate(asset.Content)
-	for _, name := range agents {
-		agent, err := e.Assets.Agent(name)
-		if err != nil {
-			// A missing agent fails the expansion itself a moment later; here
-			// it just does not add sites.
-			continue
-		}
-		sites, _ := scanTemplate(agent.Content)
-		n += sites
-	}
-	return n
-}
-
-// parseRef reads one {{...}} body. Both the expansion and the budget pre-pass
-// go through it, so a directive can never be spelled one way for the prompt
-// that gets written and another for the budget it is fitted to.
+// parseRef reads one {{...}} body.
 func parseRef(body string) (name, arg string, isDirective bool) {
 	name, arg, isDirective = strings.Cut(body, ":")
 	return strings.ToUpper(strings.TrimSpace(name)), arg, isDirective
-}
-
-// scanTemplate walks a template once, counting its ledger references and
-// collecting the agents it embeds, using the same directive spelling the
-// expansion itself accepts.
-func scanTemplate(content string) (ledgers int, agents []string) {
-	rest := content
-	for {
-		_, after, found := strings.Cut(rest, varOpen)
-		if !found {
-			return ledgers, agents
-		}
-		body, tail, closed := strings.Cut(after, varClose)
-		if !closed {
-			return ledgers, agents
-		}
-		rest = tail
-		name, arg, isDirective := parseRef(body)
-		switch {
-		case !isDirective && name == varLedger:
-			ledgers++
-		case isDirective && (name == directiveAgent || name == directiveAgents):
-			agents = append(agents, agentNames(arg)...)
-		}
-	}
 }
 
 // expand walks the template once. Agent definitions are expanded with
 // allowAgents false: an agent that could reference agents would recurse.
 func (e Expander) expand(asset Asset, allowAgents bool) (string, error) {
 	values := e.Vars.values()
+	values[varLedger] = e.ledger
 	var b strings.Builder
 	rest := asset.Content
 	for {
@@ -341,20 +307,22 @@ func (v Vars) values() map[string]string {
 		"VALIDATION_COMMAND":  orElse(v.ValidationCommand, emptyValue),
 		"MODE_RULES":          orElse(v.ModeRules, defaultModeRules),
 		"REVIEWER_MODE_RULES": orElse(v.ReviewerModeRules, defaultReviewerModeRules),
-		"LEDGER":              renderLedger(v.Ledger, v.LedgerBudget, v.ProgressLog),
-		"PRIOR_FINDINGS":      orElse(v.PriorFindings, noPriorFindings),
-		"EXTERNAL_OUTPUT":     orElse(v.ExternalOutput, noExternalOutput),
-		"OPENSPEC_DIR":        orElse(v.OpenSpecDir, missingPath),
-		"CHANGE_DIR":          orElse(v.ChangeDir, missingPath),
-		"PROPOSAL":            orElse(v.Proposal, missingPath),
-		"DESIGN":              orElse(v.Design, missingPath),
-		"TASKS":               orElse(v.Tasks, missingPath),
-		"SPECS":               pathList(v.Specs),
-		"ARTIFACTS":           pathList(artifactPaths(v)),
-		"REQUIREMENTS":        renderChecklist(v.Requirements, v.ChecklistBudget, v.UnparsedSpecs),
-		"REQUIREMENT_COUNT":   strconv.Itoa(len(v.Requirements)),
-		"ITERATION":           strconv.Itoa(v.Iteration),
-		"MAX_ITERATIONS":      strconv.Itoa(v.MaxIterations),
+		// Expand overwrites this: the ledger is fitted to a budget divided by
+		// the number of sites, which is only known once the prompt is whole.
+		varLedger:           "",
+		"PRIOR_FINDINGS":    orElse(v.PriorFindings, noPriorFindings),
+		"EXTERNAL_OUTPUT":   orElse(v.ExternalOutput, noExternalOutput),
+		"OPENSPEC_DIR":      orElse(v.OpenSpecDir, missingPath),
+		"CHANGE_DIR":        orElse(v.ChangeDir, missingPath),
+		"PROPOSAL":          orElse(v.Proposal, missingPath),
+		"DESIGN":            orElse(v.Design, missingPath),
+		"TASKS":             orElse(v.Tasks, missingPath),
+		"SPECS":             pathList(v.Specs),
+		"ARTIFACTS":         pathList(artifactPaths(v)),
+		"REQUIREMENTS":      renderChecklist(v.Requirements, v.ChecklistBudget, v.UnparsedSpecs),
+		"REQUIREMENT_COUNT": strconv.Itoa(len(v.Requirements)),
+		"ITERATION":         strconv.Itoa(v.Iteration),
+		"MAX_ITERATIONS":    strconv.Itoa(v.MaxIterations),
 	}
 	return values
 }

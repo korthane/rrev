@@ -33,6 +33,7 @@ func TestDeclaredReRaiseUpdatesTheExistingEntry(t *testing.T) {
 	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "the echoed character is not key material")
 	log.IterationStart("comprehensive", 2, 10)
 	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "implementation", File: "a.go", Line: 9}, "the echoed character is not key material")
+	log.LoopEnd("comprehensive", "converged", 2)
 
 	got := readLog(t, log)
 	if strings.Contains(got, "`R2`") {
@@ -40,6 +41,14 @@ func TestDeclaredReRaiseUpdatesTheExistingEntry(t *testing.T) {
 	}
 	if want := "raised comprehensive 1, 2"; !strings.Contains(got, want) {
 		t.Errorf("ledger missing %q\n--- log ---\n%s", want, got)
+	}
+	// The split is the convergence signal a reader skims: a run re-litigating
+	// settled questions must not read as one turning up new ones.
+	if want := "rejected 1 (1 new, 0 repeat)"; !strings.Contains(got, want) {
+		t.Errorf("iteration 1's summary missing %q\n--- log ---\n%s", want, got)
+	}
+	if want := "rejected 1 (0 new, 1 repeat)"; !strings.Contains(got, want) {
+		t.Errorf("iteration 2's summary missing %q\n--- log ---\n%s", want, got)
 	}
 }
 
@@ -145,6 +154,28 @@ func TestSecondRunDoesNotReuseAnEarlierRunsIdentifiers(t *testing.T) {
 	}
 	if !strings.Contains(got, "**rejected** `R2` `b.go:3`") {
 		t.Errorf("the second run should continue past the ids already in the log\n--- log ---\n%s", got)
+	}
+}
+
+// A second run starts with an empty ledger while its reviewers are still
+// pointed at the whole log, so a declaration naming an id only the earlier run
+// issued is routine input rather than a malformed one.
+func TestReRaiseNamingAnEarlierRunsIdentifierOpensANewEntry(t *testing.T) {
+	dir := t.TempDir()
+	first := openLog(t, dir, "change", progress.Options{})
+	first.IterationStart("comprehensive", 1, 10)
+	first.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+
+	second := openLog(t, dir, "change", progress.Options{})
+	second.IterationStart("comprehensive", 1, 10)
+	second.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "quality", File: "b.go", Line: 3}, "still out of scope")
+
+	got := readLog(t, second)
+	if !strings.Contains(got, "**rejected** `R2` `b.go:3`") {
+		t.Errorf("a prior run's id must not be adopted; the finding is new\n--- log ---\n%s", got)
+	}
+	if !strings.Contains(got, "R1") || !strings.Contains(got, "note:") {
+		t.Errorf("the unresolved reference must be noted rather than dropped\n--- log ---\n%s", got)
 	}
 }
 

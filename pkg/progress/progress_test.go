@@ -21,6 +21,10 @@ var wholeRecord = regexp.MustCompile("^- \\*\\*rejected\\*\\* `R\\d+` major `pkg
 // startsLikeRecord catches a rejection line whether or not it survived whole.
 var startsLikeRecord = regexp.MustCompile(`^- \*\*rejected\*\* `)
 
+// ledgerRow is a whole line of a rendered ledger entry: its heading row, or one
+// of the indented claim and rationale lines beneath it.
+var ledgerRow = regexp.MustCompile("^(- \\*\\*R\\d+\\*\\* `[^`]*` — raised .+|  (claim|rejected|since): .+|  since confirmed and fixed; no longer standing)$")
+
 func openLog(t *testing.T, dir, change string, opts progress.Options) *progress.Log {
 	t.Helper()
 	log, err := progress.Open(dir, change, opts)
@@ -144,7 +148,7 @@ func TestEntriesRecordEveryReconstructableEvent(t *testing.T) {
 	log.Finding(finding)
 	log.Confirmed(finding, "fixed")
 	log.Rejected(progress.Finding{Reviewer: "testing", Severity: "minor", File: "a.go"}, "covered by TestResolve")
-	log.Commit("deadbee", "Fix the flag layer")
+	log.Commit("deadbeef0123456789abcdef0123456789abcdef", "Fix the flag layer")
 	log.LoopEnd("comprehensive review", "review-done signal", 3)
 
 	got := readLog(t, log)
@@ -205,13 +209,19 @@ func TestUnclassifiedFindingIsCountedSeparately(t *testing.T) {
 func TestExternalToolActivityIsRecorded(t *testing.T) {
 	for _, tc := range []struct{ name, outcome, detail, want string }{
 		{"no findings", "no findings reported", "", "- external tool `codex`: no findings reported"},
-		{"failure", "failed", "exit status 1", "  exit status 1"},
+		{"failure", "failed", "exit status 1", "- external tool `codex`: failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			log := openLog(t, t.TempDir(), "change", progress.Options{})
 			log.ExternalTool("codex", tc.outcome, tc.detail)
-			if got := readLog(t, log); !strings.Contains(got, tc.want) {
+			got := readLog(t, log)
+			if !strings.Contains(got, tc.want) {
 				t.Errorf("log missing %q\n--- log ---\n%s", tc.want, got)
+			}
+			// The outcome alone does not say why: a reader deciding whether a
+			// phase failed or converged needs the cause beside it.
+			if tc.detail != "" && !strings.Contains(got, "\n  "+tc.detail+"\n") {
+				t.Errorf("log missing the cause %q\n--- log ---\n%s", tc.detail, got)
 			}
 		})
 	}
@@ -325,6 +335,14 @@ func TestConcurrentWritersProduceWholeEntries(t *testing.T) {
 			}
 		case strings.TrimSpace(line) == strings.TrimSpace(strings.Repeat("reason ", 40)):
 			details++
+		case strings.TrimSpace(line) == "", strings.HasPrefix(line, "#"),
+			strings.HasPrefix(line, "Already raised"), strings.HasPrefix(line, "id, and either"),
+			ledgerRow.MatchString(line):
+		default:
+			// Every byte in the file has to be one of the shapes above. A
+			// ledger torn or doubled under contention shows up here and
+			// nowhere else, since the counts only measure records.
+			t.Fatalf("line is neither a whole record, a reason, nor a well-formed ledger line: %q", line)
 		}
 	}
 	// Every record and every reason must survive whole. Ledger sections may

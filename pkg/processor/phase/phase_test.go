@@ -613,6 +613,9 @@ func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
 	if finding < invoked {
 		t.Errorf("the tool's findings were recorded before the invocation that produced them:\n%s", got)
 	}
+	if !strings.Contains(got, "external tool `codex`: reported 1 finding(s)") {
+		t.Errorf("the ordinary outcome must say what the tool returned:\n%s", got)
+	}
 }
 
 // A tool that ran but wrote nothing rrev can read as a review is not the quiet
@@ -640,5 +643,27 @@ func TestExternalToolOutputRrevCannotInterpretIsRecordedAsSuch(t *testing.T) {
 	}
 	if strings.Contains(got, "external tool `codex`: no findings reported") {
 		t.Errorf("uninterpretable output was filed as a clean empty return:\n%s", got)
+	}
+}
+
+// Recording the outcome is only half of it: a phase that ends "converged" tells
+// the reader the tool agreed there was nothing left, which is exactly what a
+// tool whose output rrev could not read has not said.
+func TestUnreadableExternalOutputDoesNotEndThePhaseAsConverged(t *testing.T) {
+	external := mock("codex", "I looked at the diff and it seems fine to me.")
+	env, _ := newEnv(t, mock("claude", externalDone, externalDone, externalDone), external, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := External(context.Background(), env)
+
+	if res.Reason == ReasonConverged {
+		t.Errorf("a round rrev could not read ended the phase as converged, which reads as a clean pass")
+	}
+	if got := readFile(t, log.Path()); strings.Contains(got, "ended:** converged") {
+		t.Errorf("the log records the phase as converged:\n%s", got)
 	}
 }

@@ -225,6 +225,16 @@ func TestClaudeAttributesSubAgentText(t *testing.T) {
 	}
 }
 
+// A reviewer writes paragraphs, not lines. Attributing only the block's first
+// line leaves the rest indistinguishable from the six reviewers beside it.
+func TestEveryLineOfASubAgentBlockIsAttributed(t *testing.T) {
+	stream := runToolFixture(t)
+
+	if !strings.Contains(stream, "[quality] It is reachable from the parser.") {
+		t.Errorf("a later line of a sub-agent's block lost its attribution:\n%s", stream)
+	}
+}
+
 // The attribution is for the display only: report lines and signals are parsed
 // out of the collected text, and a prefix in there would corrupt both.
 func TestSubAgentAttributionStaysOutOfTheCollectedOutput(t *testing.T) {

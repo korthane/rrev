@@ -48,6 +48,10 @@ func Finalize(ctx context.Context, e *Env, prior ...Result) Result {
 		verified: true,
 	})
 
+	// Finalize runs once and is never retried, so its report is final as soon
+	// as the call returns.
+	writeReports(step.writeReport)()
+
 	after := e.snapshot(ctx)
 	res := Result{
 		Name:       NameFinalize,
