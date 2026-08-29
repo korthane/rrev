@@ -1,7 +1,6 @@
 package phase
 
 import (
-	"cmp"
 	"fmt"
 	"strconv"
 	"strings"
@@ -112,7 +111,10 @@ func (r Rejection) entry() progress.Finding {
 		Reviewer: r.Reviewer,
 		File:     r.File,
 		Line:     r.Line,
-		Summary:  cmp.Or(r.Claim, r.Reason),
+		// The claim only, never the reason standing in for it: a rejection
+		// reported without one must leave the ledger's claim empty so a later
+		// raise that does carry a claim can still fill it.
+		Summary: r.Claim,
 	}
 }
 

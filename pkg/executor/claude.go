@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -141,12 +142,12 @@ func (t *claudeTools) start(col *collector, parentID string, block claudeBlock) 
 	// rendered straight away and its outcome follows later.
 	if call.launch {
 		col.activityAs(call.parent, call.line(""))
-		call.shown = true
 	}
 	if block.ID == "" {
 		// No id to match a result against, so report it now rather than hold a
-		// line that nothing will ever release.
-		if !call.shown {
+		// line that nothing will ever release. A launch was already rendered
+		// above; only a launch ever is.
+		if !call.launch {
 			col.activityAs(call.parent, call.line(""))
 		}
 		return
@@ -158,25 +159,27 @@ func (t *claudeTools) start(col *collector, parentID string, block claudeBlock) 
 	}
 }
 
-// finish releases the call a result answers, returning the line to render.
-func (t *claudeTools) finish(block claudeBlock) (string, bool) {
+// finish releases the call a result answers, returning the line to render and
+// the sub-agent the launch attributed it to. The parent comes back because a
+// result event need not repeat the attribution its launch carried.
+func (t *claudeTools) finish(block claudeBlock) (rendered, parent string, ok bool) {
 	call, ok := t.pending[block.ToolUseID]
 	if !ok {
-		return "", false
+		return "", "", false
 	}
 	delete(t.pending, block.ToolUseID)
 	t.order = slices.DeleteFunc(t.order, func(id string) bool { return id == block.ToolUseID })
 	if block.IsError {
-		return call.line(failureOutcome(claudeResultText(block.Content))), true
+		return call.line(failureOutcome(claudeResultText(block.Content))), call.parent, true
 	}
-	return call.line("ok"), true
+	return call.line("ok"), call.parent, true
 }
 
 // flush reports calls the stream never answered, so a run cut short still shows
 // what it was doing when it stopped.
 func (t *claudeTools) flush(col *collector) {
 	for _, id := range t.order {
-		if call := t.pending[id]; !call.shown {
+		if call := t.pending[id]; !call.launch {
 			col.activityAs(call.parent, call.line(""))
 		}
 	}
@@ -237,8 +240,8 @@ func claudeLine(col *collector, tools *claudeTools, line string) error {
 			if block.Type != "tool_result" {
 				continue
 			}
-			if rendered, ok := tools.finish(block); ok {
-				col.activityAs(tools.agentFor(event.ParentToolUseID), rendered)
+			if rendered, parent, ok := tools.finish(block); ok {
+				col.activityAs(cmp.Or(tools.agentFor(event.ParentToolUseID), parent), rendered)
 				col.detail("tool output", claudeResultText(block.Content))
 			}
 		}

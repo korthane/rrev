@@ -344,7 +344,9 @@ func (l *Log) track(f Finding, d disposition, rationale string) (*ledgerEntry, s
 		// The rationale that first settled the question is the one a reviewer
 		// has to answer. A later re-rejection tends to restate it as "as
 		// recorded above", which would hollow out every prompt built from it.
-		if e.Rationale == "" {
+		// The placeholder is not such a rationale: it settles nothing, so a
+		// real reason arriving later replaces it.
+		if e.Rationale == "" || e.Rationale == noReasonGiven {
 			e.Rationale = rationale
 		}
 		// Confirming is not final: a finding fixed in one iteration and

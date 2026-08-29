@@ -293,3 +293,27 @@ func checkReportTemplate(t *testing.T, prompt, kind, template string) {
 		}
 	}
 }
+
+// A rejection reported without a claim must reach the ledger with an empty one.
+// Standing the reason in for it printed the same sentence twice on the row and,
+// worse, pinned the entry's claim so a later reviewer that did say what it
+// claimed could never fill it in.
+func TestRejectionWithoutAClaimCarriesNoClaim(t *testing.T) {
+	_, rejections, _ := ParseReport("REJECTED: pkg/a.go:7 | quality | the buffer is aliased across goroutines")
+	if len(rejections) != 1 {
+		t.Fatalf("parsed %d rejections, want 1", len(rejections))
+	}
+	if got := rejections[0].entry().Summary; got != "" {
+		t.Errorf("entry claim = %q, want empty rather than the reason standing in", got)
+	}
+}
+
+func TestRejectionWithAClaimCarriesIt(t *testing.T) {
+	_, rejections, _ := ParseReport("REJECTED: pkg/a.go:7 | quality | the buffer is aliased | it is copied before the goroutine starts")
+	if len(rejections) != 1 {
+		t.Fatalf("parsed %d rejections, want 1", len(rejections))
+	}
+	if want, got := "the buffer is aliased", rejections[0].entry().Summary; got != want {
+		t.Errorf("entry claim = %q, want %q", got, want)
+	}
+}

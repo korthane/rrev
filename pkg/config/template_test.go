@@ -129,7 +129,10 @@ func TestExpandAgentsPerExecutor(t *testing.T) {
 		executor string
 		wants    []string
 	}{
-		{ExecutorClaude, []string{"Task tool", "subagent prompt"}},
+		// The naming instruction is load-bearing, not decoration: rrev reads
+		// the agent's name back out of the call's description, and a launch
+		// that omits it renders every concurrent reviewer alike.
+		{ExecutorClaude, []string{"Task tool", "subagent prompt", "as the call's `description`"}},
 		{ExecutorCodex, []string{"Spawn", "codex sub-agent"}},
 	} {
 		t.Run(tc.executor, func(t *testing.T) {

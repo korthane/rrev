@@ -310,12 +310,19 @@ func agentPreamble(executor string, n int) string {
 	}
 	launch := "Launch"
 	mechanism := "with claude's Task tool, using the agent definition as the subagent prompt"
+	// The agent's name has to travel in a field rrev can read back, or the
+	// stream identifies no sub-agent and every reviewer's output renders alike.
+	// subagent_type cannot carry it: these definitions are passed as prompt
+	// text, not registered agent types.
+	naming := " Pass the agent's name — the word after <<<AGENT — as the call's `description`," +
+		" so its output can be attributed to it."
 	if executor == ExecutorCodex {
 		launch, mechanism = "Spawn", "as a codex sub-agent, using the agent definition as its instructions"
+		naming = ""
 	}
 
 	preamble := fmt.Sprintf("%s %s below %s. A definition is the text between its <<<AGENT and AGENT>>>"+
-		" markers, which you MUST pass through verbatim.", launch, subject, mechanism)
+		" markers, which you MUST pass through verbatim.%s", launch, subject, mechanism, naming)
 	if n > 1 {
 		preamble += fmt.Sprintf(" Send all %d calls in a single message so the agents run concurrently.", n)
 	}

@@ -437,3 +437,35 @@ func TestIterationSummaryCarriesTheValidationOutcome(t *testing.T) {
 		t.Errorf("summary missing %q\n--- log ---\n%s", want, readLog(t, log))
 	}
 }
+
+// A writer that finds the file grown beneath it appends rather than rewinding
+// over the ledger it last wrote: by then those bytes belong to another run's
+// records, and truncating back to them destroys history the reader needs.
+func TestForeignRecordSurvivesTheNextLedgerRewrite(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+
+	const foreign = "- **rejected** `R9` `other.go:1` — a concurrent run's record\n"
+	f, err := os.OpenFile(log.Path(), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	if _, err := f.WriteString(foreign); err != nil {
+		t.Fatalf("append foreign record: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close progress log: %v", err)
+	}
+
+	log.Rejected(progress.Finding{Reviewer: "testing", File: "b.go", Line: 3}, "already handled upstream")
+
+	got := readLog(t, log)
+	if !strings.Contains(got, foreign) {
+		t.Errorf("a concurrent writer's record was rewound over\n--- log ---\n%s", got)
+	}
+	if !strings.Contains(got, "already handled upstream") {
+		t.Errorf("the later record was lost\n--- log ---\n%s", got)
+	}
+}

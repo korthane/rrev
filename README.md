@@ -222,11 +222,16 @@ agent for a sub-agent launch — followed by its outcome, and its failure detail
 when it failed:
 
 ```
-· agent: conformance
-· [conformance] Scenario 3 is not addressed.
-· tool: Bash go test ./... … → ok
-· tool: Read pkg/config/resolve.go → failed: no such file or directory
+[comprehensive] · agent: conformance
+[comprehensive] [conformance] Scenario 3 is not addressed.
+[comprehensive] · [conformance] tool: Grep func Open → failed: no matches under pkg
+[comprehensive] · tool: Bash go test ./... … → ok
 ```
+
+The line prefix is the phase. `·` marks rrev's account of what the tool is
+doing, as against the model's own words; `[agent]` names the reviewer when the
+executor's format identified one. Reviewer agents are launched with their name
+in the call's description, which is what rrev reads that attribution from.
 
 The tool's own output never appears: a diff or a test run would flood the
 display. An argument spanning several lines or longer than 100 bytes is cut to
@@ -347,8 +352,9 @@ rrev never runs the validation command itself, so the `VALIDATION` line is the
 only record of whether the fixes were validated.
 
 A `-` stands in for a field the finding does not carry. Findings feed the
-findings report and the progress log; rejections are what later external rounds
-are shown, so a dismissed finding does not come back unchanged. A replacement
+findings report and the progress log; a rejection with a stated reason becomes a
+standing ledger entry that every later review phase and every reviewer agent is
+shown, so a dismissed finding does not come back unchanged. A replacement
 prompt or an `external_review_command` script that emits neither produces an
 empty report and an empty log.
 
@@ -414,7 +420,9 @@ than re-issuing `R1`. Concurrent runs serialize their appends, so entries
 interleave whole; a writer that finds the file grown beneath it appends without
 refreshing the ledger rather than rewinding over another run's records. A log
 written before this format existed is appended to exactly as it stands — never
-rewritten, and never parsed back into a ledger. A progress directory that cannot
+rewritten, and never parsed back into a ledger. No ledger is: a second run
+against the same change starts with an empty one and suppresses only what it
+rejects itself, though its reviewers are still pointed at the whole log. A progress directory that cannot
 be written degrades the run to logging disabled rather than aborting it.
 
 ## Findings report

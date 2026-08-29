@@ -171,13 +171,11 @@ func writeLedgerRow(b *strings.Builder, e *ledgerEntry) {
 	fmt.Fprintf(b, "  rejected: %s\n", oneLine(e.Rationale))
 }
 
-// showClaim reports whether the claim says anything the rationale does not. A
-// rejection reported without a separate claim carries the reason as its only
-// text; printing it twice tells the reader nothing. The log and the prompt ask
-// this the same way, so the two can never describe one entry differently.
-func (e *ledgerEntry) showClaim() bool {
-	return e.Claim != "" && oneLine(e.Claim) != oneLine(e.Rationale)
-}
+// showClaim reports whether the entry has a claim to show. A rejection reported
+// without a separate claim carries only its rationale, and a row repeating that
+// as the claim tells the reader nothing. The log and the prompt ask this the
+// same way, so the two can never describe one entry differently.
+func (e *ledgerEntry) showClaim() bool { return e.Claim != "" }
 
 // describeRaises names every phase and iteration that raised the entry, which
 // is the whole point of the ledger: "raised in comprehensive 1, 4, 7" is the

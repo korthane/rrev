@@ -102,3 +102,42 @@ func TestControlCharactersAreStrippedFromToolArguments(t *testing.T) {
 		t.Errorf("a control character reached the display:\n%q", stream)
 	}
 }
+
+// rrev's reviewers are passed to claude as ad-hoc definitions, not registered
+// agent types, so a real run sends the same generic subagent_type for all seven
+// and names the reviewer in the description the prompt asks for. Reading only
+// subagent_type would label every concurrent reviewer alike, which is the
+// pause-and-guess this attribution exists to end.
+func TestAgentIsNamedFromTheDescriptionWhenTheTypeIsGeneric(t *testing.T) {
+	stream := runToolFixture(t)
+
+	if !strings.Contains(stream, "· agent: testing") {
+		t.Errorf("the launch was not attributed to the reviewer it named:\n%s", stream)
+	}
+	if strings.Contains(stream, "agent: general-purpose") {
+		t.Errorf("the generic agent type was used as the reviewer's name:\n%s", stream)
+	}
+}
+
+// A result event need not repeat the attribution its launch carried, so the
+// outcome is attributed from the call rrev held rather than left bare.
+func TestToolOutcomeKeepsItsLaunchesAttributionWhenTheResultDropsIt(t *testing.T) {
+	stream := runToolFixture(t)
+
+	if !strings.Contains(stream, "· [testing] tool: Glob *_test.go → ok") {
+		t.Errorf("an outcome lost the sub-agent its launch identified:\n%s", stream)
+	}
+}
+
+// A tab is folded to a space rather than dropped: it separates words in a
+// command, and removing it would run two arguments together.
+func TestTabsInAToolArgumentBecomeSpaces(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if !strings.Contains(stream, "· tool: Bash go test ./... → ok") {
+		t.Errorf("a tabbed command did not render as spaced words:\n%s", stream)
+	}
+	if strings.Contains(stream, "\t") {
+		t.Errorf("a tab reached the display:\n%q", stream)
+	}
+}

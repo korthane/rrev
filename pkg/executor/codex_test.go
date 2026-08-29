@@ -177,6 +177,9 @@ func TestCodexRendersCommandsAndOutcomes(t *testing.T) {
 			t.Errorf("stream missing %q\n%s", want, got)
 		}
 	}
+	if strings.Contains(got, "git log main..HEAD → ") {
+		t.Errorf("a command codex reported no exit status for was given an outcome\n%s", got)
+	}
 	if strings.Contains(got, "second line") {
 		t.Errorf("a command's later lines reached the display\n%s", got)
 	}

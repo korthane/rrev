@@ -290,3 +290,90 @@ func TestRepeatedRaisesWithinOneIterationCountOnce(t *testing.T) {
 		t.Errorf("one iteration counted twice\n--- log ---\n%s", got)
 	}
 }
+
+// A truncated prompt keeps a prefix of the ledger, so the order that prefix is
+// taken from is what decides which rejections a reviewer is shown at all.
+func TestLedgerRanksTheMostRaisedEntriesFirst(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "once.go", Line: 1}, "raised a single time")
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "thrice.go", Line: 2}, "raised over and over")
+	for _, n := range []int{2, 3} {
+		log.IterationStart("comprehensive", n, 10)
+		log.Rejected(progress.Finding{ReRaises: "R2", Reviewer: "quality", File: "thrice.go", Line: 2}, "raised over and over")
+	}
+
+	entries := log.PromptEntries()
+	if len(entries) != 2 {
+		t.Fatalf("PromptEntries = %d entries, want 2: %q", len(entries), entries)
+	}
+	if !strings.Contains(entries[0], "R2") {
+		t.Errorf("the thrice-raised entry must lead, got %q first", entries[0])
+	}
+	got := readLog(t, log)
+	if strings.Index(got, "**R2**") > strings.Index(got, "**R1**") {
+		t.Errorf("the ledger section is not ranked most-raised first\n--- log ---\n%s", got)
+	}
+}
+
+// The claim is what tells a reviewer whether the entry is the finding it is
+// about to report. Since a rejection's summary is not written beside it in the
+// iteration section, the ledger row is the only place the claim ever appears.
+func TestLedgerRowCarriesTheClaimItRejected(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{
+		Reviewer: "quality", File: "a.go", Line: 7,
+		Summary: "the echoed byte leaks the key",
+	}, "the byte is a length prefix, not key material")
+
+	got := readLog(t, log)
+	if !strings.Contains(got, "claim: the echoed byte leaks the key") {
+		t.Errorf("the ledger row dropped the claim\n--- log ---\n%s", got)
+	}
+	if entries := log.PromptEntries(); len(entries) != 1 || !strings.Contains(entries[0], "claim: the echoed byte leaks the key") {
+		t.Errorf("PromptEntries = %q, want the claim carried into the prompt", entries)
+	}
+}
+
+// A rejection reported without a claim must not pin the entry to a blank one:
+// a later reviewer that does say what it claimed is the entry's only chance to
+// describe itself.
+func TestLaterRaiseSuppliesAClaimTheFirstOneLacked(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "reached only after the checksum verifies")
+	log.IterationStart("comprehensive", 2, 10)
+	log.Rejected(progress.Finding{
+		ReRaises: "R1", Reviewer: "testing", File: "a.go", Line: 7,
+		Summary: "the nil branch is unreachable",
+	}, "reached only after the checksum verifies")
+
+	entries := log.PromptEntries()
+	if len(entries) != 1 || !strings.Contains(entries[0], "claim: the nil branch is unreachable") {
+		t.Errorf("PromptEntries = %q, want the later claim to fill the empty slot", entries)
+	}
+}
+
+// The placeholder settles nothing, so it is not the rationale a later reviewer
+// has to answer. A real reason arriving afterwards has to displace it or the
+// entry publishes "(no reason given)" for the rest of the run.
+func TestRealRationaleReplacesTheMissingReasonPlaceholder(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "")
+	log.IterationStart("comprehensive", 2, 10)
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "quality", File: "a.go", Line: 7}, "the buffer is reused, not aliased")
+
+	entries := log.PromptEntries()
+	if len(entries) != 1 || !strings.Contains(entries[0], "the buffer is reused, not aliased") {
+		t.Errorf("PromptEntries = %q, want the real rationale to replace the placeholder", entries)
+	}
+	if strings.Contains(entries[0], "no reason given") {
+		t.Errorf("the placeholder outlived a stated reason: %q", entries[0])
+	}
+}

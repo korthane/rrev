@@ -1,6 +1,6 @@
 ## 1. Finding Identity
 
-- [x] 1.1 Add a stable identifier to `Finding` and assign one when a finding is first recorded, verified by a test asserting the identifier appears alongside the finding in the written log
+- [x] 1.1 Assign a stable identifier to each finding when it is first recorded, verified by a test asserting the identifier appears alongside the finding in the written log
 - [x] 1.2 Accept a declared re-raise that names an existing identifier and record it against that entry rather than creating a new one, verified by a test over a two-iteration sequence
 - [x] 1.3 Record an undeclared finding as new without attempting to match it against prior entries, verified by a test asserting no inference occurs
 - [x] 1.4 Record a finding naming an unknown identifier as new, noting the unresolved reference and continuing, verified by a test asserting the iteration is not failed
@@ -24,7 +24,7 @@
 - [x] 3.3 Write an iteration summary on close: confirmed counts by severity, rejected split into newly raised and re-raised, validation outcome, and the commit if one was made
 - [x] 3.4 Count a finding carrying no severity or no location under an explicit unclassified total in the iteration summary rather than folding it into a severity bucket, verified by a test over a degenerate entry
 - [x] 3.5 Record an external tool's invocation and what it returned, including a no-findings return and a failure with its cause, verified by tests asserting a silent pass and a quiet failure are distinguishable in the log
-- [x] 3.6 Append to a pre-existing unstructured log without rewriting its earlier content and without populating a ledger from it, verified by a test over a fixture flat-format log
+- [x] 3.6 Append to a pre-existing unstructured log without rewriting its earlier content and without populating a ledger from it, verified by a test over a flat-format log
 - [x] 3.7 Write tests for new functionality and run project tests - must pass before next task
 
 ## 4. Reviewer Context

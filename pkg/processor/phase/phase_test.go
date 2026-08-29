@@ -614,3 +614,31 @@ func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
 		t.Errorf("the tool's findings were recorded before the invocation that produced them:\n%s", got)
 	}
 }
+
+// A tool that ran but wrote nothing rrev can read as a review is not the quiet
+// convergence it resembles. Recording both as "no findings reported" is the
+// silence-reads-as-a-clean-pass confusion the recorded-activity requirement
+// exists to remove.
+func TestExternalToolOutputRrevCannotInterpretIsRecordedAsSuch(t *testing.T) {
+	external := mock("codex", "I looked at the diff and it seems fine to me.")
+	env, _ := newEnv(t, mock("claude", externalDone, externalDone), external, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	External(context.Background(), env)
+
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "external tool `codex`: output not understood") {
+		t.Errorf("uninterpretable output was not recorded as such:\n%s", got)
+	}
+	if strings.Contains(got, "external tool `codex`: no findings reported") {
+		t.Errorf("uninterpretable output was filed as a clean empty return:\n%s", got)
+	}
+}

@@ -103,6 +103,11 @@ func externalOutcome(report stepResult, err error) (outcome, detail string) {
 		return "failed", err.Error()
 	case len(report.Findings) > 0:
 		return fmt.Sprintf("reported %d finding(s)", len(report.Findings)), ""
+	case !report.Converged:
+		// Neither a finding nor the done signal: the tool ran, but nothing in
+		// what it wrote could be read as a review. Recording that as "no
+		// findings" would file it as the clean convergence it is not.
+		return "output not understood", "no findings and no completion signal in the tool's output"
 	default:
 		return "no findings reported", ""
 	}
