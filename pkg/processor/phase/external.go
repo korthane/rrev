@@ -56,6 +56,9 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 		vars:     vars,
 		renderAs: e.External.Name(),
 	})
+	outcome, detail := externalOutcome(report, err)
+	e.Log.ExternalTool(e.External.Name(), outcome, detail)
+
 	if err != nil || report.Converged {
 		// A round that ends here was never evaluated, so the tool's own claims
 		// stay out of the phase's result; they are already in the progress log
@@ -84,6 +87,21 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 	// the loop's result: only what the executor confirmed counts as a finding
 	// of this phase.
 	return eval, err
+}
+
+// externalOutcome describes what came back from the external tool. A tool that
+// reports nothing and a tool that died look the same from the loop's side —
+// both simply fail to produce findings — so the log has to tell them apart or a
+// quiet failure reads as a clean pass.
+func externalOutcome(report stepResult, err error) (outcome, detail string) {
+	switch {
+	case err != nil:
+		return "failed", err.Error()
+	case len(report.Findings) > 0:
+		return fmt.Sprintf("reported %d finding(s)", len(report.Findings)), ""
+	default:
+		return "no findings reported", ""
+	}
 }
 
 // recordRound keeps one round per iteration: an iteration re-run after a

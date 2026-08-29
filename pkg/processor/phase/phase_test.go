@@ -369,7 +369,7 @@ func TestSinglePassLogsFindingsAsNotFixed(t *testing.T) {
 	Comprehensive(context.Background(), env)
 
 	body := readFile(t, log.Path())
-	if !strings.Contains(body, `action="reported; not fixed (report-only)"`) {
+	if !strings.Contains(body, "— reported; not fixed (report-only)") {
 		t.Errorf("progress log claims a fix a report-only run cannot make\n%s", body)
 	}
 }
@@ -405,13 +405,13 @@ func TestProgressLogRecordsFindingsAndTermination(t *testing.T) {
 
 	body := readFile(t, log.Path())
 	for _, want := range []string{
-		"phase: name=comprehensive",
-		"iteration: phase=comprehensive n=1/10",
-		"confirmed: reviewer=conformance severity=critical location=pkg/a.go:42",
+		"## Phase: comprehensive",
+		"### comprehensive · iteration 1/10 ·",
+		"- **confirmed** `R1` critical `pkg/a.go:42` (Change selection) — conformance",
 		"the flag is never parsed",
-		"rejected: reviewer=quality location=pkg/b.go:7",
+		"- **rejected** `R2` `pkg/b.go:7` — quality",
 		"the nil check is done by the caller",
-		"end: phase=comprehensive reason=converged iterations=2",
+		"**comprehensive ended:** converged after 2 iteration(s)",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("progress log is missing %q\n%s", want, body)
@@ -504,7 +504,7 @@ func TestIterationCommitsRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read progress log: %v", err)
 	}
-	if !strings.Contains(string(logged), `commit: hash=head1`) {
+	if !strings.Contains(string(logged), "- commit `head1`") {
 		t.Errorf("progress log does not name the commit the iteration produced:\n%s", logged)
 	}
 }
