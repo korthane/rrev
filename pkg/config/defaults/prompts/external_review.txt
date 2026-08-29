@@ -28,6 +28,15 @@ against it, not against your own idea of what the code should be.
 
 ## Prior rounds
 
+Read the progress log at {{PROGRESS_LOG}} before reporting. It records every
+earlier finding, which were fixed, and which were rejected with the reason.
+
+{{PRIOR_FINDINGS}}
+
+Do not re-report a finding that was already rejected unless you can say why the
+recorded reason is wrong. If you still disagree, say so explicitly and argue the
+point rather than repeating the original wording.
+
 ## Standing rejections
 
 These were reported in earlier iterations and dismissed with a reason. They are
@@ -45,15 +54,6 @@ of these, you have three honest options and no fourth:
 
 Never report one of these as if it were new. Naming the id is what lets rrev
 count a recurrence instead of opening a second entry for the same argument.
-
-Read the progress log at {{PROGRESS_LOG}} before reporting. It records every
-earlier finding, which were fixed, and which were rejected with the reason.
-
-{{PRIOR_FINDINGS}}
-
-Do not re-report a finding that was already rejected unless you can say why the
-recorded reason is wrong. If you still disagree, say so explicitly and argue the
-point rather than repeating the original wording.
 
 ## What to look for
 

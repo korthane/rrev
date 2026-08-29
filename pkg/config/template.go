@@ -20,6 +20,10 @@ const (
 	directiveAgents = "AGENTS"
 )
 
+// varLedger names the ledger variable, which is budgeted across the whole
+// prompt rather than per expansion.
+const varLedger = "LEDGER"
+
 // Placeholders for values a change does not provide, so a prompt says so
 // instead of showing an empty path the model might try to open.
 const (
@@ -133,7 +137,69 @@ func (e Expander) Prompt(name string) (string, error) {
 
 // Expand substitutes variables and agent references in an already-resolved
 // prompt.
-func (e Expander) Expand(asset Asset) (string, error) { return e.expand(asset, true) }
+func (e Expander) Expand(asset Asset) (string, error) {
+	e.Vars.LedgerBudget = e.perSiteLedgerBudget(asset)
+	return e.expand(asset, true)
+}
+
+// perSiteLedgerBudget divides ledger_budget across every {{LEDGER}} site the
+// prompt expands. The setting is documented as a cap on what one prompt
+// carries, and a prompt embedding seven reviewer agents expands the ledger
+// eight times, so budgeting each copy separately would let the prompt run to
+// eight times the configured size.
+func (e Expander) perSiteLedgerBudget(asset Asset) int {
+	if e.Vars.LedgerBudget <= 0 {
+		return e.Vars.LedgerBudget
+	}
+	sites := e.ledgerSites(asset)
+	if sites <= 1 {
+		return e.Vars.LedgerBudget
+	}
+	return max(e.Vars.LedgerBudget/sites, 1)
+}
+
+// ledgerSites counts the ledger references the prompt expands, following agent
+// directives one level down; an agent may not reference other agents.
+func (e Expander) ledgerSites(asset Asset) int {
+	n, agents := scanTemplate(asset.Content)
+	for _, name := range agents {
+		agent, err := e.Assets.Agent(name)
+		if err != nil {
+			// A missing agent fails the expansion itself a moment later; here
+			// it just does not add sites.
+			continue
+		}
+		sites, _ := scanTemplate(agent.Content)
+		n += sites
+	}
+	return n
+}
+
+// scanTemplate walks a template once, counting its ledger references and
+// collecting the agents it embeds, using the same directive spelling the
+// expansion itself accepts.
+func scanTemplate(content string) (ledgers int, agents []string) {
+	rest := content
+	for {
+		_, after, found := strings.Cut(rest, varOpen)
+		if !found {
+			return ledgers, agents
+		}
+		body, tail, closed := strings.Cut(after, varClose)
+		if !closed {
+			return ledgers, agents
+		}
+		rest = tail
+		name, arg, isDirective := strings.Cut(body, ":")
+		name = strings.ToUpper(strings.TrimSpace(name))
+		switch {
+		case !isDirective && name == varLedger:
+			ledgers++
+		case isDirective && (name == directiveAgent || name == directiveAgents):
+			agents = append(agents, agentNames(arg)...)
+		}
+	}
+}
 
 // expand walks the template once. Agent definitions are expanded with
 // allowAgents false: an agent that could reference agents would recurse.
@@ -183,13 +249,18 @@ func (e Expander) substitute(asset Asset, values map[string]string, body string,
 	return value, nil
 }
 
-func (e Expander) expandAgents(asset Asset, list string) (string, error) {
+func agentNames(list string) []string {
 	var names []string
 	for field := range strings.SplitSeq(list, ",") {
 		if name := strings.TrimSpace(field); name != "" {
 			names = append(names, name)
 		}
 	}
+	return names
+}
+
+func (e Expander) expandAgents(asset Asset, list string) (string, error) {
+	names := agentNames(list)
 	if len(names) == 0 {
 		return "", &TemplateError{File: asset.Path, Msg: "agent directive names no agents"}
 	}

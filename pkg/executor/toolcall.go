@@ -3,6 +3,7 @@ package executor
 import (
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 )
 
 // toolArgWidth caps a rendered tool argument. Heredocs, multi-line commands and
@@ -47,6 +48,9 @@ type toolCall struct {
 	name  string
 	arg   string
 	agent string
+	// shown marks a call already rendered at launch, so the flush that reports
+	// unanswered calls does not print it a second time.
+	shown bool
 }
 
 // describeToolCall reads the distinguishing argument out of a tool's input.
@@ -80,12 +84,24 @@ func boundArg(text string) string {
 	first, _, multiline := strings.Cut(text, "\n")
 	first = strings.TrimSpace(first)
 	if len(first) > toolArgWidth {
-		return strings.TrimSpace(first[:toolArgWidth]) + truncationMark
+		return strings.TrimSpace(cutRunes(first, toolArgWidth)) + truncationMark
 	}
 	if multiline {
 		return first + " " + truncationMark
 	}
 	return first
+}
+
+// cutRunes shortens s to at most n bytes without splitting a rune, so a
+// truncated path or command never emits invalid UTF-8 into the terminal.
+func cutRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // line renders the call for the terminal. An agent launch leads with the agent

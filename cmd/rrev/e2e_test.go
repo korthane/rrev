@@ -313,7 +313,7 @@ func standingEntries(log string) int {
 // run, two thirds of them re-litigation of a dozen questions.
 func TestEndToEndDeclaredReRaiseUpdatesOneLedgerEntry(t *testing.T) {
 	repo := newFixtureRepo(t, "add-user-auth")
-	script := scriptExecutors(t, map[string]string{
+	scriptExecutors(t, map[string]string{
 		"claude": `case "$phase:$n" in
   comprehensive:1)
     echo "REJECTED: auth.go:9 | quality | the token is echoed | the value is not key material"
@@ -336,8 +336,6 @@ esac`,
 	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
 		t.Fatalf("code = %d; output:\n%s", code, out.String())
 	}
-	_ = script
-
 	log := progressLog(t, repo)
 	if n := standingEntries(log); n != 1 {
 		t.Errorf("ledger holds %d standing rejections, want the two raises folded into one:\n%s", n, log)
@@ -345,8 +343,10 @@ esac`,
 	if want := "raised comprehensive 1, 2"; !strings.Contains(log, want) {
 		t.Errorf("ledger missing %q:\n%s", want, log)
 	}
-	if n := strings.Count(log, "rejected because: the value is not key material"); n > 1 {
-		t.Errorf("the rationale is restated %d times, want one ledger statement:\n%s", n, log)
+	// The ledger states a rationale once however often the finding is raised;
+	// `rejected because:` is the prompt's wording, not the log's.
+	if n := strings.Count(log, "rejected: still not key material"); n != 1 {
+		t.Errorf("the rationale appears %d times, want one ledger statement:\n%s", n, log)
 	}
 }
 

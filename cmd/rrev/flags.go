@@ -57,7 +57,7 @@ var flagUsage = map[string]string{
 	"checklist_budget":        "maximum characters of requirement checklist expanded into a prompt",
 	"ledger_budget":           "maximum characters of standing-rejection ledger expanded into a prompt",
 	"validation_command":      "command the executor runs before committing a fix",
-	"debug":                   "record resolved command lines and full prompts",
+	"debug":                   "record resolved command lines, full prompts, and the full arguments and output of reported tool calls",
 	"no_color":                "disable coloured terminal output",
 }
 

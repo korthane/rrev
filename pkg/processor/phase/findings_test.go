@@ -142,3 +142,23 @@ func TestParseReportReadsValidationOutcome(t *testing.T) {
 		t.Errorf("validations =\n%+v\nwant\n%+v", validations, want)
 	}
 }
+
+// A stray space around the declaration is a slip a model makes routinely.
+// Dropping the whole line over it loses a reviewer's finding, which is far
+// worse than losing the recurrence count.
+func TestReportTokenToleratesSpacingAroundTheDeclaration(t *testing.T) {
+	for _, line := range []string{
+		"FINDING [R3]: major | a.go:1 | quality | - | the handler leaks",
+		"FINDING[R3] : major | a.go:1 | quality | - | the handler leaks",
+		"FINDING[ R3 ]: major | a.go:1 | quality | - | the handler leaks",
+	} {
+		findings, _, _ := ParseReport(line)
+		if len(findings) != 1 {
+			t.Errorf("%q parsed %d findings, want the finding kept", line, len(findings))
+			continue
+		}
+		if findings[0].ReRaises != "R3" {
+			t.Errorf("%q declared re-raise = %q, want R3", line, findings[0].ReRaises)
+		}
+	}
+}

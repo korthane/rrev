@@ -149,20 +149,19 @@ func ParseReport(output string) ([]Finding, []Rejection, []Validation) {
 	return findings, rejections, validations
 }
 
-// parseFinding reads `severity | file:line | reviewer | requirement | summary`,
-// tolerating a report that stops early: a finding missing its trailing fields is
-// still worth recording, and a summary containing a pipe stays intact.
 // cutKind reads a report line's opening token, returning its kind, the ledger
 // id it declared, and the rest of the line. A line whose token rrev does not
-// know is not a report line.
+// know is not a report line. Spacing around the declaration is tolerated:
+// losing a whole finding over `FINDING [R3]:` costs a reviewer's report.
 func cutKind(line string) (kind, id, rest string, ok bool) {
 	head, rest, ok := strings.Cut(line, ":")
 	if !ok {
 		return "", "", "", false
 	}
+	head = strings.TrimSpace(head)
 	kind = head
 	if open := strings.IndexByte(head, '['); open >= 0 && strings.HasSuffix(head, "]") {
-		kind, id = head[:open], head[open+1:len(head)-1]
+		kind, id = strings.TrimSpace(head[:open]), head[open+1:len(head)-1]
 	}
 	switch kind {
 	case findingKind, rejectedKind, validationKind:
@@ -172,6 +171,9 @@ func cutKind(line string) (kind, id, rest string, ok bool) {
 	}
 }
 
+// parseFinding reads `severity | file:line | reviewer | requirement | summary`,
+// tolerating a report that stops early: a finding missing its trailing fields is
+// still worth recording, and a summary containing a pipe stays intact.
 func parseFinding(reRaises, rest string) Finding {
 	fields := splitFields(rest, 5)
 	f := Finding{

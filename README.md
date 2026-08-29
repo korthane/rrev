@@ -181,7 +181,7 @@ Each setting has a flag named after it, with underscores written as hyphens.
 | `checklist_budget` | `--checklist-budget` | `120000` | maximum characters of requirement checklist expanded into a prompt; 0 is unlimited |
 | `ledger_budget` | `--ledger-budget` | `40000` | maximum characters of standing-rejection ledger expanded into a prompt; 0 is unlimited |
 | `validation_command` | `--validation-command` | *(empty)* | command the executor runs before committing a fix |
-| `debug` | `--debug` | `false` | record resolved command lines and full prompts |
+| `debug` | `--debug` | `false` | record resolved command lines, full prompts, and the full arguments and output of reported tool calls |
 | `no_color` | `--no-color` | `false` | disable coloured terminal output |
 
 Two further flags select no setting: `--version` prints the version and exits,
@@ -207,6 +207,36 @@ as the findings.
 
 Colour is disabled by `no_color`, by a non-empty `NO_COLOR`, by `TERM=dumb`, and
 whenever output is not a terminal.
+
+### What a run prints
+
+While an executor runs, rrev streams its activity rather than leaving an
+unexplained pause. Every line is attributed to the phase that produced it, and a
+line the executor's format attributes to a reviewer agent carries that agent's
+name too, so seven concurrent reviewers are tellable apart; a line the format
+does not attribute carries the phase alone rather than a guess.
+
+A tool call renders the argument that distinguishes it — the command for a
+shell invocation, the path for a read or write, the pattern for a search, the
+agent for a sub-agent launch — followed by its outcome, and its failure detail
+when it failed:
+
+```
+· agent: conformance
+· [conformance] Scenario 3 is not addressed.
+· tool: Bash go test ./... … → ok
+· tool: Read pkg/config/resolve.go → failed: no such file or directory
+```
+
+The tool's own output never appears: a diff or a test run would flood the
+display. An argument spanning several lines or running past the display width
+is cut to its first line and marked `…`. `--debug` is the one place these caps
+come off, recording each reported call's full arguments and output.
+
+How much of this appears depends on the executor: claude's `stream-json` carries
+per-agent attribution and structured tool arguments, while codex reports shell
+commands and their exit status only. A long stretch inside sub-agents with
+nothing to report still produces a heartbeat every `progress_interval`.
 
 ## Prompts and agents
 
@@ -343,26 +373,34 @@ A rejection with a stated reason is a durable decision, not an event, so the log
 keeps a ledger of them at its end: one row per finding, carrying its id, every
 location it was raised at, the claim, the reason it was dismissed, and every
 phase and iteration that raised it. A recurrence updates that row instead of
-restating its rationale, and a finding later confirmed and fixed leaves the
-ledger so nobody is told a resolved issue is still standing.
+restating its rationale, and a finding later confirmed and fixed keeps its row
+marked as resolved, so nobody is told a fixed issue is still standing and nobody
+finds an entry they saw earlier silently gone. Reviewers are shown the standing
+rows only.
 
-The ledger is expanded into every phase prompt and every reviewer agent, which
-is what it is for. In the run that motivated it, roughly half of each late
+The ledger is expanded into every review phase prompt and every reviewer agent,
+which is what it is for. In the run that motivated it, roughly half of each late
 iteration went to re-arguing a dozen questions the log had already answered —
 one of them re-litigated in ten consecutive iterations — while the executor
 tracked the recurrences by hand in prose. Reviewers are shown the settled
-questions and told to name an entry's id rather than report it afresh.
+questions and told to name an entry's id rather than report it afresh. The
+finalize step is not shown the ledger: it runs after review has converged and
+reports no findings. `ledger_budget` caps what one prompt carries in all, shared
+across the prompt's own expansion and the agents it embeds.
 
 The ledger spans the whole run rather than resetting per phase, because
 re-litigation crosses phases: a final-phase reviewer will re-raise what the
 comprehensive phase rejected.
 
-Concurrent runs serialize their appends, so entries interleave whole; a writer
-that finds the file grown beneath it appends without refreshing the ledger
-rather than rewinding over another run's records. A log written before this
-format existed is appended to exactly as it stands — never rewritten, and never
-parsed back into a ledger. A progress directory that cannot be written degrades
-the run to logging disabled rather than aborting it.
+Each run writes its ledger at the end of its own records, so a log holding
+several runs holds one section per run and only the last is live; a later run
+continues the identifiers past the highest one the file already holds rather
+than re-issuing `R1`. Concurrent runs serialize their appends, so entries
+interleave whole; a writer that finds the file grown beneath it appends without
+refreshing the ledger rather than rewinding over another run's records. A log
+written before this format existed is appended to exactly as it stands — never
+rewritten, and never parsed back into a ledger. A progress directory that cannot
+be written degrades the run to logging disabled rather than aborting it.
 
 ## Findings report
 

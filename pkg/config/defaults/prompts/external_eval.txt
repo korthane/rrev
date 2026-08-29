@@ -24,13 +24,6 @@ Change artifacts:
 {{EXTERNAL_OUTPUT}}
 ---
 
-## Step 1: Verify every finding
-
-For each reported finding:
-1. Open the file at the cited line and read the surrounding context.
-2. Trace it: who calls this, what it calls, what the value can actually be.
-3. Check the change's artifacts and the design notes - the behaviour the tool
-   dislikes may be exactly what a requirement asks for.
 ## Standing rejections
 
 These were reported in earlier iterations and dismissed with a reason. They are
@@ -49,6 +42,13 @@ of these, you have three honest options and no fourth:
 Never report one of these as if it were new. Naming the id is what lets rrev
 count a recurrence instead of opening a second entry for the same argument.
 
+## Step 1: Verify every finding
+
+For each reported finding:
+1. Open the file at the cited line and read the surrounding context.
+2. Trace it: who calls this, what it calls, what the value can actually be.
+3. Check the change's artifacts and the design notes - the behaviour the tool
+   dislikes may be exactly what a requirement asks for.
 4. Check the progress log at {{PROGRESS_LOG}}: if this finding was already
    rejected in an earlier round, reuse the recorded reason unless it is wrong.
 

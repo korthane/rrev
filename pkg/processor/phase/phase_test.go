@@ -525,3 +525,63 @@ func TestFindingWithoutReviewerIsAttributedInTheResult(t *testing.T) {
 		t.Errorf("reviewer = %q, want the reporting executor", res.Findings[0].Reviewer)
 	}
 }
+
+// The ledger only earns its keep if it reaches the next iteration's prompt.
+// Nothing else in the suite covers the wire from the log to the reviewer, and a
+// broken one fails silently: reviewers just keep re-arguing settled questions.
+func TestStandingRejectionsReachTheNextIterationsPrompt(t *testing.T) {
+	primary := mock("claude",
+		"REJECTED: pkg/a.go:7 | quality | the token is echoed | the value is not key material",
+		reviewDone)
+	env, _ := newEnv(t, primary, nil, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	Comprehensive(context.Background(), env)
+
+	calls := primary.Calls()
+	if len(calls) != 2 {
+		t.Fatalf("executor calls = %d, want 2", len(calls))
+	}
+	if strings.Contains(calls[0].Prompt, "R1") {
+		t.Error("the first iteration has nothing settled yet, so its ledger must be empty")
+	}
+	for _, want := range []string{"R1", "pkg/a.go:7", "the value is not key material"} {
+		if !strings.Contains(calls[1].Prompt, want) {
+			t.Errorf("the second iteration's prompt is missing %q from the ledger", want)
+		}
+	}
+}
+
+// A dead or rate-limited external tool that logged as a clean pass is the exact
+// confusion the recorded-activity requirement exists to remove.
+func TestExternalToolFailureIsRecordedWithItsCause(t *testing.T) {
+	external := &executor.Mock{Tool: "codex", Responses: []executor.Response{
+		{Err: errors.New("codex exited with status 1")},
+	}}
+	env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
+	dir := t.TempDir()
+	log, err := progress.Open(dir, "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := External(context.Background(), env)
+
+	if res.Reason != ReasonFailure {
+		t.Errorf("reason = %q, want the phase to fail rather than read as converged", res.Reason)
+	}
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	for _, want := range []string{"external tool `codex`: failed", "codex exited with status 1"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("progress log missing %q:\n%s", want, data)
+		}
+	}
+}

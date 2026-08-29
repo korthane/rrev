@@ -19,6 +19,11 @@ Progress log: {{PROGRESS_LOG}}
 Read the progress log at {{PROGRESS_LOG}} before anything else. It records earlier
 iterations: which findings were confirmed and fixed, and which were rejected and
 why. The rejections are also listed below, so you need not reconstruct them.
+
+Then get the branch context:
+- `git log {{BASE_REF}}..HEAD --oneline` - the commits under review
+- {{DIFF_INSTRUCTION}} - the code under review
+
 ## Standing rejections
 
 These were reported in earlier iterations and dismissed with a reason. They are
@@ -36,11 +41,6 @@ of these, you have three honest options and no fourth:
 
 Never report one of these as if it were new. Naming the id is what lets rrev
 count a recurrence instead of opening a second entry for the same argument.
-
-
-Then get the branch context:
-- `git log {{BASE_REF}}..HEAD --oneline` - the commits under review
-- {{DIFF_INSTRUCTION}} - the code under review
 
 ## Step 2: Launch every reviewer agent
 

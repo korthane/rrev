@@ -40,7 +40,7 @@ Non-goals: structured JSON findings for machine consumption, a findings report f
 ## Impact
 
 - `pkg/progress` — finding identity, the ledger, and a renderer that emits iteration blocks instead of flat lines. The existing `Finding` struct already carries the fields; `render()` is what discards them.
-- `pkg/status` — per-agent attribution and per-tool argument rendering. Requires the claude and codex stream parsers to surface the tool name, its arguments, and the owning sub-agent, which they currently drop.
+- `pkg/executor` — per-agent attribution and per-tool argument rendering. `pkg/status` prints under a phase name, so the claude and codex stream parsers surface the tool name, its arguments, and the owning sub-agent and the collector prefixes the agent into the stream.
 - `pkg/processor/phase` — recording the external tool's invocation and result.
 - Default prompts and reviewer agents — reviewers must be told to declare which ledger entry a finding re-raises, and the ledger must be expanded into the prompt.
 - **No change to run behavior.** Every phase still terminates exactly as it does today. This change alters what rrev records and displays, and what reviewers are told, not when a loop stops.

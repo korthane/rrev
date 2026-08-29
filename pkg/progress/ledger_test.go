@@ -115,8 +115,36 @@ func TestConfirmingAPreviouslyRejectedFindingRetiresItsEntry(t *testing.T) {
 	log.IterationStart("comprehensive", 2, 10)
 	log.Confirmed(progress.Finding{ReRaises: "R1", Reviewer: "quality", Severity: "major", File: "a.go", Line: 7}, "fixed")
 
-	if got := readLog(t, log); strings.Contains(got, "## Standing rejections") {
-		t.Errorf("a confirmed finding must leave the ledger\n--- log ---\n%s", got)
+	got := readLog(t, log)
+	if !strings.Contains(got, "since confirmed and fixed; no longer standing") {
+		t.Errorf("the entry must record that it was subsequently confirmed\n--- log ---\n%s", got)
+	}
+	// The prompt ledger is the list of open questions, so a retired entry must
+	// not be handed to the next reviewer as something still to argue with.
+	if entries := log.PromptEntries(); len(entries) != 0 {
+		t.Errorf("PromptEntries = %q, want a retired entry withheld from reviewers", entries)
+	}
+}
+
+// A run appending to an existing log must not re-issue an identifier its
+// records already use, or a reviewer reading R1 out of the log names a
+// different finding than the one rrev holds.
+func TestSecondRunDoesNotReuseAnEarlierRunsIdentifiers(t *testing.T) {
+	dir := t.TempDir()
+	first := openLog(t, dir, "change", progress.Options{})
+	first.IterationStart("comprehensive", 1, 10)
+	first.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+
+	second := openLog(t, dir, "change", progress.Options{})
+	second.IterationStart("comprehensive", 1, 10)
+	second.Rejected(progress.Finding{Reviewer: "quality", File: "b.go", Line: 3}, "also out of scope")
+
+	got := readLog(t, second)
+	if countOf(got, "**rejected** `R1`") != 1 {
+		t.Errorf("the second run re-issued R1\n--- log ---\n%s", got)
+	}
+	if !strings.Contains(got, "**rejected** `R2` `b.go:3`") {
+		t.Errorf("the second run should continue past the ids already in the log\n--- log ---\n%s", got)
 	}
 }
 
@@ -172,5 +200,20 @@ func TestPreExistingUnstructuredLogIsAppendedToUnchanged(t *testing.T) {
 	}
 	if strings.Contains(got, "R1` `a.go:7") {
 		t.Error("the legacy entry must not be parsed back into the ledger")
+	}
+}
+
+// The summary's new/repeat split is what a reader judges convergence by, so a
+// declaration rrev could not resolve must not be counted as a recurrence: the
+// entry beside it says the finding is new.
+func TestUnresolvedDeclarationCountsAsNewlyRaised(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{ReRaises: "R99", Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+	log.LoopEnd("comprehensive", "converged", 1)
+
+	if got := readLog(t, log); !strings.Contains(got, "rejected 1 (1 new, 0 repeat)") {
+		t.Errorf("an unresolved declaration was counted as a repeat\n--- log ---\n%s", got)
 	}
 }

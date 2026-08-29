@@ -147,6 +147,7 @@ func Open(dir, change string, opts Options) (*Log, error) {
 	// older unstructured format. Starting the tail at its end is what makes the
 	// first ledger append after it rather than rewind into it.
 	log.lastSize = size.Size()
+	log.seq = seedSeq(log.path)
 	return log, nil
 }
 
@@ -247,7 +248,10 @@ func (l *Log) Rejected(f Finding, reason string) {
 	e, note := l.track(f, reason)
 	l.mu.Lock()
 	if l.cur != nil {
-		l.cur.countRejected(f)
+		// A note means the declared id did not resolve, so a new entry was
+		// opened; counting that as a re-raise would contradict the entry
+		// beside it and inflate the recurrence rate a reader judges by.
+		l.cur.countRejected(f.ReRaises != "" && note == "")
 	}
 	l.mu.Unlock()
 	l.emit(l.bullet("rejected", f, e) + "\n" + indent + oneLine(reason) + "\n" + noteLine(note))
@@ -388,8 +392,8 @@ func (it *iteration) countConfirmed(f Finding) {
 	it.confirmed[f.Severity]++
 }
 
-func (it *iteration) countRejected(f Finding) {
-	if f.ReRaises != "" {
+func (it *iteration) countRejected(reRaise bool) {
+	if reRaise {
 		it.repeatRejects++
 		return
 	}

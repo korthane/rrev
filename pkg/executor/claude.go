@@ -138,10 +138,14 @@ func (t *claudeTools) start(col *collector, block claudeBlock) {
 	// rendered straight away and its outcome follows later.
 	if call.agent != "" {
 		col.activity(call.line(""))
+		call.shown = true
 	}
 	if block.ID == "" {
 		// No id to match a result against, so report it now rather than hold a
 		// line that nothing will ever release.
+		if !call.shown {
+			col.activity(call.line(""))
+		}
 		return
 	}
 	t.pending[block.ID] = call
@@ -169,7 +173,9 @@ func (t *claudeTools) finish(block claudeBlock) (string, bool) {
 // what it was doing when it stopped.
 func (t *claudeTools) flush(col *collector) {
 	for _, id := range t.order {
-		col.activity(t.pending[id].line(""))
+		if call := t.pending[id]; !call.shown {
+			col.activity(call.line(""))
+		}
 	}
 	t.order, t.pending = nil, map[string]toolCall{}
 }

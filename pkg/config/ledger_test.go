@@ -74,3 +74,31 @@ func expandLedger(t *testing.T, vars Vars) string {
 	}
 	return got
 }
+
+// The budget is documented as a cap on what one prompt carries. A review prompt
+// embeds seven reviewer agents that each expand the ledger too, so budgeting
+// each copy separately would let the prompt run to eight times the setting.
+func TestLedgerBudgetBoundsTheWholePromptNotEachCopy(t *testing.T) {
+	entries := ledgerEntries(20)
+	budget := len(entries[0]) * 8
+	exp, projectDir := expanderFor(t, ExecutorClaude, Vars{Ledger: entries, LedgerBudget: budget})
+	writeAsset(t, projectDir, KindAgent, "alpha", "{{LEDGER}}")
+	writeAsset(t, projectDir, KindAgent, "beta", "{{LEDGER}}")
+	writeAsset(t, projectDir, KindPrompt, "review_first", "{{LEDGER}}\n{{AGENTS: alpha, beta}}")
+
+	got, err := exp.Prompt("review_first")
+	if err != nil {
+		t.Fatalf("expand prompt: %v", err)
+	}
+
+	// Every site still gets a ledger; the budget is what they share.
+	if n := strings.Count(got, "- R1 "); n != 3 {
+		t.Fatalf("the ledger expanded at %d sites, want the prompt and both agents", n)
+	}
+	if used := strings.Count(got, "- R") * len(entries[0]); used > budget {
+		t.Errorf("ledger occupies %d characters across the prompt, over the %d budget", used, budget)
+	}
+	if n := strings.Count(got, "TRUNCATED"); n != 3 {
+		t.Errorf("%d of 3 cut ledgers said they were cut", n)
+	}
+}
