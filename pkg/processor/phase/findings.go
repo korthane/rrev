@@ -1,6 +1,7 @@
 package phase
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 	"strings"
@@ -8,11 +9,13 @@ import (
 	"github.com/korthane/rrev/pkg/progress"
 )
 
-// Report line prefixes every phase prompt instructs the executor to emit.
+// Report line kinds every phase prompt instructs the executor to emit. A kind
+// may carry a bracketed ledger id — FINDING[R7]: — declaring that the line
+// re-raises something the log already holds.
 const (
-	findingPrefix    = "FINDING:"
-	rejectedPrefix   = "REJECTED:"
-	validationPrefix = "VALIDATION:"
+	findingKind    = "FINDING"
+	rejectedKind   = "REJECTED"
+	validationKind = "VALIDATION"
 )
 
 // noRequirement is what a prompt tells the executor to write when a finding
@@ -22,6 +25,9 @@ const noRequirement = "-"
 // Finding is one issue an executor verified and reported, in the line form the
 // prompts define.
 type Finding struct {
+	// ReRaises is the ledger id the executor declared this finding re-raises,
+	// empty when it declared none.
+	ReRaises    string
 	Severity    string
 	File        string
 	Line        int
@@ -34,10 +40,15 @@ type Finding struct {
 // load-bearing part: it is what a later round is shown instead of letting the
 // same finding come back unchanged.
 type Rejection struct {
+	// ReRaises is the ledger id the executor declared this rejection re-raises.
+	ReRaises string
 	File     string
 	Line     int
 	Reviewer string
-	Reason   string
+	// Claim is what the reviewer asserted, kept apart from Reason so a ledger
+	// entry can say what was argued as well as why it was dismissed.
+	Claim  string
+	Reason string
 }
 
 // Validation is the outcome an executor reported for the validation command it
@@ -64,16 +75,28 @@ func (r Rejection) Location() string { return location(r.File, r.Line) }
 // String renders the finding back into the line form it was parsed from.
 func (f Finding) String() string {
 	return fmt.Sprintf("%s %s | %s | %s | %s | %s",
-		findingPrefix, orDash(f.Severity), orDash(f.Location()), orDash(f.Reviewer), orDash(f.Requirement), f.Summary)
+		kindPrefix(findingKind, f.ReRaises), orDash(f.Severity), orDash(f.Location()), orDash(f.Reviewer),
+		orDash(f.Requirement), f.Summary)
 }
 
 // String renders the rejection back into the line form it was parsed from.
 func (r Rejection) String() string {
-	return fmt.Sprintf("%s %s | %s | %s", rejectedPrefix, orDash(r.Location()), orDash(r.Reviewer), r.Reason)
+	return fmt.Sprintf("%s %s | %s | %s | %s",
+		kindPrefix(rejectedKind, r.ReRaises), orDash(r.Location()), orDash(r.Reviewer), orDash(r.Claim), r.Reason)
+}
+
+// kindPrefix renders a report line's opening token, carrying the ledger id when
+// the line re-raises an existing entry.
+func kindPrefix(kind, reRaises string) string {
+	if reRaises == "" {
+		return kind + ":"
+	}
+	return kind + "[" + reRaises + "]:"
 }
 
 func (f Finding) entry() progress.Finding {
 	return progress.Finding{
+		ReRaises:    f.ReRaises,
 		Reviewer:    f.Reviewer,
 		Severity:    f.Severity,
 		File:        f.File,
@@ -84,7 +107,13 @@ func (f Finding) entry() progress.Finding {
 }
 
 func (r Rejection) entry() progress.Finding {
-	return progress.Finding{Reviewer: r.Reviewer, File: r.File, Line: r.Line, Summary: r.Reason}
+	return progress.Finding{
+		ReRaises: r.ReRaises,
+		Reviewer: r.Reviewer,
+		File:     r.File,
+		Line:     r.Line,
+		Summary:  cmp.Or(r.Claim, r.Reason),
+	}
 }
 
 // ParseReport extracts the findings, rejections, and validation outcomes an
@@ -107,13 +136,14 @@ func ParseReport(output string) ([]Finding, []Rejection, []Validation) {
 			continue
 		}
 		line = strings.TrimLeft(line, "-*• \t")
-		switch {
-		case strings.HasPrefix(line, findingPrefix):
-			findings = append(findings, parseFinding(strings.TrimPrefix(line, findingPrefix)))
-		case strings.HasPrefix(line, rejectedPrefix):
-			rejections = append(rejections, parseRejection(strings.TrimPrefix(line, rejectedPrefix)))
-		case strings.HasPrefix(line, validationPrefix):
-			validations = append(validations, parseValidation(strings.TrimPrefix(line, validationPrefix)))
+		switch kind, id, rest, ok := cutKind(line); {
+		case !ok:
+		case kind == findingKind:
+			findings = append(findings, parseFinding(id, rest))
+		case kind == rejectedKind:
+			rejections = append(rejections, parseRejection(id, rest))
+		case kind == validationKind:
+			validations = append(validations, parseValidation(rest))
 		}
 	}
 	return findings, rejections, validations
@@ -122,9 +152,30 @@ func ParseReport(output string) ([]Finding, []Rejection, []Validation) {
 // parseFinding reads `severity | file:line | reviewer | requirement | summary`,
 // tolerating a report that stops early: a finding missing its trailing fields is
 // still worth recording, and a summary containing a pipe stays intact.
-func parseFinding(rest string) Finding {
+// cutKind reads a report line's opening token, returning its kind, the ledger
+// id it declared, and the rest of the line. A line whose token rrev does not
+// know is not a report line.
+func cutKind(line string) (kind, id, rest string, ok bool) {
+	head, rest, ok := strings.Cut(line, ":")
+	if !ok {
+		return "", "", "", false
+	}
+	kind = head
+	if open := strings.IndexByte(head, '['); open >= 0 && strings.HasSuffix(head, "]") {
+		kind, id = head[:open], head[open+1:len(head)-1]
+	}
+	switch kind {
+	case findingKind, rejectedKind, validationKind:
+		return kind, strings.TrimSpace(id), rest, true
+	default:
+		return "", "", "", false
+	}
+}
+
+func parseFinding(reRaises, rest string) Finding {
 	fields := splitFields(rest, 5)
 	f := Finding{
+		ReRaises:    reRaises,
 		Severity:    strings.ToLower(field(fields, 0)),
 		Reviewer:    field(fields, 2),
 		Requirement: undash(field(fields, 3)),
@@ -134,10 +185,18 @@ func parseFinding(rest string) Finding {
 	return f
 }
 
-func parseRejection(rest string) Rejection {
-	fields := splitFields(rest, 3)
-	r := Rejection{Reviewer: field(fields, 1), Reason: field(fields, 2)}
+// parseRejection reads `file:line | reviewer | claim | reason`, tolerating the
+// three-field form a prompt override may still emit by reading its last field
+// as the reason and leaving the claim empty.
+func parseRejection(reRaises, rest string) Rejection {
+	fields := splitFields(rest, 4)
+	r := Rejection{ReRaises: reRaises, Reviewer: field(fields, 1)}
 	r.File, r.Line = parseLocation(field(fields, 0))
+	if len(fields) < 4 {
+		r.Reason = field(fields, 2)
+		return r
+	}
+	r.Claim, r.Reason = undash(field(fields, 2)), field(fields, 3)
 	return r
 }
 

@@ -199,6 +199,7 @@ func runVars(start *startup, log *progress.Log) config.Vars {
 		ChangeDir:         repoPath(root, review.Change.Dir),
 		Requirements:      openspec.ChecklistEntries(review.Requirements),
 		ChecklistBudget:   start.Config.ChecklistBudget,
+		LedgerBudget:      start.Config.LedgerBudget,
 	}
 	if log.Enabled() {
 		vars.ProgressLog = repoPath(root, log.Path())

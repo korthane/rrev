@@ -113,6 +113,9 @@ type Config struct {
 	// ChecklistBudget caps how many characters of requirement checklist are
 	// expanded into a prompt.
 	ChecklistBudget int
+	// LedgerBudget caps how many characters of standing-rejection ledger are
+	// expanded into a prompt; zero is unlimited.
+	LedgerBudget int
 	// ValidationCommand runs before a fix is committed.
 	ValidationCommand string
 
@@ -164,6 +167,7 @@ var fields = []field{
 	{key: "progress_dir", set: func(c *Config, v string) error { return setDir(&c.ProgressDir, v) }},
 	{key: "report_file", set: func(c *Config, v string) error { c.ReportFile = v; return nil }},
 	{key: "checklist_budget", set: func(c *Config, v string) error { return setNonNegativeInt(&c.ChecklistBudget, v) }},
+	{key: "ledger_budget", set: func(c *Config, v string) error { return setNonNegativeInt(&c.LedgerBudget, v) }},
 	{key: "validation_command", set: func(c *Config, v string) error { c.ValidationCommand = v; return nil }},
 	{key: "debug", set: func(c *Config, v string) error { return setBool(&c.Debug, v) }},
 	{key: "no_color", set: func(c *Config, v string) error { return setBool(&c.NoColor, v) }},

@@ -34,6 +34,7 @@ const (
 	defaultReviewerModeRules = "Run mode: review only. Do not edit files, do not commit, and do not run the project's " +
 		"commands: report what you find and let the primary executor verify and fix it."
 	noPriorFindings  = "(first round of this loop: nothing has been reported or dispositioned yet)"
+	noLedger         = "(nothing has been rejected yet in this run)"
 	noExternalOutput = "(the external review tool produced no output)"
 )
 
@@ -75,6 +76,13 @@ type Vars struct {
 	// expand, so a read-only run still constrains them without a normal run
 	// telling an independent reviewer to fix and commit.
 	ReviewerModeRules string
+
+	// Ledger holds the standing rejections, one rendered entry each, most
+	// raised first, so LedgerBudget drops whole entries and always keeps the
+	// ones being re-litigated hardest.
+	Ledger []string
+	// LedgerBudget caps the expanded ledger in characters; zero is unlimited.
+	LedgerBudget int
 
 	// PriorFindings is the external loop's round-to-round memory: earlier
 	// findings and how they were dispositioned, so the external tool does not
@@ -249,6 +257,7 @@ func (v Vars) values() map[string]string {
 		"VALIDATION_COMMAND":  orElse(v.ValidationCommand, emptyValue),
 		"MODE_RULES":          orElse(v.ModeRules, defaultModeRules),
 		"REVIEWER_MODE_RULES": orElse(v.ReviewerModeRules, defaultReviewerModeRules),
+		"LEDGER":              renderLedger(v.Ledger, v.LedgerBudget),
 		"PRIOR_FINDINGS":      orElse(v.PriorFindings, noPriorFindings),
 		"EXTERNAL_OUTPUT":     orElse(v.ExternalOutput, noExternalOutput),
 		"OPENSPEC_DIR":        orElse(v.OpenSpecDir, missingPath),
@@ -274,6 +283,31 @@ func artifactPaths(v Vars) []string {
 		}
 	}
 	return paths
+}
+
+// renderLedger fits the standing rejections into budget characters. Entries
+// arrive most-raised first, so a cut keeps what is being re-litigated hardest,
+// and says it was cut for the same reason the checklist does: a reviewer told
+// its ledger is partial can say so, one silently handed a short list cannot.
+func renderLedger(entries []string, budget int) string {
+	if len(entries) == 0 {
+		return noLedger
+	}
+	kept, used := 0, 0
+	for _, entry := range entries {
+		if budget > 0 && kept > 0 && used+len(entry) > budget {
+			break
+		}
+		used += len(entry)
+		kept++
+	}
+	shown := strings.Join(entries[:kept], "")
+	if kept < len(entries) {
+		shown += fmt.Sprintf("[TRUNCATED: this ledger was cut at %d characters. %d of %d standing rejections are"+
+			" shown, most-raised first; %d are missing from this prompt. Read %s for the rest, and say in your"+
+			" report that your ledger was truncated.]\n", budget, kept, len(entries), len(entries)-kept, "the progress log")
+	}
+	return shown
 }
 
 // renderChecklist fits the checklist into budget characters, saying so when it

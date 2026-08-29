@@ -270,3 +270,72 @@ func expandPrompt(t *testing.T, name string) string {
 	}
 	return got
 }
+
+// A prompt that shows the ledger but never says how to name an entry leaves the
+// reviewer with the same prose-only escape hatch the ledger exists to replace.
+func TestPromptsShowingTheLedgerAlsoSayHowToNameAnEntry(t *testing.T) {
+	assets := embeddedPrompts(t)
+	shown := 0
+	for _, name := range assets.PromptNames() {
+		prompt, err := assets.Prompt(name)
+		if err != nil {
+			t.Fatalf("prompt %q: %v", name, err)
+		}
+		if !strings.Contains(prompt.Content, "{{LEDGER}}") {
+			continue
+		}
+		shown++
+		if !strings.Contains(prompt.Content, "opening token") {
+			t.Errorf("prompt %q expands the ledger but never tells the reviewer to name an entry's id", name)
+		}
+	}
+	if shown == 0 {
+		t.Error("no shipped prompt expands the ledger, so no reviewer is ever shown what was settled")
+	}
+}
+
+// The agents are where re-raises originate, so each has to be shown what is
+// already settled and told to name it rather than report it afresh.
+func TestShippedAgentsAreShownTheStandingRejections(t *testing.T) {
+	assets := embeddedPrompts(t)
+	names := assets.AgentNames()
+	if len(names) == 0 {
+		t.Fatal("no shipped agents found")
+	}
+	for _, name := range names {
+		agent, err := assets.Agent(name)
+		if err != nil {
+			t.Fatalf("agent %q: %v", name, err)
+		}
+		if !strings.Contains(agent.Content, "{{LEDGER}}") {
+			t.Errorf("agent %q is never shown the standing rejections, so it keeps rediscovering them", name)
+		}
+		if !strings.Contains(agent.Content, "naming its id") {
+			t.Errorf("agent %q is not told to name the entry it re-raises", name)
+		}
+	}
+}
+
+// Every agent must still expand under both executors after carrying the ledger.
+func TestShippedAgentsExpandForBothExecutorsWithALedger(t *testing.T) {
+	assets := embeddedPrompts(t)
+	names := assets.AgentNames()
+	vars := fullVars()
+	vars.Ledger = []string{"- R1  a.go:1  (raised comprehensive 1)\n    rejected because: out of scope\n"}
+	for _, exec := range []string{ExecutorClaude, ExecutorCodex} {
+		for _, name := range names {
+			exp := Expander{Assets: assets, Executor: exec, Vars: vars}
+			agent, err := assets.Agent(name)
+			if err != nil {
+				t.Fatalf("agent %q: %v", name, err)
+			}
+			got, err := exp.Expand(agent)
+			if err != nil {
+				t.Fatalf("agent %q under %s: %v", name, exec, err)
+			}
+			if !strings.Contains(got, "R1") {
+				t.Errorf("agent %q under %s did not expand the ledger", name, exec)
+			}
+		}
+	}
+}

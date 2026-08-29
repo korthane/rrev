@@ -69,9 +69,43 @@ func TestFindingRoundTrip(t *testing.T) {
 		t.Errorf("round trip = %+v, want %+v", parsed, f)
 	}
 
-	r := Rejection{File: "b.go", Line: 2, Reviewer: "external", Reason: "already handled by the caller"}
-	if got, want := r.String(), "REJECTED: b.go:2 | external | already handled by the caller"; got != want {
+	r := Rejection{File: "b.go", Line: 2, Reviewer: "external", Claim: "nil deref", Reason: "already handled by the caller"}
+	if got, want := r.String(), "REJECTED: b.go:2 | external | nil deref | already handled by the caller"; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
+	}
+	_, parsedRejections, _ := ParseReport(r.String())
+	if len(parsedRejections) != 1 || !reflect.DeepEqual(parsedRejections[0], r) {
+		t.Errorf("round trip = %+v, want %+v", parsedRejections, r)
+	}
+}
+
+// A re-raise is declared in the line's own opening token, so a reviewer can
+// name the ledger entry without disturbing the field layout.
+func TestReportLinesCarryDeclaredReRaises(t *testing.T) {
+	findings, rejections, _ := ParseReport(
+		"FINDING[R3]: major | a.go:9 | quality | - | leaks a handle\n" +
+			"REJECTED[R7]: b.go:2 | external | nil deref | already handled by the caller")
+
+	if len(findings) != 1 || findings[0].ReRaises != "R3" {
+		t.Errorf("findings = %+v, want one declaring R3", findings)
+	}
+	if len(rejections) != 1 || rejections[0].ReRaises != "R7" {
+		t.Errorf("rejections = %+v, want one declaring R7", rejections)
+	}
+	if got := rejections[0].String(); got != "REJECTED[R7]: b.go:2 | external | nil deref | already handled by the caller" {
+		t.Errorf("String() = %q, want the declaration preserved", got)
+	}
+}
+
+// A prompt override still emitting the older three-field rejection must keep
+// working: its last field is the reason, and the claim is simply absent.
+func TestThreeFieldRejectionStillParses(t *testing.T) {
+	_, rejections, _ := ParseReport("REJECTED: b.go:2 | external | already handled by the caller")
+	if len(rejections) != 1 {
+		t.Fatalf("rejections = %+v, want one", rejections)
+	}
+	if rejections[0].Reason != "already handled by the caller" || rejections[0].Claim != "" {
+		t.Errorf("rejection = %+v, want the text read as the reason", rejections[0])
 	}
 }
 

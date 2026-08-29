@@ -29,11 +29,11 @@
 
 ## 4. Reviewer Context
 
-- [ ] 4.1 Expand the standing ledger into phase prompts with identifiers, locations, claims, and rationales
-- [ ] 4.2 Truncate the ledger at the configured prompt budget by keeping the most frequently raised entries and stating in the prompt that truncation occurred, verified by a test over an oversized ledger
-- [ ] 4.3 Instruct reviewers in the default prompts to name the ledger entry a finding re-raises, and verify every shipped prompt carrying the ledger also carries that instruction
-- [ ] 4.4 Update the default reviewer agents so a re-raise is reported with its identifier rather than as prose, and verify each shipped agent definition still expands cleanly for both executors
-- [ ] 4.5 Write tests for new functionality and run project tests - must pass before next task
+- [x] 4.1 Expand the standing ledger into phase prompts with identifiers, locations, claims, and rationales
+- [x] 4.2 Truncate the ledger at the configured prompt budget by keeping the most frequently raised entries and stating in the prompt that truncation occurred, verified by a test over an oversized ledger
+- [x] 4.3 Instruct reviewers in the default prompts to name the ledger entry a finding re-raises, and verify every shipped prompt carrying the ledger also carries that instruction
+- [x] 4.4 Update the default reviewer agents so a re-raise is reported with its identifier rather than as prose, and verify each shipped agent definition still expands cleanly for both executors
+- [x] 4.5 Write tests for new functionality and run project tests - must pass before next task
 
 ## 5. Console Attribution
 

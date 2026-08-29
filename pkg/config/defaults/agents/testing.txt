@@ -46,6 +46,17 @@ Watch for tests that don't actually verify code:
 
 You may run the project's test suite to check for failing or flaky tests - report failures, do not fix them.
 
+## Already settled
+
+These were reported in an earlier iteration and dismissed with a reason:
+
+{{LEDGER}}
+
+If what you found is one of those, do not report it as a new finding. Either
+drop it, or report it naming its id and saying what the recorded reason gets
+wrong. Re-reporting a settled question unchanged is the single largest waste in
+a long review.
+
 ## What to Report
 
 For each finding:

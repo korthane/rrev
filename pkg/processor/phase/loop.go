@@ -247,6 +247,9 @@ func (e *Env) confirmedAction() string {
 func (e *Env) iterVars(n, limit int) config.Vars {
 	vars := e.Vars
 	vars.Iteration, vars.MaxIterations = n, limit
+	// Read fresh each iteration: the ledger is what the previous iteration
+	// learned, and expanding a stale copy would re-open questions it settled.
+	vars.Ledger = e.Log.PromptEntries()
 	return vars
 }
 

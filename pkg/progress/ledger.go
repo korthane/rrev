@@ -158,3 +158,28 @@ func describeRaises(raises []raise) string {
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
+
+// PromptEntries renders the standing rejections for expansion into a prompt,
+// most-raised first. This is the change's primary lever: a reviewer that can
+// see what has already been settled spends its iteration on new ground instead
+// of re-arguing a question the log already answered.
+func (l *Log) PromptEntries() []string {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	entries := l.standingEntries()
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		var b strings.Builder
+		fmt.Fprintf(&b, "- %s  %s  (raised %s)\n", e.ID, strings.Join(e.Locations, ", "), describeRaises(e.Raises))
+		if e.Claim != "" && oneLine(e.Claim) != oneLine(e.Rationale) {
+			fmt.Fprintf(&b, "    claim: %s\n", oneLine(e.Claim))
+		}
+		fmt.Fprintf(&b, "    rejected because: %s\n", oneLine(e.Rationale))
+		out = append(out, b.String())
+	}
+	return out
+}
