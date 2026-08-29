@@ -675,6 +675,12 @@ func TestUnverifiedRejectionDoesNotEnterTheLedger(t *testing.T) {
 	if len(log.PromptEntries()) != 0 {
 		t.Errorf("ledger = %v, want no standing entry from an unverified call", log.PromptEntries())
 	}
+	// Dropping it silently leaves the author of a custom review command with no
+	// sign their REJECTED: lines went nowhere; every other degradation on this
+	// path says so in the log.
+	if want := "1 rejection(s) from codex discarded"; !strings.Contains(string(data), want) {
+		t.Errorf("log missing %q\n--- log ---\n%s", want, data)
+	}
 }
 
 // A run killed mid-review leaves the log as silent as the console was. The

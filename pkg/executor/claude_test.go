@@ -326,6 +326,20 @@ func runFixture(t *testing.T, fixture string) (executor.Result, string) {
 	return result, stream.String()
 }
 
+// runDebugFixture replays a recorded stream with debug on, where the caps that
+// keep normal output readable are lifted.
+func runDebugFixture(t *testing.T, fixture string) string {
+	t.Helper()
+	tool := newFakeTool(t, fakeToolOpts{fixture: fixture})
+	var stream strings.Builder
+	if _, err := (executor.Claude{Command: tool.path, Debug: true}).Run(t.Context(), executor.Request{
+		Prompt: "review", Dir: t.TempDir(), Stream: &stream,
+	}); err != nil {
+		t.Fatalf("run claude: %v", err)
+	}
+	return stream.String()
+}
+
 func runToolFixture(t *testing.T) string {
 	t.Helper()
 	_, stream := runFixture(t, "claude_tools.jsonl")

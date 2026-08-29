@@ -415,7 +415,11 @@ produced, whether an external review tool ran and what it returned, and each
 loop's termination reason. An external phase that converges in silence and one
 whose tool died quietly are recorded differently, because they call for opposite
 responses. A progress directory that cannot be written degrades the run to
-logging disabled rather than aborting it.
+logging disabled rather than aborting it. Logging disabled takes the ledger with
+it: with nothing recorded there are no standing rejections to expand, so every
+prompt is told nothing has been rejected yet and no recurrence is counted. The
+review still runs — it just re-argues what it dismissed, as it did before the
+ledger existed.
 
 Every finding the log records carries an identifier — `R1`, `R2`, … — assigned
 when it is first recorded and shown on its entry. They run in one sequence for

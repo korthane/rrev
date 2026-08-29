@@ -23,7 +23,7 @@ var startsLikeRecord = regexp.MustCompile(`^- \*\*rejected\*\* `)
 
 // ledgerRow is a whole line of a rendered ledger entry: its heading row, or one
 // of the indented claim and rationale lines beneath it.
-var ledgerRow = regexp.MustCompile("^(- \\*\\*R\\d+\\*\\* `[^`]*` — raised .+|  (claim|rejected): .+|  since confirmed; no longer standing)$")
+var ledgerRow = regexp.MustCompile("^(- \\*\\*R\\d+\\*\\* `[^`]*` — raised .+|  (claim|rejected): .+|Since confirmed, no longer standing:)$")
 
 func openLog(t *testing.T, dir, change string, opts progress.Options) *progress.Log {
 	t.Helper()

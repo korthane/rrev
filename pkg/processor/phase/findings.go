@@ -153,8 +153,9 @@ func ParseReport(output string) ([]Finding, []Rejection, []Validation) {
 
 // cutKind reads a report line's opening token, returning its kind, the ledger
 // id it declared, and the rest of the line. A line whose token rrev does not
-// know is not a report line. Spacing around the declaration is tolerated:
-// losing a whole finding over `FINDING [R3]:` costs a reviewer's report.
+// know is not a report line. Spacing and a missing closing bracket are both
+// tolerated: losing a whole finding over `FINDING [R3]:` or `FINDING[R3:`
+// costs a reviewer's report, which is far worse than a mangled id.
 func cutKind(line string) (kind, id, rest string, ok bool) {
 	head, rest, ok := strings.Cut(line, ":")
 	if !ok {
@@ -162,8 +163,8 @@ func cutKind(line string) (kind, id, rest string, ok bool) {
 	}
 	head = strings.TrimSpace(head)
 	kind = head
-	if open := strings.IndexByte(head, '['); open >= 0 && strings.HasSuffix(head, "]") {
-		kind, id = strings.TrimSpace(head[:open]), head[open+1:len(head)-1]
+	if before, after, found := strings.Cut(head, "["); found {
+		kind, id = strings.TrimSpace(before), strings.Trim(after, "] \t")
 	}
 	switch kind {
 	case findingKind, rejectedKind, validationKind:

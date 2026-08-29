@@ -106,6 +106,12 @@ func (l *Log) resolve(f Finding) (*ledgerEntry, string) {
 		return e, ""
 	}
 	e := l.newEntry()
+	// A reviewer that invents the next id in sequence gets it: saying the
+	// re-raise of R4 was recorded as R4 reads as a rendering fault rather than
+	// the degradation it is.
+	if e.ID == f.ReRaises {
+		return e, fmt.Sprintf("%s was not in the ledger; recorded as a new finding under that id", f.ReRaises)
+	}
 	return e, fmt.Sprintf("re-raise of unknown entry %s recorded as new finding %s", f.ReRaises, e.ID)
 }
 
@@ -156,9 +162,15 @@ func (l *Log) renderLedger() string {
 	for _, e := range standing {
 		writeLedgerRow(&b, e)
 	}
+	// The retired rows get their own heading rather than a trailer on each: a
+	// reader skimming bullets under "Already raised and rejected" takes them
+	// for live rejections and learns otherwise from the line least likely to
+	// be read.
+	if len(retired) > 0 {
+		b.WriteString("\nSince confirmed, no longer standing:\n\n")
+	}
 	for _, e := range retired {
 		writeLedgerRow(&b, e)
-		b.WriteString("  since confirmed; no longer standing\n")
 	}
 	return b.String()
 }

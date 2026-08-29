@@ -32,4 +32,6 @@
 {"type": "assistant", "parent_tool_use_id": "a8", "message": {"content": [{"type": "text", "text": "spoken under a rogue name"}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "\u001b", "id": "t5", "input": {"command": "true"}}]}}
 {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t5", "is_error": false}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "id": "t6", "input": {"command": "make lint", "description": "lint"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t6", "is_error": false, "content": "ok"}]}}
 {"type": "result", "subtype": "success", "is_error": false, "result": "done"}

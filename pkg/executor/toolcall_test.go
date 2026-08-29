@@ -295,3 +295,33 @@ func TestControlCharactersAreStrippedFromTheToolName(t *testing.T) {
 		t.Errorf("a control character reached the display:\n%q", stream)
 	}
 }
+
+// Only a sub-agent launch names an agent. A shell call carrying a short
+// `description` alongside its command would otherwise render as `agent: lint`
+// and then prefix unrelated lines with a name no agent ever had — the guessed
+// attribution the format's silence is supposed to rule out.
+func TestNonLaunchToolWithADescriptionIsNotTakenForAnAgent(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if !strings.Contains(stream, "· tool: Bash make lint") {
+		t.Errorf("a shell call carrying a description lost its command:\n%s", stream)
+	}
+	if strings.Contains(stream, "agent: lint") {
+		t.Errorf("a non-launch tool's description was taken as an agent name:\n%s", stream)
+	}
+}
+
+// Debug lifts the caps on detail, not the requirement that there be detail. A
+// call whose result carried no content must produce no line at all: a bare
+// "· tool output:" reads as output rrev swallowed rather than output that was
+// never there.
+func TestDebugDetailIsOmittedWhenThereIsNothingToRecord(t *testing.T) {
+	stream := runDebugFixture(t, "claude_tool_edges.jsonl")
+
+	for line := range strings.SplitSeq(stream, "\n") {
+		if trimmed := strings.TrimRight(line, " "); strings.HasSuffix(trimmed, "tool output:") ||
+			strings.HasSuffix(trimmed, "tool input:") {
+			t.Errorf("an empty detail rendered as a bare label:\n%s", line)
+		}
+	}
+}

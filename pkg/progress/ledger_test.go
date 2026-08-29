@@ -123,8 +123,9 @@ func TestConfirmingAPreviouslyRejectedFindingRetiresItsEntry(t *testing.T) {
 	log.Confirmed(progress.Finding{ReRaises: "R1", Reviewer: "quality", Severity: "major", File: "a.go", Line: 7}, "fixed")
 
 	got := readLog(t, log)
-	if !strings.Contains(got, "since confirmed; no longer standing") {
-		t.Errorf("the entry must record that it was subsequently confirmed\n--- log ---\n%s", got)
+	if !strings.Contains(got, "Since confirmed, no longer standing:\n\n- **R1**") {
+		t.Errorf("a retired entry must be listed under its own heading, not mixed in\n"+
+			"with the standing rows a reader is told to argue with\n--- log ---\n%s", got)
 	}
 	// The prompt ledger is the list of open questions, so a retired entry must
 	// not be handed to the next reviewer as something still to argue with.
@@ -528,5 +529,70 @@ func TestEntryRaisedOutsideAnIterationSaysSo(t *testing.T) {
 
 	if got := readLog(t, log); !strings.Contains(got, "raised not yet") {
 		t.Errorf("a ledger row raised outside an iteration names no origin\n--- log ---\n%s", got)
+	}
+}
+
+// The unresolved-reference note belongs to every disposition, not just
+// rejections: a reviewer that declares a stale id and then confirms the finding
+// leaves the same dangling reference a reader has to explain.
+func TestUnknownIdentifierIsNotedOnEveryDisposition(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		record func(*progress.Log, progress.Finding)
+	}{
+		{"reported", func(l *progress.Log, f progress.Finding) { l.Finding(f) }},
+		{"confirmed", func(l *progress.Log, f progress.Finding) { l.Confirmed(f, "fixed") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			log := openLog(t, t.TempDir(), "change", progress.Options{})
+			log.IterationStart("comprehensive", 1, 10)
+			tc.record(log, progress.Finding{ReRaises: "R99", Reviewer: "quality", File: "a.go", Line: 7})
+
+			got := readLog(t, log)
+			if want := "note: re-raise of unknown entry R99 recorded as new finding R1"; !strings.Contains(got, want) {
+				t.Errorf("log missing %q\n--- log ---\n%s", want, got)
+			}
+		})
+	}
+}
+
+// Declaring the identifier rrev is about to issue is the off-by-one a
+// sequential scheme invites; the note must read as the degradation it is
+// rather than as "R4 recorded as R4".
+func TestDeclaringTheNextIdentifierIsNotedWithoutSelfReference(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+
+	got := readLog(t, log)
+	if want := "note: R1 was not in the ledger; recorded as a new finding under that id"; !strings.Contains(got, want) {
+		t.Errorf("log missing %q\n--- log ---\n%s", want, got)
+	}
+}
+
+// Prompt entries are joined with no separator, so a rationale that keeps its
+// newlines runs out of its block and into the next entry's bullet in every
+// reviewer prompt and every agent copy.
+func TestPromptEntryFlattensMultiLineClaimAndRationale(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7,
+		Summary: "claim first\n\nclaim second"}, "reason first\n\nreason second")
+
+	got := log.PromptEntries()
+	if len(got) != 1 {
+		t.Fatalf("PromptEntries = %q, want one entry", got)
+	}
+	for _, want := range []string{"claim: claim first claim second\n", "rejected because: reason first reason second\n"} {
+		if !strings.Contains(got[0], want) {
+			t.Errorf("prompt entry missing %q\n--- entry ---\n%s", want, got[0])
+		}
+	}
+	for line := range strings.SplitSeq(strings.TrimRight(got[0], "\n"), "\n") {
+		if strings.HasPrefix(line, "claim second") || strings.HasPrefix(line, "reason second") {
+			t.Errorf("detail line %q escaped its entry and reads as a new one", line)
+		}
 	}
 }

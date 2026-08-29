@@ -248,16 +248,20 @@ func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection
 		}
 		e.Log.Finding(findings[i].entry())
 	}
+	// Only a verified call may dismiss. A rejection becomes a standing ledger
+	// entry shown to every later reviewer, so accepting one from the unverified
+	// second opinion would silence them on a claim nobody checked against the
+	// code. Saying so is what tells the author of a custom review command that
+	// their REJECTED: lines went nowhere; every other degradation on this path
+	// announces itself the same way.
+	if !call.verified && len(rejections) > 0 {
+		e.Log.Note(fmt.Sprintf("%d rejection(s) from %s discarded: only a verified call may dismiss a finding",
+			len(rejections), call.exec.Name()))
+		rejections = nil
+	}
 	for i := range rejections {
 		if rejections[i].Reviewer == "" {
 			rejections[i].Reviewer = call.exec.Name()
-		}
-		// Only a verified call may dismiss. A rejection becomes a standing
-		// ledger entry shown to every later reviewer, so accepting one from the
-		// unverified second opinion would silence them on a claim nobody
-		// checked against the code.
-		if !call.verified {
-			continue
 		}
 		e.Log.Rejected(rejections[i].entry(), rejections[i].Reason)
 	}

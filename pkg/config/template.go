@@ -124,9 +124,6 @@ type Expander struct {
 	Assets   Assets
 	Executor string
 	Vars     Vars
-	// ledger is what {{LEDGER}} expands to. Expand sets it to a sentinel so
-	// the sites can be counted before the ledger is fitted to them.
-	ledger string
 }
 
 // Prompt resolves a phase prompt by name and expands it.
@@ -147,7 +144,6 @@ func (e Expander) Prompt(name string) (string, error) {
 // the ledger eight times, so budgeting each copy separately would let the
 // prompt run to eight times the configured size.
 func (e Expander) Expand(asset Asset) (string, error) {
-	e.ledger = ledgerSentinel
 	out, err := e.expand(asset, true)
 	if err != nil {
 		return "", err
@@ -177,7 +173,7 @@ func parseRef(body string) (name, arg string, isDirective bool) {
 // allowAgents false: an agent that could reference agents would recurse.
 func (e Expander) expand(asset Asset, allowAgents bool) (string, error) {
 	values := e.Vars.values()
-	values[varLedger] = e.ledger
+	values[varLedger] = ledgerSentinel
 	var b strings.Builder
 	rest := asset.Content
 	for {

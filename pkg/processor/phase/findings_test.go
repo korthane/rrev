@@ -154,6 +154,9 @@ func TestReportTokenToleratesSpacingAroundTheDeclaration(t *testing.T) {
 		"FINDING [R3]: major | a.go:1 | quality | - | the handler leaks",
 		"FINDING[R3] : major | a.go:1 | quality | - | the handler leaks",
 		"FINDING[ R3 ]: major | a.go:1 | quality | - | the handler leaks",
+		// An unclosed bracket costs the id at worst; dropping the whole line
+		// would cost the finding, which is what this tolerance exists for.
+		"FINDING[R3: major | a.go:1 | quality | - | the handler leaks",
 	} {
 		findings, _, _ := ParseReport(line)
 		if len(findings) != 1 {
