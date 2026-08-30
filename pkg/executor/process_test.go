@@ -219,7 +219,7 @@ func TestTimeoutFailureKeepsTheToolsLastWords(t *testing.T) {
 		t.Fatalf("error = %v, want a session timeout", err)
 	}
 	cause := executor.Describe(err)
-	if !strings.HasSuffix(cause.Summary(), ": timeout") {
+	if cause.Summary() != "custom: timeout" {
 		t.Errorf("summary = %q, want the tool named with its classification", cause.Summary())
 	}
 	for _, want := range []string{"session timeout", "running the suite"} {

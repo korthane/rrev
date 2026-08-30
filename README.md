@@ -444,18 +444,20 @@ phase and iteration, the tool, its classification — usage limit, transient
 failure, timeout, cancelled, or plain failure — and its exit status when the
 tool exited on its own; a call cut short by a bound or a cancellation, one
 that ended on `<<<RREV:TASK_FAILED>>>`, or a refusal the tool printed before
-exiting zero, has none and the summary omits it. A diagnostic tail follows. The
-tail is the tool's standard error, or the last lines it wrote to standard output
-when standard error is empty, because a tool that reports its own error on
-stdout and exits silently otherwise leaves an exit status and nothing else. The
-tail keeps the final twenty non-blank lines of the last 8 KiB the tool wrote,
-led by the line that explains the end — the matched refusal, the bound a timeout
-expired, or, when there is no exit status, the error that stopped the call —
-and marks the omission when the line bound cut earlier ones. Lines are counted after terminal noise is
-flattened: a carriage return a progress bar redraws with becomes a line break,
-and escape sequences and other control characters are dropped, so the log and
-the console show what the tool said rather than how it painted it. The console
-prints the same summary and tail as the phase ends.
+exiting zero, has none and the summary omits it. A failure no tool owns — a
+prompt that would not expand — is summarised by its own error text instead. A
+diagnostic tail follows. The tail is the tool's standard error, or the last
+lines it wrote to standard output when standard error is empty, because a tool
+that reports its own error on stdout and exits silently otherwise leaves an
+exit status and nothing else. The tail keeps the final twenty non-blank lines
+of the last 8 KiB the tool wrote, led by the line that explains the end — the
+matched refusal, the bound a timeout expired, or, when there is no exit
+status, the error that stopped the call — and marks the omission when the line
+bound cut earlier ones. Lines are counted after terminal noise is flattened: a
+carriage return a progress bar redraws with becomes a line break, and escape
+sequences and other control characters are dropped, so the log and the console
+show what the tool said rather than how it painted it. The console prints the
+same summary and tail as the phase ends.
 
 A call the executor classified as a transient failure is retried, up to twice
 per iteration, and every attempt is recorded the same way, followed by a note

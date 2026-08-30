@@ -185,6 +185,9 @@ func TestStdoutTailStartsOnALineBoundary(t *testing.T) {
 	if !ok {
 		t.Fatalf("err = %v, want *executor.Error", err)
 	}
+	if len(failure.Output) > tailBytes {
+		t.Errorf("tail holds %d bytes, want at most %d", len(failure.Output), tailBytes)
+	}
 	first, _, _ := strings.Cut(failure.Output, "\n")
 	if !strings.HasPrefix(first, "line ") || !strings.HasSuffix(first, "still reviewing") {
 		t.Errorf("tail opens with a fragment %q, want a whole line", first)
@@ -194,25 +197,80 @@ func TestStdoutTailStartsOnALineBoundary(t *testing.T) {
 	}
 }
 
-// A last line longer than the byte bound — one minified error blob — has no
-// earlier line boundary to start from. Keeping its end beats keeping nothing.
-func TestStdoutTailKeepsAnOversizedLastLine(t *testing.T) {
-	line := "Error: " + strings.Repeat("é", 12000) + " END"
-	tool := newFakeTool(t, fakeToolOpts{stdout: "Reviewing.\n" + line + "\n", exit: 1})
+// tailBytes is the byte bound both diagnostic tails are captured at.
+const tailBytes = 8 << 10
 
-	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "review", Dir: t.TempDir()})
+// A last line longer than the byte bound — one minified error blob — has no
+// earlier line boundary to start from. Keeping its end beats keeping nothing,
+// on whichever stream it arrived.
+func TestTailKeepsAnOversizedLastLine(t *testing.T) {
+	line := "Error: " + strings.Repeat("é", 12000) + " END"
+	for name, opts := range map[string]fakeToolOpts{
+		"stdout": {stdout: "Reviewing.\n" + line + "\n", exit: 1},
+		"stderr": {stderr: "Reviewing.\n" + line + "\n", exit: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tool := newFakeTool(t, opts)
+
+			_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "review", Dir: t.TempDir()})
+			failure, ok := errors.AsType[*executor.Error](err)
+			if !ok {
+				t.Fatalf("err = %v, want *executor.Error", err)
+			}
+			tail := failure.Output
+			if name == "stderr" {
+				tail = failure.Stderr
+			}
+			if !strings.HasSuffix(tail, "é END") {
+				t.Errorf("tail lost the oversized last line: %q", tail[max(0, len(tail)-40):])
+			}
+			if !utf8.ValidString(tail) {
+				t.Error("tail opens mid-rune")
+			}
+			if c := executor.Describe(err); !strings.HasSuffix(c.Detail(), "é END") {
+				t.Errorf("detail = %q, want the line's end", c.Detail()[max(0, len(c.Detail())-40):])
+			}
+		})
+	}
+}
+
+// A line over the scanner's bound ends the call without an exit status. The
+// record still names the tool, leads with why, and keeps what came before;
+// and the tool, still writing into a pipe nobody reads, must not hang Wait.
+func TestScannerOverflowIsRecordedWithItsCause(t *testing.T) {
+	blob := strings.Repeat("x", 9<<20)
+	tool := newFakeTool(t, fakeToolOpts{stdout: "Reviewing.\n" + blob + "\nafter\n"})
+	// The bound turns a missing drain into a failed test rather than a hang.
+	custom := executor.Custom{Command: tool.path, Limits: executor.Limits{Session: 30 * time.Second}}
+
+	_, err := custom.Run(t.Context(), executor.Request{Prompt: "review", Dir: t.TempDir()})
+
 	failure, ok := errors.AsType[*executor.Error](err)
-	if !ok {
-		t.Fatalf("err = %v, want *executor.Error", err)
+	if !ok || failure.ExitCode != -1 {
+		t.Fatalf("err = %v, want *executor.Error without an exit status", err)
 	}
-	if !strings.HasSuffix(failure.Output, "é END") {
-		t.Errorf("tail lost the oversized last line: %q", failure.Output[max(0, len(failure.Output)-40):])
+	c := executor.Describe(err)
+	if c.Summary() != "custom: failure" {
+		t.Errorf("summary = %q", c.Summary())
 	}
-	if !utf8.ValidString(failure.Output) {
-		t.Error("tail opens mid-rune")
+	if want := "read output: bufio.Scanner: token too long\nReviewing."; c.Detail() != want {
+		t.Errorf("detail = %q, want %q", c.Detail(), want)
 	}
-	if c := executor.Describe(err); !strings.HasSuffix(c.Detail(), "é END") {
-		t.Errorf("detail = %q, want the line's end", c.Detail()[max(0, len(c.Detail())-40):])
+}
+
+// A failure no tool owns — a prompt that would not expand, an error from
+// before any call — has only its own text to be summarised by; "failure"
+// alone under the log's "failed" marker says nothing. The reason is shown
+// with the same terminal noise removed as the tail.
+func TestDescribeNamesTheErrorWhenNoToolOwnsIt(t *testing.T) {
+	c := executor.Describe(errors.New("template external_eval.txt: \x1b[31munknown variable\x1b[0m"))
+	if c.Summary() != "template external_eval.txt: unknown variable" || c.Detail() != "" {
+		t.Errorf("summary = %q, detail = %q; want the error as the summary, once", c.Summary(), c.Detail())
+	}
+	owned := &executor.Error{Tool: "claude", ExitCode: -1, Output: "Reviewing.", Err: errors.New("signal: \x1b[1mkilled\x1b[0m")}
+	c = executor.Describe(owned)
+	if c.Summary() != "claude: failure" || c.Detail() != "signal: killed\nReviewing." {
+		t.Errorf("summary = %q, detail = %q; want the tool's summary and a flattened reason", c.Summary(), c.Detail())
 	}
 }
 
@@ -259,6 +317,9 @@ func TestStderrTailStartsOnALineBoundary(t *testing.T) {
 	failure, ok := errors.AsType[*executor.Error](err)
 	if !ok {
 		t.Fatalf("err = %v, want *executor.Error", err)
+	}
+	if len(failure.Stderr) > tailBytes {
+		t.Errorf("stderr tail holds %d bytes, want at most %d", len(failure.Stderr), tailBytes)
 	}
 	first, _, _ := strings.Cut(failure.Stderr, "\n")
 	if !strings.HasPrefix(first, "line ") || !strings.HasSuffix(first, "still reviewing") {

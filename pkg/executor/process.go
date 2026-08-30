@@ -150,12 +150,16 @@ func killOnCancel(ctx context.Context, group *processGroup) func() {
 }
 
 func (c command) fail(stderr *tailWriter, col *collector, err error) error {
+	// The stdout tail goes through the same writer as stderr, so both are
+	// cut at the same bound and tidied the same way.
+	stdout := &tailWriter{limit: stderrTailBytes}
+	_, _ = stdout.Write([]byte(col.text.String()))
 	failure := &Error{
 		Tool:     c.tool,
 		Args:     c.args,
 		ExitCode: -1,
 		Stderr:   stderr.String(),
-		Output:   tailOf(col.text.String(), stderrTailBytes),
+		Output:   stdout.String(),
 		Err:      err,
 	}
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
@@ -209,15 +213,6 @@ func (w *tailWriter) String() string {
 	text := string(w.buf)
 	if w.cut {
 		text = afterCut(text)
-	}
-	return strings.TrimSpace(text)
-}
-
-// tailOf keeps the last limit bytes of text, which is where a crashing tool
-// puts its reason.
-func tailOf(text string, limit int) string {
-	if len(text) > limit {
-		text = afterCut(text[len(text)-limit:])
 	}
 	return strings.TrimSpace(text)
 }

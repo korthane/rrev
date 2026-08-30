@@ -208,7 +208,7 @@ func Describe(err error) Cause {
 	failure, ok := errors.AsType[*Error](err)
 	if !ok {
 		if c.Reason == "" && err != nil {
-			c.Tail = err.Error()
+			c.Reason = flat(err.Error())
 		}
 		return c
 	}
@@ -223,11 +223,17 @@ func Describe(err error) Cause {
 	// rrev could not read — the wrapped error is what explains the end, and
 	// the tail beneath it is the review the tool was giving up on.
 	if failure.ExitCode < 0 && c.Reason == "" && failure.Err != nil && !errors.Is(failure.Err, context.Canceled) {
-		if reason := failure.Err.Error(); c.Tail == "" || !strings.Contains(reason, c.Tail) {
+		if reason := flat(failure.Err.Error()); c.Tail == "" || !strings.Contains(reason, c.Tail) {
 			c.Reason = reason
 		}
 	}
 	return c
+}
+
+// flat is text with the same terminal noise removed that the tail's lines
+// have, so a reason is matched against the tail and rendered on equal terms.
+func flat(text string) string {
+	return strings.TrimSpace(strings.Join(flatLines(text), "\n"))
 }
 
 // lastLines keeps the final n non-blank lines of text.
@@ -273,8 +279,22 @@ func printable(r rune) rune {
 	return r
 }
 
+// headline is what a failure no tool owns and nothing classified has to say
+// for itself: the error's first line, where the summary would otherwise read
+// as a bare "failure" under the log's "failed" marker.
+func (c Cause) headline() string {
+	if c.Tool != "" || c.Kind != "failure" {
+		return ""
+	}
+	head, _, _ := strings.Cut(c.Reason, "\n")
+	return head
+}
+
 // Summary is the one-line form: tool, classification, and exit status.
 func (c Cause) Summary() string {
+	if head := c.headline(); head != "" {
+		return head
+	}
 	var b strings.Builder
 	if c.Tool != "" {
 		b.WriteString(c.Tool + ": ")
@@ -291,8 +311,12 @@ func (c Cause) Summary() string {
 // may sit above the bound, and then it is the one line worth keeping.
 func (c Cause) Detail() string {
 	var lines []string
-	if c.Reason != "" && !strings.Contains(c.Tail, c.Reason) {
-		lines = append(lines, c.Reason)
+	reason := c.Reason
+	if c.headline() != "" {
+		_, reason, _ = strings.Cut(c.Reason, "\n")
+	}
+	if reason != "" && !strings.Contains(c.Tail, reason) {
+		lines = append(lines, reason)
 	}
 	if c.Truncated {
 		lines = append(lines, "[earlier lines omitted]")

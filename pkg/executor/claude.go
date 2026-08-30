@@ -57,7 +57,8 @@ func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
 	var reported *claudeResultError
 	err := cmd.run(ctx, col, func(line string) error {
 		err := claudeLine(col, tools, line)
-		if r, ok := errors.AsType[*claudeResultError](err); ok {
+		// The first one: it is the error run returns, so the two must agree.
+		if r, ok := errors.AsType[*claudeResultError](err); ok && reported == nil {
 			reported = r
 		}
 		return err
