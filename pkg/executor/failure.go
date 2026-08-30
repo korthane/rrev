@@ -171,6 +171,9 @@ type Cause struct {
 	// cancelled, or failure.
 	Kind     string
 	ExitCode int
+	// Reason is the classifier's own line: the refusal it matched, or the
+	// bound that expired. A refusal that exited zero has no other trace.
+	Reason string
 	// Tail is the diagnostic text: the tool's stderr, or the last lines of its
 	// stdout when stderr is empty.
 	Tail      string
@@ -195,11 +198,14 @@ func Describe(err error) Cause {
 		c.Kind = "transient failure"
 	}
 	if limit, ok := errors.AsType[*LimitError](err); ok {
-		c.Tool = limit.Tool
+		c.Tool, c.Reason = limit.Tool, limit.Reason
+	}
+	if timeout, ok := errors.AsType[*TimeoutError](err); ok {
+		c.Tool, c.Reason = timeout.Tool, timeout.Error()
 	}
 	failure, ok := errors.AsType[*Error](err)
 	if !ok {
-		if c.Tool == "" && err != nil {
+		if c.Reason == "" && err != nil {
 			c.Tail = err.Error()
 		}
 		return c
@@ -209,7 +215,7 @@ func Describe(err error) Cause {
 	if strings.TrimSpace(source) == "" {
 		source = failure.Output
 	}
-	if strings.TrimSpace(source) == "" && failure.Err != nil {
+	if strings.TrimSpace(source) == "" && failure.Err != nil && c.Reason == "" {
 		source = failure.Err.Error()
 	}
 	c.Tail, c.Truncated = lastLines(source, causeTailLines)
@@ -243,13 +249,19 @@ func (c Cause) Summary() string {
 	return b.String()
 }
 
-// Detail is the diagnostic tail, marked when it was cut.
+// Detail is the diagnostic tail, marked when it was cut. The classifier's
+// reason leads it unless the tail already holds that line: the matched line
+// may sit above the bound, and then it is the one line worth keeping.
 func (c Cause) Detail() string {
-	if c.Tail == "" {
-		return ""
+	var lines []string
+	if c.Reason != "" && !strings.Contains(c.Tail, c.Reason) {
+		lines = append(lines, c.Reason)
 	}
 	if c.Truncated {
-		return "[earlier lines omitted]\n" + c.Tail
+		lines = append(lines, "[earlier lines omitted]")
 	}
-	return c.Tail
+	if c.Tail != "" {
+		lines = append(lines, c.Tail)
+	}
+	return strings.Join(lines, "\n")
 }

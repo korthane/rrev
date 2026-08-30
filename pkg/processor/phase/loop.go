@@ -159,7 +159,10 @@ func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, n
 			writeReports(step.writeReport)()
 			return step, err
 		}
-		e.note("%s iteration %d: %v; retrying", Label(spec.name), n, err)
+		// A superseded attempt still failed: its cause is recorded like any
+		// other, so a flaky provider is diagnosable from the log afterwards.
+		e.recordFailure(spec.name, n, err)
+		e.note("%s iteration %d: retrying", Label(spec.name), n)
 	}
 }
 

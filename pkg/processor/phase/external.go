@@ -78,8 +78,9 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, state *externalSt
 	report, err := tool.step, tool.failed
 	if err != nil || report.Converged {
 		// A round that ends here was never evaluated, so the tool's own claims
-		// stay out of the phase's result; they are already in the progress log
-		// as reported-only entries.
+		// stay out of the phase's result. A converged round has already
+		// recorded them as reported-only entries; a failed round hands them
+		// back in writeReport for whoever decides the attempt is final.
 		state.pending = nil
 		return stepResult{Converged: report.Converged, output: report.output, writeReport: report.writeReport}, err
 	}
@@ -130,7 +131,10 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, state *externalSt
 func externalOutcome(report stepResult, err error) (outcome, detail string, unreadable bool) {
 	switch {
 	case err != nil:
-		return "failed", err.Error(), false
+		// The summary alone: the failure record written when the attempt is
+		// judged final carries the diagnostic tail, and repeating the raw
+		// error here would put the command line and stderr on one line first.
+		return "failed", executor.Describe(err).Summary(), false
 	case len(report.Findings) > 0:
 		return fmt.Sprintf("reported %d finding(s)", len(report.Findings)), "", false
 	case !report.Converged:

@@ -26,7 +26,7 @@ The note path renders `%v` of whatever error surfaced, which today is `claude: <
 
 ### Stdout tail only when stderr is empty
 
-A tool that writes to both usually puts the actual diagnostic on stderr and the review prose on stdout; rendering both doubles the entry for the common case. The tail is captured at the same bound as stderr (`stderrTailBytes`) and rendered with the same truncation marking the console already uses for tool arguments. The bound is a constant, not a setting: nothing in the spec asks for it to be tunable, and a setting nobody adjusts is a maintenance cost.
+A tool that writes to both usually puts the actual diagnostic on stderr and the review prose on stdout; rendering both doubles the entry for the common case. The tail is captured at the same bound as stderr (`stderrTailBytes`), rendered as its last twenty lines, and marked with an `[earlier lines omitted]` line when the line bound cut it. The classifier's own line — the matched refusal, or the bound a timeout expired — leads the detail unless the tail already holds it, since a refusal that exited zero has no other trace and a matched line may sit above the bound. The bound is a constant, not a setting: nothing in the spec asks for it to be tunable, and a setting nobody adjusts is a maintenance cost.
 
 ### Reported ids travel through the prompt, and the evaluator still declares
 
@@ -42,11 +42,11 @@ Positional or textual pairing is the inference the identity requirement forbids,
 
 ### The invocation line moves before the review call's report
 
-`ExternalTool(…, "invoked")` is already written before the call; the outcome line is written after the call returns, but the call's own `writeReport` has already written the findings by then. The outcome line moves to precede `writeReport`, which is one reordering in `externalRound`. It reads correctly and it also means a run killed during evaluation leaves the outcome on disk.
+`ExternalTool(…, "invoked")` is already written before the call; the outcome line is written after the call returns, but the call's own `writeReport` has already written the findings by then. The outcome line moves to precede `writeReport`, and the tool's `writeReport` now runs as soon as the tool returns rather than being held to the round's end, since the evaluator has to be shown the ids it hands back. That inverts the earlier hold-both-reports-together rule, so the round keeps the tool's recorded report across an evaluation re-run after a transient failure: the retry answers the same report and the same ids instead of invoking the tool again and recording its findings a second time. It reads correctly and it also means a run killed during evaluation leaves the outcome on disk.
 
 ## Risks / Trade-offs
 
 - **Evaluator ignores the id.** → Degrades to exactly today's double entry; nothing is lost that is not already lost. The end-to-end test scripts both paths.
 - **Stdout tail contains a signal marker or report line.** → It is rendered as indented detail under the failure record, which the report parser never reads, and inside the log it is inert; a later prompt expands the ledger, not the raw log.
 - **Bounded tail cuts the useful line.** → The tail is the *last* lines, which is where a crashing tool puts its reason; a tool that reports its error early and then rambles is not a case seen in practice.
-- **`Finding` gaining a return value touches every caller.** → Three call sites, all in `pkg/processor/phase`; the compiler finds them.
+- **`Finding` gaining a return value touches every caller.** → One call site, in `pkg/processor/phase`; the compiler finds it.

@@ -260,11 +260,13 @@ func TestRetriedIterationRecordsOneCopyOfItsFindings(t *testing.T) {
 	}
 	env.Log = log
 	evals := 0
-	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
+	var retryPrompt string
+	primary.Handler = func(_ context.Context, req executor.Request) (executor.Result, error) {
 		evals++
 		if evals == 1 {
 			return executor.Result{}, &executor.LimitError{Tool: "claude", Reason: "overloaded_error", Retryable: true}
 		}
+		retryPrompt = req.Prompt
 		repo.commit("head-eval")
 		return executor.Result{Output: "REJECTED: pkg/a.go:10 | external | the bound is inclusive by design"}, nil
 	}
@@ -275,11 +277,26 @@ func TestRetriedIterationRecordsOneCopyOfItsFindings(t *testing.T) {
 	if evals < 2 {
 		t.Fatalf("the iteration was never retried, so nothing was superseded:\n%s", got)
 	}
+	// The retry answers the report the tool already gave, under the ids it
+	// was recorded with, rather than invoking the tool a second time.
+	if external.CallCount() != 1 {
+		t.Errorf("external calls = %d, want 1: the retry must reuse the tool's report", external.CallCount())
+	}
+	if !strings.Contains(retryPrompt, "FINDING[R1]: major | pkg/a.go:10 | external | - | the loop bound is off by one") {
+		t.Errorf("the retried evaluation was not shown the finding under its recorded id:\n%s", retryPrompt)
+	}
 	if n := strings.Count(got, "the loop bound is off by one"); n != 1 {
 		t.Errorf("the tool's finding is recorded %d times over one iteration, want once:\n%s", n, got)
 	}
 	if n := strings.Count(got, "the bound is inclusive by design"); n != 2 {
 		t.Errorf("the rejection appears %d times, want its record and its one ledger row:\n%s", n, got)
+	}
+	// The superseded attempt still failed, and its cause is recorded like any
+	// other rather than left as a one-line note.
+	for _, want := range []string{"- **failed** claude: transient failure — external iteration 1", "  overloaded_error"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log missing %q for the retried attempt:\n%s", want, got)
+		}
 	}
 }
 
@@ -529,5 +546,28 @@ func TestEvaluatorOmittingTheIdRecordsANewFinding(t *testing.T) {
 	}
 	if strings.Contains(got, "**R1** `pkg/a.go:10`") {
 		t.Errorf("the reported entry must not enter the ledger on its own:\n%s", got)
+	}
+}
+
+// The ids pair with the findings by position, which is the order record()
+// handed them out in; a finding the log gave no id renders bare, so the
+// evaluator declares nothing for it rather than something wrong.
+func TestRenderExternalFindingsPairsIdsByPosition(t *testing.T) {
+	findings := []Finding{
+		{Severity: "minor", File: "a.go", Line: 1, Reviewer: "external", Summary: "one"},
+		{Severity: "major", File: "b.go", Line: 2, Reviewer: "external", Summary: "two", ReRaises: "R9"},
+		{Severity: "minor", File: "c.go", Line: 3, Reviewer: "external", Summary: "three"},
+	}
+	want := []string{
+		"FINDING[R1]: minor | a.go:1 | external | - | one",
+		"FINDING[R3]: major | b.go:2 | external | - | two",
+		"FINDING: minor | c.go:3 | external | - | three",
+	}
+	got := renderExternalFindings([]string{"R1", "R3"}, findings)
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("rendered:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if got := renderExternalFindings(nil, findings[:1]); len(got) != 1 || got[0] != "FINDING: minor | a.go:1 | external | - | one" {
+		t.Errorf("with no ids the lines must render bare, got %q", got)
 	}
 }

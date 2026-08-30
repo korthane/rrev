@@ -386,6 +386,10 @@ func (l *Log) track(f Finding, d disposition, rationale string) (*ledgerEntry, s
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	e, note := l.resolve(f)
+	// A repeat is a rejection of something already judged. An entry that was
+	// only reported — the external tool's finding, awaiting its evaluator — is
+	// receiving its first disposition, however it was addressed.
+	judged := e.Rationale != "" || e.Confirmed
 	e.addLocation(f.location())
 	if e.Claim == "" {
 		e.Claim = f.Summary
@@ -419,10 +423,10 @@ func (l *Log) track(f Finding, d disposition, rationale string) (*ledgerEntry, s
 	case confirmed:
 		l.cur.countConfirmed(f)
 	case rejected:
-		// A note means the declared id did not resolve, so a new entry was
-		// opened; counting that as a re-raise would contradict the entry
-		// beside it and inflate the recurrence rate a reader judges by.
-		l.cur.countRejected(f.ReRaises != "" && note == "")
+		// An unresolved id opened a new entry, and a reported-only entry has
+		// no judgement to repeat: counting either as a re-raise would
+		// inflate the recurrence rate a reader judges by.
+		l.cur.countRejected(judged)
 	case reported:
 	}
 	return e, note

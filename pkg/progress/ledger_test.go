@@ -693,3 +693,36 @@ func TestExecutorFailureRecordsItsCause(t *testing.T) {
 		})
 	}
 }
+
+// The evaluator's disposition of a finding the external tool reported is that
+// finding's first judgement, not a recurrence of one: counting it as a repeat
+// would make every external round read as re-litigation.
+func TestFirstDispositionOfAReportedFindingCountsAsNew(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+	log.IterationStart("external", 1, 5)
+	id := log.Finding(progress.Finding{Reviewer: "external", File: "a.go", Line: 7, Summary: "off by one"})
+	log.Rejected(progress.Finding{ReRaises: id, Reviewer: "claude", File: "a.go", Line: 7}, "the bound is inclusive by design")
+	log.IterationStart("external", 2, 5)
+	log.Rejected(progress.Finding{ReRaises: id, Reviewer: "claude", File: "a.go", Line: 7}, "the bound is inclusive by design")
+	log.LoopEnd("external", "converged", 2)
+
+	got := readLog(t, log)
+	if want := "rejected 1 (1 new, 0 repeat)"; !strings.Contains(got, want) {
+		t.Errorf("iteration 1's summary missing %q\n--- log ---\n%s", want, got)
+	}
+	if want := "rejected 1 (0 new, 1 repeat)"; !strings.Contains(got, want) {
+		t.Errorf("iteration 2's summary missing %q\n--- log ---\n%s", want, got)
+	}
+}
+
+// A record with nothing but a phase still reads as a record, and a disabled
+// log swallows it as it does everything else.
+func TestExecutorFailureToleratesSparseFields(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+	log.ExecutorFailure(progress.Failure{Phase: "finalize"})
+
+	if got := readLog(t, log); !strings.Contains(got, "- **failed** unknown — finalize\n") {
+		t.Errorf("log missing the sparse record\n--- log ---\n%s", got)
+	}
+	progress.Disabled().ExecutorFailure(progress.Failure{Summary: "claude: failure (exit 1)"})
+}

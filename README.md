@@ -272,7 +272,11 @@ ledger existed carries no `{{LEDGER}}`, and a variable a file never mentions is
 not an error — only an unrecognized one is — so that reviewer is shown nothing
 that was settled and names no identifiers, and each of its re-raises opens a
 fresh ledger entry. To bring an override up to date, copy the standing-rejections
-block and the id instruction across from the shipped default.
+block and the id instruction across from the shipped default. The same holds for
+an `external_eval.txt` override that omits `{{EXTERNAL_FINDINGS}}`: the evaluator
+is shown the tool's findings without their ids, so each confirmation or rejection
+opens a second entry beside the reported one. Copy the parsed-findings block and
+the carry-the-id paragraph from the shipped default.
 
 | Prompt | Phase |
 | --- | --- |
@@ -437,7 +441,9 @@ failure, timeout, cancelled, or plain failure — and its exit status, followed 
 a diagnostic tail. The tail is the tool's standard error, or the last lines it
 wrote to standard output when standard error is empty, because a tool that
 reports its own error on stdout and exits silently otherwise leaves an exit
-status and nothing else. The tail keeps the final twenty lines and says so when
+status and nothing else. The tail keeps the final twenty lines of the last 8 KiB
+the tool wrote, led by the line the classification was made from — the matched
+refusal, or the bound a timeout expired — and says so when
 it cut earlier ones. The console prints the same summary and tail as the phase
 ends.
 

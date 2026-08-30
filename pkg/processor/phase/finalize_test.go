@@ -2,11 +2,13 @@ package phase
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/korthane/rrev/pkg/config"
+	"github.com/korthane/rrev/pkg/executor"
 	"github.com/korthane/rrev/pkg/progress"
 )
 
@@ -70,5 +72,40 @@ func TestFinalizeRecordsItsFindingsInsideAnIterationSection(t *testing.T) {
 	}
 	if !strings.Contains(got, "raised finalize 1") {
 		t.Errorf("a ledger entry raised in finalize records no phase or iteration:\n%s", got)
+	}
+}
+
+// A failed finalize step says why, in the log and on the console, the same way
+// a failed loop does: a cause the console alone carried would be gone by the
+// time anyone reads the log.
+func TestFinalizeFailureIsRecordedWithItsCause(t *testing.T) {
+	primary := mock("claude", "")
+	env, _ := newEnv(t, primary, nil, func(c *config.Config) { c.Finalize = true })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	var console strings.Builder
+	env.Out = &console
+	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
+		return executor.Result{}, &executor.Error{Tool: "claude", ExitCode: 1, Output: "Error: prompt is too long", Err: errors.New("exit status 1")}
+	}
+
+	res := Finalize(context.Background(), env, Result{Name: NameComprehensive, Reason: ReasonConverged, Iterations: 1})
+
+	if res.Reason != ReasonFailure || res.Err == nil {
+		t.Fatalf("result = %+v, want a failed step", res)
+	}
+	got := readFile(t, log.Path())
+	for _, want := range []string{"- **failed** claude: failure (exit 1) — finalize iteration 1", "  Error: prompt is too long"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+	for _, want := range []string{"failed: claude: failure (exit 1)", "  Error: prompt is too long"} {
+		if !strings.Contains(console.String(), want) {
+			t.Errorf("console missing %q:\n%s", want, console.String())
+		}
 	}
 }

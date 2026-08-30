@@ -111,7 +111,9 @@ func (c command) run(ctx context.Context, col *collector, onLine func(string) er
 	stopKill()
 
 	if timeout := guard.timeout(c.tool); timeout != nil {
-		return timeout
+		// Wrapped like any other failure so the tool's last words survive the
+		// bound that cut it short; the timeout sentinels still match through it.
+		return c.fail(stderr, col, timeout)
 	}
 	switch {
 	case waitErr != nil && ctx.Err() != nil:
@@ -208,6 +210,11 @@ func (w *tailWriter) String() string { return strings.TrimSpace(string(w.buf)) }
 func tailOf(text string, limit int) string {
 	if len(text) > limit {
 		text = text[len(text)-limit:]
+		// The cut lands mid-line, possibly mid-rune; what precedes the first
+		// newline is a fragment the tool never wrote as a line.
+		if i := strings.IndexByte(text, '\n'); i >= 0 {
+			text = text[i+1:]
+		}
 	}
 	return strings.TrimSpace(text)
 }
