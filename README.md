@@ -272,7 +272,11 @@ ledger existed carries no `{{LEDGER}}`, and a variable a file never mentions is
 not an error — only an unrecognized one is — so that reviewer is shown nothing
 that was settled and names no identifiers, and each of its re-raises opens a
 fresh ledger entry. To bring an override up to date, copy the standing-rejections
-block and the id instruction across from the shipped default.
+block and the id instruction across from the shipped default. The same holds for
+an `external_eval.txt` override that omits `{{EXTERNAL_FINDINGS}}`: the evaluator
+is shown the tool's findings without their ids, so each confirmation or rejection
+opens a second entry beside the reported one. Copy the parsed-findings block and
+the carry-the-id paragraph from the shipped default.
 
 | Prompt | Phase |
 | --- | --- |
@@ -317,6 +321,7 @@ naming the file and the variable rather than text passed through to the model.
 | `{{LEDGER}}` | the standing-rejection ledger, most-raised first |
 | `{{PRIOR_FINDINGS}}` | earlier external rounds and their dispositions |
 | `{{EXTERNAL_OUTPUT}}` | the external tool's raw report, for evaluation |
+| `{{EXTERNAL_FINDINGS}}` | the tool's parsed findings, each opening with the id it was recorded under |
 | `{{OPENSPEC_DIR}}`, `{{CHANGE_DIR}}` | the OpenSpec root and the change directory |
 | `{{PROPOSAL}}`, `{{DESIGN}}`, `{{TASKS}}`, `{{SPECS}}`, `{{ARTIFACTS}}` | the change's artifact paths |
 | `{{REQUIREMENTS}}`, `{{REQUIREMENT_COUNT}}` | the requirement checklist and its size |
@@ -357,13 +362,19 @@ REJECTED: <file>:<line> | <reviewer> | what was claimed | why it is not a real f
 VALIDATION: <pass|fail> | <the command that was run> | what failed, or -
 ```
 
-A line re-raising something the ledger already holds carries that entry's id in
-its opening token, `FINDING[R7]:` or `REJECTED[R7]:`. This is the one thing rrev
-will not work out for itself: file, line and wording all drift between
+A line naming an entry the log already holds carries that entry's id in its
+opening token, `FINDING[R7]:` or `REJECTED[R7]:` — a standing rejection a
+reviewer is re-raising, or a finding the log holds as reported, which is how the
+external evaluator's disposition lands on the entry the tool's finding was
+recorded under. This is the one thing rrev will not work out for itself: file,
+line and wording all drift between
 iterations while the finding stays the same, so a computed match would merge
 distinct findings as readily as it caught real recurrences. An undeclared line
 is recorded as a new finding, and an id the log does not hold is recorded as new
-with a note — neither costs the finding, only the recurrence count.
+with a note. Neither costs the finding: a reviewer's undeclared re-raise costs
+only the recurrence count, and an evaluator's undeclared disposition costs the
+shared identity — a second entry opens beside the reported one, which stays as
+reported.
 
 A reviewer agent writes no report lines of its own: the phase's executor reads
 its report and turns each finding into one. So the shipped agents are asked for
@@ -414,12 +425,16 @@ rejected and why, the validation outcome each iteration reported, the commits it
 produced, whether an external review tool ran and what it returned, and each
 loop's termination reason. An external phase that converges in silence and one
 whose tool died quietly are recorded differently, because they call for opposite
-responses. A progress directory that cannot be written degrades the run to
-logging disabled rather than aborting it. Logging disabled takes the ledger with
+responses, and the tool's invocation and outcome — how many findings it
+reported, that it reported none, or that it failed — are written before the
+entries for those findings, so a reader meets the summary before its detail. A
+progress directory that cannot be written degrades the run to logging disabled
+rather than aborting it. Logging disabled takes the ledger with
 it: with nothing recorded there are no standing rejections to expand, so every
 prompt is told nothing has been rejected yet and no recurrence is counted. The
 review still runs — it just re-argues what it dismissed, as it did before the
-ledger existed.
+ledger existed. The external evaluator is likewise shown the tool's findings
+without ids, since none were assigned, and its dispositions are recorded nowhere.
 
 Every finding the log records carries an identifier — `R1`, `R2`, … — assigned
 when it is first recorded and shown on its entry. They run in one sequence for
@@ -427,6 +442,44 @@ the whole run and continue past the highest id a log already holds, so a second
 run never re-issues one. A finding only ever reported, or confirmed without
 having been rejected first, has an identifier but no ledger row. Every rejection
 gets one, including a rejection that arrived with no reason.
+
+### Failures
+
+When an executor call fails, the log records why, not only that it did: the
+phase and iteration, the tool, its classification — usage limit, transient
+failure, timeout, cancelled, or plain failure — and its exit status when the
+tool exited on its own; a call cut short by a bound or a cancellation, one
+that ended on `<<<RREV:TASK_FAILED>>>`, or a refusal the tool printed before
+exiting zero, has none and the summary omits it. A failure no tool owns — a
+prompt that would not expand — is summarised by its own first line instead,
+with the rest of its message indented beneath as the detail. A
+diagnostic tail follows. The tail is the tool's standard error, or the last
+lines it wrote to standard output when standard error is empty, because a tool
+that reports its own error on stdout and exits silently otherwise leaves an
+exit status and nothing else. The tail keeps the final twenty non-blank lines
+of the last 8 KiB the tool wrote, led by the line that explains the end — the
+matched refusal, the bound a timeout expired, or, when there is no exit status
+and the call was not cancelled, the error that stopped it. That leading line is
+dropped when the tail already holds it, anywhere in the tail and not only at
+its end, and the line bound marks its omission above whichever of the two it
+cut. When that leading line is the
+error a call with no exit status wrapped, it is held to the same bounds as the
+tail beneath it. Lines are counted after terminal noise
+is flattened: a carriage return a progress bar redraws with becomes a line
+break, and escape sequences and other control characters are dropped, so the
+log and the console show what the tool said rather than how it painted it. The
+console prints the same summary and tail as the phase ends.
+
+The run's closing report names every phase that ended with something
+outstanding, and names a phase that failed in the same summary form its failure
+record used — `final review did not converge: executor failure: claude: usage
+limit (exit 1)`. The command line and the diagnostic tail stay in that record
+rather than being repeated on the last line.
+
+A call the executor classified as a transient failure is retried, up to twice
+per iteration, and every attempt is recorded the same way, followed by a note
+that the iteration is being retried — so a flaky provider is diagnosable
+afterwards even when the retry succeeded.
 
 ### Standing rejections
 
@@ -450,6 +503,20 @@ questions and told to name an entry's id rather than report it afresh. The
 finalize step is not shown the ledger: it runs after review has converged and
 reports no findings. `ledger_budget` caps what one prompt carries in all, shared
 across the prompt's own expansion and the agents it embeds.
+
+A finding the external tool reports keeps its id through evaluation: the
+evaluator is shown each parsed finding as `FINDING[R197]:` and told to carry
+that id into its own `FINDING[...]:` or `REJECTED[...]:` line, so its
+disposition updates the reported entry rather than opening a second one. rrev
+still infers nothing — an evaluator that drops the id files a new finding, as
+any undeclared report does. An evaluation re-run after a transient failure
+answers the same report and the same ids rather than invoking the tool again.
+That first disposition counts in the iteration summary as a new rejection
+rather than a repeat: the tool's report was a claim, not a judgement, so there
+was nothing yet to recur. The rule is general — a rejection is re-raised only
+when the entry it names was already judged, rejected with a reason or
+confirmed — so any later phase naming a reported-only entry counts the same
+way.
 
 The ledger spans the whole run rather than resetting per phase, because
 re-litigation crosses phases: a final-phase reviewer will re-raise what the

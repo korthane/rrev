@@ -209,3 +209,28 @@ func TestLedgerFreeAssetExpandsUnderANonZeroBudget(t *testing.T) {
 		t.Errorf("expanded to %q, want the template unchanged", got)
 	}
 }
+
+// The evaluator is handed the tool's findings under their recorded ids, so it
+// has an id to carry into its own disposition.
+func TestExternalFindingsExpandWithTheirIds(t *testing.T) {
+	exp, projectDir := expanderFor(t, ExecutorClaude, Vars{ExternalFindings: "FINDING[R7]: minor | a.go:1 | external | - | off by one\n" +
+		"FINDING[R8]: major | b.go:2 | external | - | nil deref"})
+	writeAsset(t, projectDir, KindPrompt, "external_eval", "{{EXTERNAL_FINDINGS}}")
+	got, err := exp.Prompt("external_eval")
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	if want := "FINDING[R7]: minor | a.go:1 | external | - | off by one\nFINDING[R8]: major | b.go:2 | external | - | nil deref"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	exp, projectDir = expanderFor(t, ExecutorClaude, Vars{})
+	writeAsset(t, projectDir, KindPrompt, "external_eval", "{{EXTERNAL_FINDINGS}}")
+	got, err = exp.Prompt("external_eval")
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	if !strings.Contains(got, "reported no findings") {
+		t.Errorf("an empty list must say so explicitly, got %q", got)
+	}
+}

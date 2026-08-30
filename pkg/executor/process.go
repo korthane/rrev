@@ -66,22 +66,22 @@ func (c command) run(ctx context.Context, col *collector, onLine func(string) er
 	if err != nil {
 		// Without a process group a cancelled run would orphan the tool's
 		// sub-agents, so the phase fails before anything is started.
-		return c.fail(stderr, err)
+		return c.fail(stderr, col, err)
 	}
 	defer group.close()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return c.fail(stderr, err)
+		return c.fail(stderr, col, err)
 	}
 	if err := cmd.Start(); err != nil {
-		return c.fail(stderr, err)
+		return c.fail(stderr, col, err)
 	}
 	if err := group.started(); err != nil {
 		// The tool is running but not under our control, so it is stopped here
 		// rather than left to finish a review nothing can cancel.
 		group.kill()
 		_ = cmd.Wait()
-		return c.fail(stderr, err)
+		return c.fail(stderr, col, err)
 	}
 
 	go guard.watch(cancel)
@@ -111,17 +111,22 @@ func (c command) run(ctx context.Context, col *collector, onLine func(string) er
 	stopKill()
 
 	if timeout := guard.timeout(c.tool); timeout != nil {
-		return timeout
+		// Wrapped like any other failure so the tool's last words survive the
+		// bound that cut it short; the timeout sentinels still match through it.
+		return c.fail(stderr, col, timeout)
 	}
 	switch {
 	case waitErr != nil && ctx.Err() != nil:
-		return c.fail(stderr, ctx.Err())
+		return c.fail(stderr, col, ctx.Err())
 	case waitErr != nil:
-		return c.fail(stderr, waitErr)
+		return c.fail(stderr, col, waitErr)
 	case lineErr != nil:
-		return lineErr
+		// Wrapped like every other failure: a tool that declares its own
+		// failure while exiting zero still wrote a stderr tail and a stdout
+		// tail, and they are the only account of why it gave up.
+		return c.fail(stderr, col, lineErr)
 	case scanErr != nil:
-		return c.fail(stderr, fmt.Errorf("read output: %w", scanErr))
+		return c.fail(stderr, col, fmt.Errorf("read output: %w", scanErr))
 	default:
 		return nil
 	}
@@ -147,8 +152,17 @@ func killOnCancel(ctx context.Context, group *processGroup) func() {
 	}
 }
 
-func (c command) fail(stderr *tailWriter, err error) error {
-	failure := &Error{Tool: c.tool, Args: c.args, ExitCode: -1, Stderr: stderr.String(), Err: err}
+func (c command) fail(stderr *tailWriter, col *collector, err error) error {
+	failure := &Error{
+		Tool:     c.tool,
+		Args:     c.args,
+		ExitCode: -1,
+		Stderr:   stderr.String(),
+		// The same capture bound as stderr, so both tails are cut at the
+		// same size and tidied the same way.
+		Output: bounded(col.text.String()),
+		Err:    err,
+	}
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		failure.ExitCode = exitErr.ExitCode()
 	}
@@ -184,14 +198,39 @@ func (r *activityReader) Read(p []byte) (int, error) {
 type tailWriter struct {
 	limit int
 	buf   []byte
+	cut   bool
 }
 
 func (w *tailWriter) Write(p []byte) (int, error) {
 	w.buf = append(w.buf, p...)
 	if len(w.buf) > w.limit {
-		w.buf = w.buf[len(w.buf)-w.limit:]
+		at := len(w.buf) - w.limit
+		// Only a cut that fell inside a line leaves a fragment for String to
+		// drop. Landing on a line break keeps the first retained line whole,
+		// and a later cut supersedes an earlier one: the bytes it judged are
+		// already gone from the window.
+		w.cut = w.buf[at-1] != '\n'
+		w.buf = w.buf[at:]
 	}
 	return len(p), nil
 }
 
-func (w *tailWriter) String() string { return strings.TrimSpace(string(w.buf)) }
+func (w *tailWriter) String() string {
+	text := string(w.buf)
+	if w.cut {
+		text = afterCut(text)
+	}
+	return strings.TrimSpace(text)
+}
+
+// afterCut tidies text a byte cut opened mid-line: what precedes the first
+// newline is a fragment the tool never wrote as a line. A last line longer
+// than the bound has no such newline and keeps its end, minus any bytes the
+// cut left mid-rune, rather than leaving nothing.
+func afterCut(text string) string {
+	text = strings.TrimRight(text, "\n")
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		text = text[i+1:]
+	}
+	return strings.ToValidUTF8(text, "")
+}

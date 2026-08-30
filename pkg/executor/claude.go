@@ -51,11 +51,32 @@ func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
 	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, limits: c.Limits, debug: c.Debug}
 	col := &collector{stream: out}
 	tools := newClaudeTools()
-	err := cmd.run(ctx, col, func(line string) error { return claudeLine(col, tools, line) })
+	// The result event's message is kept aside: run reports a non-zero exit
+	// ahead of it, and what claude wrote to stderr is at most a runtime
+	// warning, so the message is the reason such a failure carries.
+	var reported *claudeResultError
+	err := cmd.run(ctx, col, func(line string) error {
+		err := claudeLine(col, tools, line)
+		// The first one: it is the error run returns, so the two must agree.
+		if r, ok := errors.AsType[*claudeResultError](err); ok && reported == nil {
+			reported = r
+		}
+		return err
+	})
 	tools.flush(col)
 	result := col.result()
-	if reported, ok := errors.AsType[*claudeResultError](err); ok {
-		err = &Error{Tool: c.Name(), Args: args, ExitCode: -1, Stderr: reported.msg, Err: err}
+	if reported != nil {
+		failure, ok := errors.AsType[*Error](err)
+		if !ok {
+			failure = &Error{Tool: c.Name(), Args: args, ExitCode: -1, Err: err}
+		}
+		// Appended, not used only when stderr is empty: a Node warning on
+		// stderr must not hide the reason, and last keeps it inside the
+		// rendered tail's line bound.
+		if !strings.Contains(failure.Stderr, reported.msg) {
+			failure.Stderr = strings.TrimSpace(failure.Stderr + "\n" + reported.msg)
+		}
+		err = failure
 	}
 	return result, classify(c.Name(), result, err)
 }

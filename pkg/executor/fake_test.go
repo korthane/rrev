@@ -54,7 +54,11 @@ func newFakeTool(t *testing.T, opts fakeToolOpts) fakeTool {
 		fmt.Fprintf(&body, "cat %q\n", out)
 	}
 	if opts.stderr != "" {
-		fmt.Fprintf(&body, "printf '%%s' %q >&2\n", opts.stderr)
+		errOut := filepath.Join(dir, "stderr")
+		if err := os.WriteFile(errOut, []byte(opts.stderr), 0o600); err != nil {
+			t.Fatalf("write fake tool stderr: %v", err)
+		}
+		fmt.Fprintf(&body, "cat %q >&2\n", errOut)
 	}
 	fmt.Fprintf(&body, "exit %d\n", opts.exit)
 

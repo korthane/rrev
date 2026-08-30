@@ -205,3 +205,26 @@ func TestIdleTimeoutResetsOnPartialLine(t *testing.T) {
 		t.Errorf("output = %q, want the tool to have run to completion", result.Output)
 	}
 }
+
+// The bound that cut a call short must not also cut what the tool said before
+// it: a timeout without the tool's last words is an idle stretch and nothing
+// else to go on.
+func TestTimeoutFailureKeepsTheToolsLastWords(t *testing.T) {
+	tool := newScript(t, "echo running the suite\nsleep 30\n")
+	custom := executor.Custom{Command: tool, Limits: executor.Limits{Session: 2 * time.Second}}
+
+	_, err := custom.Run(t.Context(), executor.Request{Prompt: "p"})
+
+	if !errors.Is(err, executor.ErrSessionTimeout) {
+		t.Fatalf("error = %v, want a session timeout", err)
+	}
+	cause := executor.Describe(err)
+	if cause.Summary() != "custom: timeout" {
+		t.Errorf("summary = %q, want the tool named with its classification", cause.Summary())
+	}
+	for _, want := range []string{"session timeout", "running the suite"} {
+		if !strings.Contains(cause.Detail(), want) {
+			t.Errorf("detail = %q, want it to hold %q", cause.Detail(), want)
+		}
+	}
+}

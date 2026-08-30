@@ -211,13 +211,53 @@ func (l *Log) IterationStart(phase string, n, limit int) {
 	l.emit(fmt.Sprintf("\n### %s · iteration %s · %s\n", phase, iterationCount(n, limit), l.stamp()))
 }
 
-// Finding records an issue a reviewer reported, before it has been judged.
-func (l *Log) Finding(f Finding) {
+// Finding records an issue a reviewer reported, before it has been judged, and
+// returns the identifier it was recorded under so the caller can show it to
+// whoever judges the finding next. The record is written before the id is
+// handed out: a caller must never hold an id for something the log does not.
+// A disabled log returns no id, and callers treat that as "nothing to show".
+func (l *Log) Finding(f Finding) string {
 	if !l.Enabled() {
-		return
+		return ""
 	}
 	e, note := l.track(f, reported, "")
 	l.emit(l.bullet(reported, f, e) + "\n" + noteLine(note))
+	return e.ID
+}
+
+// Failure is what a failed executor call can tell a later reader.
+type Failure struct {
+	Phase     string
+	Iteration int
+	// Summary is the tool, its classification, and exit status.
+	Summary string
+	// Detail is the diagnostic tail: stderr, or stdout when stderr is empty.
+	Detail string
+}
+
+// ExecutorFailure records why a phase's executor call failed. An exit status
+// alone leaves a rate limit, a context overflow, and a crash indistinguishable,
+// and they call for different responses.
+func (l *Log) ExecutorFailure(f Failure) {
+	if !l.Enabled() {
+		return
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n- **failed** %s", orUnknown(f.Summary))
+	if f.Phase != "" {
+		fmt.Fprintf(&b, " — %s", f.Phase)
+		if f.Iteration > 0 {
+			fmt.Fprintf(&b, " iteration %d", f.Iteration)
+		}
+	}
+	b.WriteString("\n")
+	for line := range strings.SplitSeq(strings.TrimRight(f.Detail, "\n"), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		b.WriteString(indent + strings.TrimRight(line, " \t") + "\n")
+	}
+	l.emit(b.String())
 }
 
 // Confirmed records a finding the executor verified against real code, with
@@ -346,6 +386,10 @@ func (l *Log) track(f Finding, d disposition, rationale string) (*ledgerEntry, s
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	e, note := l.resolve(f)
+	// A repeat is a rejection of something already judged. An entry that was
+	// only reported — the external tool's finding, awaiting its evaluator — is
+	// receiving its first disposition, however it was addressed.
+	judged := e.Rationale != "" || e.Confirmed
 	e.addLocation(f.location())
 	if e.Claim == "" {
 		e.Claim = f.Summary
@@ -379,10 +423,10 @@ func (l *Log) track(f Finding, d disposition, rationale string) (*ledgerEntry, s
 	case confirmed:
 		l.cur.countConfirmed(f)
 	case rejected:
-		// A note means the declared id did not resolve, so a new entry was
-		// opened; counting that as a re-raise would contradict the entry
-		// beside it and inflate the recurrence rate a reader judges by.
-		l.cur.countRejected(f.ReRaises != "" && note == "")
+		// An unresolved id opened a new entry, and a reported-only entry has
+		// no judgement to repeat: counting either as a re-raise would
+		// inflate the recurrence rate a reader judges by.
+		l.cur.countRejected(judged)
 	case reported:
 	}
 	return e, note

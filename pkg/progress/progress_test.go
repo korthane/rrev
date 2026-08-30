@@ -276,9 +276,14 @@ func TestLockContentionIsReportedAndTheEntryStillLands(t *testing.T) {
 	}
 
 	done := make(chan struct{})
+	var id string
 	go func() {
 		defer close(done)
 		log.Note("written under contention")
+		// The id is assigned in memory before the append, so a finding
+		// recorded under contention is still one the evaluator can name.
+		id = log.Finding(progress.Finding{Reviewer: "external", File: "a.go", Line: 1, Summary: "off by one"})
+		log.Rejected(progress.Finding{ReRaises: id, Reviewer: "claude", File: "a.go", Line: 1}, "inclusive by design")
 	}()
 	select {
 	case <-done:
@@ -289,8 +294,12 @@ func TestLockContentionIsReportedAndTheEntryStillLands(t *testing.T) {
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "busy") {
 		t.Errorf("warnings = %q, want one contention report", warnings)
 	}
-	if !strings.Contains(readLog(t, log), "written under contention") {
+	got := readLog(t, log)
+	if !strings.Contains(got, "written under contention") {
 		t.Error("entry was dropped instead of appended after the bounded wait")
+	}
+	if id != "R1" || strings.Contains(got, "`R2`") {
+		t.Errorf("id = %q, want R1 resolvable by the disposition that names it\n--- log ---\n%s", id, got)
 	}
 	if _, err := os.Stat(held); err != nil {
 		t.Errorf("a lock rrev never acquired must not be removed: %v", err)

@@ -362,3 +362,28 @@ func TestShippedAgentsAreShownTheStandingRejections(t *testing.T) {
 		}
 	}
 }
+
+// The evaluator must be shown the tool's findings under their ids and told to
+// carry them; without both, every disposition opens a second entry.
+func TestExternalEvalPromptShowsReportedIdsAndSaysToCarryThem(t *testing.T) {
+	prompt, err := embeddedPrompts(t).Prompt("external_eval")
+	if err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	for _, want := range []string{"{{EXTERNAL_FINDINGS}}", "Carry that id into your own opening token"} {
+		if !strings.Contains(prompt.Content, want) {
+			t.Errorf("external_eval is missing %q", want)
+		}
+	}
+	vars := fullVars()
+	vars.ExternalFindings = "FINDING[R7]: minor | a.go:1 | external | - | off by one"
+	for _, exec := range []string{ExecutorClaude, ExecutorCodex} {
+		got, err := (Expander{Assets: embeddedPrompts(t), Executor: exec, Vars: vars}).Prompt("external_eval")
+		if err != nil {
+			t.Fatalf("expand under %s: %v", exec, err)
+		}
+		if !strings.Contains(got, "FINDING[R7]:") {
+			t.Errorf("under %s the reported id did not reach the prompt", exec)
+		}
+	}
+}

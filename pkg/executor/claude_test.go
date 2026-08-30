@@ -123,6 +123,161 @@ func TestClaudeRunResultReportsError(t *testing.T) {
 	if !strings.Contains(runErr.Stderr, "tool execution failed") {
 		t.Errorf("error drops the reported reason: %v", runErr)
 	}
+	// The wrapped error repeats the message the tail already carries.
+	if got := executor.Describe(err).Detail(); got != "tool execution failed" {
+		t.Errorf("detail = %q, want the reported reason once", got)
+	}
+}
+
+// claude reports its own failure as a result event on stdout and then exits
+// non-zero with nothing on stderr. The message is the only cause such a
+// failure can carry, and it is what the classifier has to see.
+func TestClaudeResultErrorSurvivesNonZeroExit(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"assistant","message":{"content":[{"type":"text","text":"Reviewing the branch."}]}}` + "\n" +
+			`{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n",
+		exit: 1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want it classified as a usage limit", err)
+	}
+	runErr, ok := errors.AsType[*executor.Error](err)
+	if !ok {
+		t.Fatalf("error = %v, want *executor.Error", err)
+	}
+	if runErr.ExitCode != 1 {
+		t.Errorf("exit = %d, want 1", runErr.ExitCode)
+	}
+	if !strings.Contains(runErr.Stderr, "You have hit your usage limit") {
+		t.Errorf("error drops the reported reason: %v", runErr)
+	}
+	if c := executor.Describe(err); c.Summary() != "claude: usage limit (exit 1)" || !strings.Contains(c.Detail(), "You have hit your usage limit") {
+		t.Errorf("cause = %q / %q, want the classification and the reported reason", c.Summary(), c.Detail())
+	}
+}
+
+// The claude CLI is a Node program and routinely writes a warning to stderr.
+// That must not hide the reason claude reported: a usage limit with a warning
+// beside it is still a usage limit.
+func TestClaudeResultErrorSurvivesNoisyStderr(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n",
+		stderr: "(node:123) ExperimentalWarning: something\n",
+		exit:   1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want it classified as a usage limit", err)
+	}
+	c := executor.Describe(err)
+	if c.Summary() != "claude: usage limit (exit 1)" {
+		t.Errorf("summary = %q", c.Summary())
+	}
+	if want := "(node:123) ExperimentalWarning: something\nYou have hit your usage limit"; c.Detail() != want {
+		t.Errorf("detail = %q, want %q", c.Detail(), want)
+	}
+}
+
+// The scanner keeps reading after a line error, so a stream carrying a second
+// result event must not overwrite the first: the first is the error run
+// returns, and a reason disagreeing with it would misclassify the failure.
+func TestClaudeKeepsTheFirstReportedResultError(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n" +
+			`{"type":"result","subtype":"error_during_execution","is_error":true,"result":"tool execution failed"}` + "\n",
+		exit: 1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want the first result event to classify the failure", err)
+	}
+	runErr, ok := errors.AsType[*executor.Error](err)
+	if !ok {
+		t.Fatalf("error = %v, want *executor.Error", err)
+	}
+	if !strings.Contains(runErr.Stderr, "You have hit your usage limit") {
+		t.Errorf("stderr = %q, want the first reported reason", runErr.Stderr)
+	}
+}
+
+// claude may print the reason on stderr as well as report it in the result
+// event; the tail then shows it once.
+func TestClaudeResultErrorAlreadyOnStderrIsNotRepeated(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n",
+		stderr: "You have hit your usage limit\n",
+		exit:   1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want it classified as a usage limit", err)
+	}
+	if got := executor.Describe(err).Detail(); got != "You have hit your usage limit" {
+		t.Errorf("detail = %q, want the reason once", got)
+	}
+}
+
+// claude declares its own failure in the result event while still exiting
+// zero. That path returns the line error rather than a wait error, so it is
+// the one where the tool's stderr and stdout tails are easiest to lose — and
+// they are the only account of why it gave up.
+func TestClaudeResultErrorAtExitZeroKeepsBothTails(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"assistant","message":{"content":[{"type":"text","text":"working on it"}]}}` + "\n" +
+			`{"type":"result","subtype":"error_during_execution","is_error":true,"result":"tool execution failed"}` + "\n",
+		stderr: "node: FATAL heap out of memory\nstack trace line\n",
+		exit:   0,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if err == nil {
+		t.Fatal("a result event declaring an error must fail the call")
+	}
+	// Exact, not by containment: the result message is appended to the stderr
+	// tail and also wrapped in the error, and a record that renders it in both
+	// places says the same thing twice.
+	want := "node: FATAL heap out of memory\nstack trace line\ntool execution failed"
+	if detail := executor.Describe(err).Detail(); detail != want {
+		t.Errorf("detail = %q, want %q", detail, want)
+	}
+}
+
+// The result message is appended after whatever the tool wrote to stderr, so
+// the capture bound cuts the earlier noise rather than the reason itself.
+func TestClaudeResultErrorSurvivesStderrPastTheCaptureBound(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n",
+		stderr: strings.Repeat("(node:123) ExperimentalWarning: noise\n", 400),
+		exit:   1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want it classified as a usage limit past the bound", err)
+	}
+	c := executor.Describe(err)
+	if !strings.HasSuffix(c.Detail(), "You have hit your usage limit") {
+		t.Errorf("the reason did not survive the bound; detail ends:\n%s", lastRunes(c.Detail(), 200))
+	}
+}
+
+func lastRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[len(r)-n:])
 }
 
 func TestClaudeRunMissingBinary(t *testing.T) {

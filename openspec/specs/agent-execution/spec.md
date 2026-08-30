@@ -14,7 +14,7 @@ rrev SHALL treat every AI tool it drives through one contract: it accepts a prom
 
 #### Scenario: Tool exits non-zero
 - **WHEN** the tool exits with a non-zero status
-- **THEN** rrev receives an error carrying the tool's diagnostic output, and the calling phase decides whether to retry or abort
+- **THEN** rrev receives an error carrying the exit status and the tool's diagnostic output — its standard error, or the last lines it wrote to standard output when standard error is empty — and the calling phase decides whether to retry or abort
 
 #### Scenario: Context cancelled
 - **WHEN** the context is cancelled while the tool is running

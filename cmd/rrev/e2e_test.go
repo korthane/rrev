@@ -546,3 +546,88 @@ esac`,
 		}
 	}
 }
+
+// The run that motivated this ended with "final ended: executor failure" and an
+// exit status. A tool that says why on stdout must leave that why behind.
+func TestEndToEndFinalPhaseFailureIsRecordedWithItsCause(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1)
+    echo "FINDING: major | auth.go:1 | quality | - | the handler creates no session"
+    commit "fix the sign-in handler"
+    ;;
+  comprehensive:2) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  external-eval:1) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+  final:1)
+    echo "Reviewing the branch."
+    echo "Error: prompt is too long for the context window"
+    exit 1
+    ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `case "$phase:$n" in
+  external:1) echo "FINDING: minor | auth.go:2 | external | - | the error path is unhandled" ;;
+  *) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+esac`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeFailed {
+		t.Fatalf("code = %d, want %d; output:\n%s", code, status.CodeFailed, out.String())
+	}
+
+	log := progressLog(t, repo)
+	for _, want := range []string{"- **failed** claude: failure (exit 1) — final iteration 1", "  Error: prompt is too long for the context window"} {
+		if !strings.Contains(log, want) {
+			t.Errorf("progress log missing %q:\n%s", want, log)
+		}
+	}
+	// The script's own echo is streamed under a "[final]" prefix; the record
+	// is the unprefixed, indented copy after the summary line.
+	console := out.String()
+	summary := strings.Index(console, "final review failed: claude: failure (exit 1)")
+	if summary < 0 {
+		t.Fatalf("console missing the failure summary:\n%s", console)
+	}
+	if !strings.Contains(console[summary:], "\n  Error: prompt is too long for the context window\n") {
+		t.Errorf("console missing the failure's detail after its summary:\n%s", console)
+	}
+}
+
+// One finding, one ledger row, across the tool's report and the evaluator's
+// disposition of it.
+func TestEndToEndExternalFindingKeepsOneIdentityThroughEvaluation(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  external-eval:1)
+    id=$(sed -n 's/^FINDING\[\(R[0-9]*\)\]:.*/\1/p' "$prompt" | head -1)
+    echo "REJECTED[$id]: auth.go:2 | external | the error path is unhandled | the caller handles it"
+    echo "<<<RREV:EXTERNAL_DONE>>>"
+    ;;
+  final:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `case "$phase:$n" in
+  external:1) echo "FINDING: minor | auth.go:2 | external | - | the error path is unhandled" ;;
+  *) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+esac`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d; output:\n%s", code, out.String())
+	}
+
+	log := progressLog(t, repo)
+	if n := standingEntries(log); n != 1 {
+		t.Errorf("ledger holds %d entries, want the report and its rejection folded into one:\n%s", n, log)
+	}
+	if !strings.Contains(log, "- **R1** `auth.go:2`") {
+		t.Errorf("the ledger row must be the reported entry:\n%s", log)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
@@ -79,6 +80,18 @@ func newEnv(t *testing.T, primary, external executor.Executor, tune func(*config
 	return env, repo
 }
 
+// openLog gives env a real progress log to read back, in place of the disabled
+// one newEnv leaves it with.
+func openLog(t *testing.T, env *Env) *progress.Log {
+	t.Helper()
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	return log
+}
+
 func mock(tool string, outputs ...string) *executor.Mock {
 	responses := make([]executor.Response, 0, len(outputs))
 	for _, out := range outputs {
@@ -94,8 +107,8 @@ const (
 )
 
 // A prompt that cannot be expanded returns before an attempt exists, so the
-// held-back report is nil. Every call site runs it through writeReports, and
-// without that helper's nil guard the phase panics on a typo in a user's own
+// held-back report is nil. Every call site runs it through recordReport, and
+// without that method's nil guard the phase panics on a typo in a user's own
 // prompt override rather than reporting the template error.
 func TestUnexpandablePromptOverrideFailsWithoutPanicking(t *testing.T) {
 	projectDir := t.TempDir()
@@ -112,10 +125,13 @@ func TestUnexpandablePromptOverrideFailsWithoutPanicking(t *testing.T) {
 	}
 	env := &Env{
 		Dir: t.TempDir(), Repo: &fakeRepo{head: "head0", tree: "tree0"},
-		Log: progress.Disabled(), Config: resolved.Config, Assets: resolved.Assets,
+		Config: resolved.Config, Assets: resolved.Assets,
 		Vars:    config.Vars{Change: "add-user-auth", BaseRef: "main", DiffInstruction: "git diff main...HEAD"},
-		Primary: mock("claude", reviewDone), Out: &bytes.Buffer{},
+		Primary: mock("claude", reviewDone),
 	}
+	log := openLog(t, env)
+	var console strings.Builder
+	env.Out = &console
 
 	res := Comprehensive(context.Background(), env)
 	if res.Err == nil {
@@ -126,6 +142,19 @@ func TestUnexpandablePromptOverrideFailsWithoutPanicking(t *testing.T) {
 	}
 	if !strings.Contains(res.Err.Error(), "NOT_A_VARIABLE") {
 		t.Errorf("Err = %v, want it to name the unknown variable", res.Err)
+	}
+	// A failure no tool owns is summarised by its own first line. The
+	// known-variable list belongs in the indented detail: run into the summary
+	// it swallows the phase and iteration the record ends with.
+	summary := "- **failed** " + override + ": unknown template variable {{NOT_A_VARIABLE}} — comprehensive iteration 1\n"
+	if got := readFile(t, log.Path()); !strings.Contains(got, summary) {
+		t.Errorf("log missing %q:\n%s", summary, got)
+	}
+	if got := readFile(t, log.Path()); !strings.Contains(got, "\n  known variables are ARTIFACTS,") {
+		t.Errorf("log missing the indented known-variable list:\n%s", got)
+	}
+	if !strings.Contains(console.String(), "  known variables are ARTIFACTS,") {
+		t.Errorf("console missing the indented known-variable list:\n%s", console.String())
 	}
 }
 
@@ -159,6 +188,7 @@ func TestPersistentTransientFailureEndsTheLoop(t *testing.T) {
 		{Err: &executor.LimitError{Tool: "claude", Reason: "service unavailable", Retryable: true}},
 	}}
 	env, _ := newEnv(t, primary, nil, nil)
+	log := openLog(t, env)
 
 	res := Comprehensive(context.Background(), env)
 
@@ -167,6 +197,12 @@ func TestPersistentTransientFailureEndsTheLoop(t *testing.T) {
 	}
 	if primary.CallCount() != retryBudget+1 {
 		t.Errorf("executor calls = %d, want %d", primary.CallCount(), retryBudget+1)
+	}
+	// Every attempt leaves one record: the superseded ones from the retry
+	// loop, the last from the phase ending. Neither path may record twice.
+	want := "- **failed** claude: transient failure — comprehensive iteration 1"
+	if got := readFile(t, log.Path()); strings.Count(got, want) != retryBudget+1 {
+		t.Errorf("failure records = %d, want one per attempt (%d):\n%s", strings.Count(got, want), retryBudget+1, got)
 	}
 }
 
@@ -277,6 +313,9 @@ func TestLoopEndsOnExecutorFailure(t *testing.T) {
 func TestLoopEndsOnFailureSignal(t *testing.T) {
 	primary := mock("claude", "cannot obtain the diff\n"+taskFailed)
 	env, _ := newEnv(t, primary, nil, nil)
+	log := openLog(t, env)
+	var console strings.Builder
+	env.Out = &console
 
 	res := Comprehensive(context.Background(), env)
 
@@ -286,6 +325,18 @@ func TestLoopEndsOnFailureSignal(t *testing.T) {
 	if res.Err == nil || !strings.Contains(res.Err.Error(), taskFailed) {
 		t.Errorf("err = %v, want it to name the failure signal", res.Err)
 	}
+	// The signal is a failure the model chose, so its record names the tool
+	// and carries what the model said before giving up.
+	for _, want := range []string{"- **failed** claude: failure — comprehensive iteration 1", "  cannot obtain the diff"} {
+		if got := readFile(t, log.Path()); !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+	for _, want := range []string{"comprehensive review failed: claude: failure", "  cannot obtain the diff"} {
+		if !strings.Contains(console.String(), want) {
+			t.Errorf("console missing %q:\n%s", want, console.String())
+		}
+	}
 }
 
 func TestLoopEndsOnAbort(t *testing.T) {
@@ -293,11 +344,107 @@ func TestLoopEndsOnAbort(t *testing.T) {
 	cancel()
 	primary := mock("claude", "fixed something")
 	env, _ := newEnv(t, primary, nil, nil)
+	log := openLog(t, env)
 
 	res := Comprehensive(ctx, env)
 
 	if res.Reason != ReasonAborted {
 		t.Fatalf("reason = %q, want %q", res.Reason, ReasonAborted)
+	}
+	// A cancelled run is the one a user most often reads the log after, and
+	// the record must say the run was cancelled rather than that the tool broke.
+	if got := readFile(t, log.Path()); !strings.Contains(got, "- **failed** cancelled — comprehensive iteration 1") {
+		t.Errorf("log does not record the cancellation:\n%s", got)
+	}
+}
+
+// The mock returns a bare context.Canceled, but a real executor kills its
+// process group and reports the cancellation as a process failure carrying
+// what the tool had said. That record names the tool and keeps its last words.
+func TestCancelledCallRecordsTheToolAndItsLastWords(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	primary := &executor.Mock{Tool: "claude", Handler: func(context.Context, executor.Request) (executor.Result, error) {
+		cancel()
+		return executor.Result{}, &executor.Error{Tool: "claude", ExitCode: -1,
+			Output: "Reviewing the diff.\nStill reviewing.", Err: context.Canceled}
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+	console := &bytes.Buffer{}
+	env.Out = console
+	log := openLog(t, env)
+
+	res := Comprehensive(ctx, env)
+
+	if res.Reason != ReasonAborted {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonAborted)
+	}
+	for _, want := range []string{"- **failed** claude: cancelled — comprehensive iteration 1", "  Still reviewing."} {
+		if got := readFile(t, log.Path()); !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+	if want := "comprehensive review failed: claude: cancelled"; !strings.Contains(console.String(), want) {
+		t.Errorf("console missing %q:\n%s", want, console.String())
+	}
+}
+
+// A provider that refuses on its usage limit exits zero and says so in its own
+// output, so the classification and the refusal line are the whole diagnosis:
+// there is no exit status to fall back on and no retry to wait for.
+func TestUsageLimitRefusalRecordsItsClassificationAndReason(t *testing.T) {
+	refusal := "You've hit your usage limit · resets 9:40am (America/New_York)"
+	primary := &executor.Mock{Tool: "claude", Handler: func(context.Context, executor.Request) (executor.Result, error) {
+		return executor.Result{}, &executor.LimitError{Tool: "claude", Reason: refusal}
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+	console := &bytes.Buffer{}
+	env.Out = console
+	log := openLog(t, env)
+
+	res := Comprehensive(context.Background(), env)
+
+	if res.Reason != ReasonFailure {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonFailure)
+	}
+	if primary.CallCount() != 1 {
+		t.Errorf("a usage limit was retried %d times; want the call made once", primary.CallCount())
+	}
+	for _, want := range []string{"- **failed** claude: usage limit — comprehensive iteration 1", "  " + refusal} {
+		if got := readFile(t, log.Path()); !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+	for _, want := range []string{"comprehensive review failed: claude: usage limit", "  " + refusal} {
+		if !strings.Contains(console.String(), want) {
+			t.Errorf("console missing %q:\n%s", want, console.String())
+		}
+	}
+}
+
+// A tool that exits non-zero having said nothing has only its summary to show.
+// Splitting an empty detail yields one empty line, so an unguarded renderer
+// follows the summary with a line of bare indentation in both places.
+func TestSilentFailureRecordIsJustItsSummary(t *testing.T) {
+	primary := &executor.Mock{Tool: "claude", Handler: func(context.Context, executor.Request) (executor.Result, error) {
+		return executor.Result{}, &executor.Error{Tool: "claude", ExitCode: 1, Err: errors.New("exit status 1")}
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+	console := &bytes.Buffer{}
+	env.Out = console
+	log := openLog(t, env)
+
+	Comprehensive(context.Background(), env)
+
+	summary := "- **failed** claude: failure (exit 1) — comprehensive iteration 1\n"
+	got := readFile(t, log.Path())
+	if !strings.Contains(got, summary) {
+		t.Fatalf("log missing %q:\n%s", summary, got)
+	}
+	if _, rest, _ := strings.Cut(got, summary); strings.HasPrefix(rest, "  ") {
+		t.Errorf("an empty detail left an indented blank line:\n%q", rest)
+	}
+	if strings.Contains(console.String(), "\n  \n") {
+		t.Errorf("console printed a bare indented line:\n%q", console.String())
 	}
 }
 
@@ -420,11 +567,7 @@ func TestFailedCallStillRecordsWhatItReported(t *testing.T) {
 		{Output: reported, Err: errors.New("claude exited with status 1")},
 	}}
 	env, _ := newEnv(t, primary, nil, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := Comprehensive(context.Background(), env)
 
@@ -633,11 +776,7 @@ func TestStandingRejectionsReachTheNextIterationsPrompt(t *testing.T) {
 		"REJECTED: pkg/a.go:7 | quality | the token is echoed | the value is not key material",
 		reviewDone)
 	env, _ := newEnv(t, primary, nil, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	openLog(t, env)
 
 	Comprehensive(context.Background(), env)
 
@@ -658,30 +797,43 @@ func TestStandingRejectionsReachTheNextIterationsPrompt(t *testing.T) {
 // A dead or rate-limited external tool that logged as a clean pass is the exact
 // confusion the recorded-activity requirement exists to remove.
 func TestExternalToolFailureIsRecordedWithItsCause(t *testing.T) {
-	external := &executor.Mock{Tool: "codex", Responses: []executor.Response{
-		{Err: errors.New("codex exited with status 1")},
-	}}
-	env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
-	dir := t.TempDir()
-	log, err := progress.Open(dir, "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	// The outcome line carries the summary; the failure record that follows
+	// carries the tail. Neither may be found only by way of the other.
+	for name, tc := range map[string]struct {
+		err            error
+		outcome, cause string
+	}{
+		"exit status": {
+			err:     &executor.Error{Tool: "codex", ExitCode: 1, Stderr: "fatal: no api key configured", Err: errors.New("exit status 1")},
+			outcome: "- external tool `codex`: failed\n  codex: failure (exit 1)\n",
+			cause:   "- **failed** codex: failure (exit 1) — external iteration 1\n  fatal: no api key configured\n",
+		},
+		"timeout": {
+			err:     &executor.Error{Tool: "codex", ExitCode: -1, Output: "Reviewing.", Err: &executor.TimeoutError{Tool: "codex", Limit: time.Minute}},
+			outcome: "- external tool `codex`: failed\n  codex: timeout\n",
+			cause:   "- **failed** codex: timeout — external iteration 1\n  codex exceeded its 1m0s session timeout\n  Reviewing.\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			external := &executor.Mock{Tool: "codex", Responses: []executor.Response{{Err: tc.err}}}
+			env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
+			log := openLog(t, env)
 
-	res := External(context.Background(), env)
+			res := External(context.Background(), env)
 
-	if res.Reason != ReasonFailure {
-		t.Errorf("reason = %q, want the phase to fail rather than read as converged", res.Reason)
-	}
-	data, err := os.ReadFile(log.Path())
-	if err != nil {
-		t.Fatalf("read progress log: %v", err)
-	}
-	for _, want := range []string{"external tool `codex`: failed", "codex exited with status 1"} {
-		if !strings.Contains(string(data), want) {
-			t.Errorf("progress log missing %q:\n%s", want, data)
-		}
+			if res.Reason != ReasonFailure {
+				t.Errorf("reason = %q, want the phase to fail rather than read as converged", res.Reason)
+			}
+			data, err := os.ReadFile(log.Path())
+			if err != nil {
+				t.Fatalf("read progress log: %v", err)
+			}
+			for _, want := range []string{tc.outcome, tc.cause} {
+				if !strings.Contains(string(data), want) {
+					t.Errorf("progress log missing %q:\n%s", want, data)
+				}
+			}
+		})
 	}
 }
 
@@ -693,11 +845,7 @@ func TestUnverifiedRejectionDoesNotEnterTheLedger(t *testing.T) {
 	reported := "REJECTED: pkg/a.go:7 | external | the mutex is held twice | it is not\n" + externalDone
 	external := mock("codex", reported)
 	env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	External(context.Background(), env)
 
@@ -744,9 +892,8 @@ func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
 		t.Fatalf("read progress log: %v", err)
 	}
 	got := string(data)
-	// Ordering in the finished log proves nothing: the report is written by a
-	// deferred call, so the findings land last however late the invocation was
-	// recorded. What the requirement is about is a run that never reaches the
+	// Ordering in the finished log is the eager report's doing and is asserted
+	// elsewhere. What this requirement is about is a run that never reaches the
 	// end, so the claim is checked from inside the call itself.
 	if !duringCall {
 		t.Error("the invocation was not in the log while the tool was still running, so a run killed mid-call records nothing")
@@ -756,10 +903,11 @@ func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
 	}
 }
 
-// The two calls' reports are held back and written together, and the order they
-// are written in is the order the log reads and the order identifiers are
-// issued in. The tool's own claims must land ahead of the evaluation disposing
-// of them, or the log answers a question it has not yet asked.
+// The tool's report is written as soon as the tool returns, and the evaluator's
+// is held back until the attempt is final; the order they are written in is the
+// order the log reads and the order identifiers are issued in. The tool's own
+// claims must land ahead of the evaluation disposing of them, or the log
+// answers a question it has not yet asked.
 func TestTheToolsFindingsAreLoggedBeforeTheEvaluationOfThem(t *testing.T) {
 	const reported = "FINDING: major | pkg/a.go:7 | external | - | the token is echoed"
 	const disposed = "REJECTED: pkg/a.go:7 | external | the token is echoed | it is redacted before the log write\n" + externalDone
@@ -793,11 +941,7 @@ func TestTheToolsFindingsAreLoggedBeforeTheEvaluationOfThem(t *testing.T) {
 func TestExternalToolOutputRrevCannotInterpretIsRecordedAsSuch(t *testing.T) {
 	external := mock("codex", "I looked at the diff and it seems fine to me.")
 	env, _ := newEnv(t, mock("claude", externalDone, externalDone), external, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	External(context.Background(), env)
 
@@ -826,11 +970,7 @@ func TestExternalToolOutputRrevCannotInterpretIsRecordedAsSuch(t *testing.T) {
 func TestUnreadableExternalOutputDoesNotEndThePhaseAsConverged(t *testing.T) {
 	external := mock("codex", "I looked at the diff and it seems fine to me.")
 	env, _ := newEnv(t, mock("claude", externalDone, externalDone, externalDone), external, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := External(context.Background(), env)
 
@@ -839,5 +979,30 @@ func TestUnreadableExternalOutputDoesNotEndThePhaseAsConverged(t *testing.T) {
 	}
 	if got := readFile(t, log.Path()); strings.Contains(got, "ended:** converged") {
 		t.Errorf("the log records the phase as converged:\n%s", got)
+	}
+}
+
+// The failure record carries the iteration the call failed in, not the one the
+// phase started at. Every other failure test fails in iteration 1, where a
+// hardcoded 1 is indistinguishable from the real value — in both the record the
+// loop writes when it ends and the one runStep writes for a superseded attempt.
+func TestFailureRecordNamesTheIterationItFailedIn(t *testing.T) {
+	transient := &executor.LimitError{Tool: "claude", Reason: "overloaded_error", Retryable: true,
+		Err: &executor.Error{Tool: "claude", ExitCode: 1, Stderr: "overloaded_error"}}
+	primary := mock("claude", "FINDING: major | a.go:12 | quality | - | leaks a file handle", "")
+	primary.Responses[1] = executor.Response{Err: transient}
+	env, repo := newEnv(t, primary, nil, func(c *config.Config) { c.MaxIterations = 3 })
+	primary.Handler = changingHandler(primary, repo)
+	log := openLog(t, env)
+
+	Comprehensive(context.Background(), env)
+
+	got := readFile(t, log.Path())
+	want := "- **failed** claude: transient failure (exit 1) — comprehensive iteration 2"
+	if !strings.Contains(got, want) {
+		t.Errorf("log missing %q:\n%s", want, got)
+	}
+	if strings.Contains(got, "- **failed** claude: transient failure (exit 1) — comprehensive iteration 1") {
+		t.Errorf("a failure in iteration 2 was recorded against iteration 1:\n%s", got)
 	}
 }

@@ -259,10 +259,16 @@ func TestRejectingAPreviouslyConfirmedFindingMakesItStandAgain(t *testing.T) {
 	log.Confirmed(progress.Finding{Reviewer: "quality", Severity: "major", File: "a.go", Line: 7}, "fixed")
 	log.IterationStart("comprehensive", 2, 10)
 	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "testing", File: "a.go", Line: 7}, "already fixed in iteration 1")
+	log.LoopEnd("comprehensive", "converged", 2)
 
 	got := readLog(t, log)
 	if strings.Contains(got, "no longer standing") {
 		t.Errorf("a re-rejected entry must not stay retired\n--- log ---\n%s", got)
+	}
+	// A confirmation is a judgement too: re-raising a fixed finding is
+	// re-litigation, not a new question.
+	if want := "rejected 1 (0 new, 1 repeat)"; !strings.Contains(got, want) {
+		t.Errorf("iteration 2's summary missing %q\n--- log ---\n%s", want, got)
 	}
 	entries := log.PromptEntries()
 	if len(entries) != 1 || !strings.Contains(entries[0], "already fixed in iteration 1") {
@@ -450,6 +456,7 @@ func TestRealRationaleReplacesTheMissingReasonPlaceholder(t *testing.T) {
 	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "")
 	log.IterationStart("comprehensive", 2, 10)
 	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "quality", File: "a.go", Line: 7}, "the buffer is reused, not aliased")
+	log.LoopEnd("comprehensive", "converged", 2)
 
 	entries := log.PromptEntries()
 	if len(entries) != 1 || !strings.Contains(entries[0], "the buffer is reused, not aliased") {
@@ -457,6 +464,11 @@ func TestRealRationaleReplacesTheMissingReasonPlaceholder(t *testing.T) {
 	}
 	if strings.Contains(entries[0], "no reason given") {
 		t.Errorf("the placeholder outlived a stated reason: %q", entries[0])
+	}
+	// A rejection that arrived without a reason was still a judgement, so
+	// re-raising it is re-litigation and the split must say so.
+	if want := "rejected 1 (0 new, 1 repeat)"; !strings.Contains(readLog(t, log), want) {
+		t.Errorf("iteration 2's summary missing %q\n--- log ---\n%s", want, readLog(t, log))
 	}
 }
 
@@ -647,4 +659,84 @@ func TestPromptEntryFlattensMultiLineClaimAndRationale(t *testing.T) {
 			t.Errorf("detail line %q escaped its entry and reads as a new one", line)
 		}
 	}
+}
+
+// The id handed back is the one written, so a caller can show it to whoever
+// judges the finding next and the two agree.
+func TestFindingReturnsTheIdentifierItWasRecordedUnder(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+	log.IterationStart("external", 1, 5)
+
+	id := log.Finding(progress.Finding{Reviewer: "external", File: "a.go", Line: 7, Summary: "off by one"})
+
+	if id != "R1" {
+		t.Errorf("id = %q, want R1", id)
+	}
+	if !strings.Contains(readLog(t, log), "- **reported** `R1` `a.go:7`") {
+		t.Errorf("returned id is not the recorded one\n--- log ---\n%s", readLog(t, log))
+	}
+	if progress.Disabled().Finding(progress.Finding{}) != "" {
+		t.Error("a disabled log must hand out no id")
+	}
+}
+
+// An exit status alone leaves a rate limit, a context overflow and a crash
+// indistinguishable, and they call for different responses.
+func TestExecutorFailureRecordsItsCause(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		f    progress.Failure
+		want []string
+	}{
+		{"rate limited", progress.Failure{Phase: "final", Iteration: 1, Summary: "claude: usage limit (exit 1)", Detail: "rate limit exceeded"},
+			[]string{"- **failed** claude: usage limit (exit 1) — final iteration 1", "  rate limit exceeded"}},
+		{"plain exit", progress.Failure{Phase: "comprehensive", Iteration: 3, Summary: "codex: failure (exit 2)", Detail: "[earlier lines omitted]\npanic: nil map"},
+			[]string{"- **failed** codex: failure (exit 2) — comprehensive iteration 3", "  [earlier lines omitted]", "  panic: nil map"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			log := openLog(t, t.TempDir(), "change", progress.Options{})
+			log.ExecutorFailure(tc.f)
+			got := readLog(t, log)
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("log missing %q\n--- log ---\n%s", want, got)
+				}
+			}
+		})
+	}
+}
+
+// The evaluator's disposition of a finding the external tool reported is that
+// finding's first judgement, not a recurrence of one: counting it as a repeat
+// would make every external round read as re-litigation.
+func TestFirstDispositionOfAReportedFindingCountsAsNew(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+	log.IterationStart("external", 1, 5)
+	id := log.Finding(progress.Finding{Reviewer: "external", File: "a.go", Line: 7, Summary: "off by one"})
+	log.Rejected(progress.Finding{ReRaises: id, Reviewer: "claude", File: "a.go", Line: 7}, "the bound is inclusive by design")
+	log.IterationStart("external", 2, 5)
+	log.Rejected(progress.Finding{ReRaises: id, Reviewer: "claude", File: "a.go", Line: 7}, "the bound is inclusive by design")
+	log.LoopEnd("external", "converged", 2)
+
+	got := readLog(t, log)
+	if want := "rejected 1 (1 new, 0 repeat)"; !strings.Contains(got, want) {
+		t.Errorf("iteration 1's summary missing %q\n--- log ---\n%s", want, got)
+	}
+	if want := "rejected 1 (0 new, 1 repeat)"; !strings.Contains(got, want) {
+		t.Errorf("iteration 2's summary missing %q\n--- log ---\n%s", want, got)
+	}
+}
+
+// A record with nothing but a phase still reads as a record, and a disabled
+// log swallows it as it does everything else.
+func TestExecutorFailureToleratesSparseFields(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+	log.ExecutorFailure(progress.Failure{Phase: "finalize"})
+
+	// Nothing follows the summary: splitting an empty detail yields one empty
+	// line, which would render as a line of bare indentation.
+	if got := readLog(t, log); !strings.HasSuffix(got, "- **failed** unknown — finalize\n") {
+		t.Errorf("the sparse record must end at its summary\n--- log ---\n%q", got)
+	}
+	progress.Disabled().ExecutorFailure(progress.Failure{Summary: "claude: failure (exit 1)"})
 }

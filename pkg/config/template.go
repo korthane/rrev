@@ -37,9 +37,10 @@ const (
 	// Expanding defaultModeRules there would tell it to commit unverified work.
 	defaultReviewerModeRules = "Run mode: review only. Do not edit files, do not commit, and do not run the project's " +
 		"commands: report what you find and let the primary executor verify and fix it."
-	noPriorFindings  = "(first round of this loop: nothing has been reported or dispositioned yet)"
-	noLedger         = "(nothing has been rejected yet in this run)"
-	noExternalOutput = "(the external review tool produced no output)"
+	noPriorFindings    = "(first round of this loop: nothing has been reported or dispositioned yet)"
+	noLedger           = "(nothing has been rejected yet in this run)"
+	noExternalOutput   = "(the external review tool produced no output)"
+	noExternalFindings = "(the external review tool reported no findings in the report-line form)"
 )
 
 // TemplateError reports a prompt or agent file rrev refused to expand. The file
@@ -92,6 +93,10 @@ type Vars struct {
 	// findings and how they were dispositioned, so the external tool does not
 	// re-report what was rejected with a reason.
 	PriorFindings string
+	// ExternalFindings are the external tool's parsed findings, one report
+	// line each, opening with the identifier the log assigned it so the
+	// evaluator has an id to carry into its own disposition.
+	ExternalFindings string
 	// ExternalOutput is the external tool's raw report, evaluated by the
 	// primary executor.
 	ExternalOutput string
@@ -211,7 +216,10 @@ func (e Expander) substitute(asset Asset, values map[string]string, body string,
 
 	value, ok := values[name]
 	if !ok {
-		return "", &TemplateError{File: asset.Path, Msg: fmt.Sprintf("unknown template variable %s; known variables are %s",
+		// The known-variable list is reference material, not the diagnosis, so
+		// it goes on its own line: a failure record summarises an error no
+		// tool owns by its first line and indents the rest beneath it.
+		return "", &TemplateError{File: asset.Path, Msg: fmt.Sprintf("unknown template variable %s\nknown variables are %s",
 			ref, strings.Join(slices.Sorted(maps.Keys(values)), ", "))}
 	}
 	return value, nil
@@ -308,6 +316,7 @@ func (v Vars) values() map[string]string {
 		varLedger:           "",
 		"PRIOR_FINDINGS":    orElse(v.PriorFindings, noPriorFindings),
 		"EXTERNAL_OUTPUT":   orElse(v.ExternalOutput, noExternalOutput),
+		"EXTERNAL_FINDINGS": orElse(v.ExternalFindings, noExternalFindings),
 		"OPENSPEC_DIR":      orElse(v.OpenSpecDir, missingPath),
 		"CHANGE_DIR":        orElse(v.ChangeDir, missingPath),
 		"PROPOSAL":          orElse(v.Proposal, missingPath),
