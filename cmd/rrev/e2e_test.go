@@ -574,8 +574,8 @@ esac`,
 	t.Chdir(repo)
 
 	var out strings.Builder
-	if code := run(context.Background(), nil, &out, io.Discard); code == status.CodeOK {
-		t.Fatalf("a failed final phase must not exit 0; output:\n%s", out.String())
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeFailed {
+		t.Fatalf("code = %d, want %d; output:\n%s", code, status.CodeFailed, out.String())
 	}
 
 	log := progressLog(t, repo)

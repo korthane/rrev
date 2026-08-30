@@ -34,6 +34,7 @@ Non-goals: changing loop termination, retrying a failed final phase, or any chan
 
 - `pkg/executor` — the failure error carries the captured output tail alongside stderr; a helper renders a failure's cause in one bounded form for both the log and the console.
 - `pkg/progress` — `Finding` returns the assigned id; a new `ExecutorFailure` record.
+- `pkg/status` — the closing report names a failed phase in the same summary form, instead of the error's full text.
 - `pkg/processor/phase` — the loop records a failure through the log rather than as a free-text note; the external round threads reported ids into the evaluation prompt.
 - Default `external_eval.txt` prompt and a new template variable for the id-annotated report.
 - No behaviour change to when any loop stops. A run that failed before still fails; it now says why.

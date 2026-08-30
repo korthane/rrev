@@ -467,6 +467,12 @@ break, and escape sequences and other control characters are dropped, so the
 log and the console show what the tool said rather than how it painted it. The
 console prints the same summary and tail as the phase ends.
 
+The run's closing report names every phase that ended with something
+outstanding, and names a phase that failed in the same summary form its failure
+record used — `final review did not converge: executor failure: claude: usage
+limit (exit 1)`. The command line and the diagnostic tail stay in that record
+rather than being repeated on the last line.
+
 A call the executor classified as a transient failure is retried, up to twice
 per iteration, and every attempt is recorded the same way, followed by a note
 that the iteration is being retried — so a flaky provider is diagnosable

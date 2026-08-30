@@ -26,16 +26,20 @@ func TestRateLimitOnStderrOfFailingTool(t *testing.T) {
 // whose record read "claude: failure (exit 1)" — a usage limit recorded as a
 // crash, which is the distinction the failure record exists to draw.
 func TestSessionLimitWordingIsAUsageLimit(t *testing.T) {
-	refusal := "You've hit your session limit · resets 9:40am (America/New_York)"
-	tool := newFakeTool(t, fakeToolOpts{stderr: refusal + "\n", exit: 1})
+	for _, refusal := range []string{
+		"You've hit your session limit · resets 9:40am (America/New_York)",
+		"Session limit reached. Try again after 9:40am.",
+	} {
+		tool := newFakeTool(t, fakeToolOpts{stderr: refusal + "\n", exit: 1})
 
-	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "review", Dir: t.TempDir()})
+		_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "review", Dir: t.TempDir()})
 
-	if !errors.Is(err, executor.ErrRateLimited) {
-		t.Fatalf("error = %v, want a rate-limit error", err)
-	}
-	if c := executor.Describe(err); c.Summary() != "claude: usage limit (exit 1)" || c.Detail() != refusal {
-		t.Errorf("record = %q / %q, want the usage-limit summary and the refusal line", c.Summary(), c.Detail())
+		if !errors.Is(err, executor.ErrRateLimited) {
+			t.Fatalf("error for %q = %v, want a rate-limit error", refusal, err)
+		}
+		if c := executor.Describe(err); c.Summary() != "claude: usage limit (exit 1)" || c.Detail() != refusal {
+			t.Errorf("record = %q / %q, want the usage-limit summary and the refusal line", c.Summary(), c.Detail())
+		}
 	}
 }
 

@@ -381,7 +381,8 @@ func TestStderrTailStartsOnALineBoundary(t *testing.T) {
 // sequences must not paint over the console or land raw in the log.
 func TestDescribeFlattensTerminalNoiseInTheTail(t *testing.T) {
 	for stderr, want := range map[string]string{
-		"10%\r20%\r100%\r\n\x1b[31mError: boom\x1b[0m\x07\n":                      "10%\n20%\n100%\nError: boom",
+		"10%\r20%\r100%\r\n\x1b[31mError: boom\x1b[0m\x07\n": "10%\n20%\n100%\nError: boom",
+		"Error: bo\x7fom\n": "Error: boom",
 		"\x1b]0;codex\x07\x1b]8;;https://x.test\x1b\\Error: boom\x1b]8;;\x1b\\\n": "Error: boom",
 		// A tab is indentation, not noise: dropping it flattens every stack
 		// frame and diff hunk in the tail against the margin.
