@@ -1,6 +1,7 @@
 package executor_test
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -141,6 +142,35 @@ func TestDescribeBoundsTheTailAndSaysSo(t *testing.T) {
 	}
 }
 
+// The bound counts non-blank lines: exactly twenty of them fit unmarked, and
+// the twenty-first pushes the first out and says so.
+func TestDescribeTailBoundIsExactAndSkipsBlankLines(t *testing.T) {
+	numbered := func(n int) string {
+		var lines []string
+		for i := 1; i <= n; i++ {
+			lines = append(lines, fmt.Sprintf("line %d", i), "", "   ")
+		}
+		return strings.Join(lines, "\n")
+	}
+	for _, tc := range []struct {
+		lines     int
+		truncated bool
+		first     string
+	}{
+		{20, false, "line 1"},
+		{21, true, "[earlier lines omitted]\nline 2"},
+	} {
+		c := executor.Describe(&executor.Error{Tool: "codex", ExitCode: 1, Stderr: numbered(tc.lines)})
+		if c.Truncated != tc.truncated || !strings.HasPrefix(c.Detail(), tc.first) {
+			t.Errorf("%d lines: truncated = %v, detail = %q; want truncated %v opening with %q",
+				tc.lines, c.Truncated, c.Detail(), tc.truncated, tc.first)
+		}
+		if strings.Contains(c.Detail(), "\n\n") {
+			t.Errorf("%d lines: blank lines must not survive into the tail: %q", tc.lines, c.Detail())
+		}
+	}
+}
+
 // A byte bound lands mid-line; the fragment before the first newline is not a
 // line the tool wrote, and rendering it would put half a word in the log.
 func TestStdoutTailStartsOnALineBoundary(t *testing.T) {
@@ -197,6 +227,26 @@ func TestDescribeDoesNotRepeatAKnownExitStatusAsTheTail(t *testing.T) {
 	unstarted := &executor.Error{Tool: "claude", ExitCode: -1, Err: errors.New(`exec: "claude": executable file not found in $PATH`)}
 	if c := executor.Describe(unstarted); !strings.Contains(c.Detail(), "executable file not found") {
 		t.Errorf("detail = %q, want the start failure", c.Detail())
+	}
+}
+
+// A call that ended without an exit status while the tool was still talking —
+// a line rrev could not read, a signal — has the wrapped error as its only
+// explanation, and it must lead the tail rather than hide behind it.
+func TestDescribeLeadsWithTheErrorWhenNoExitStatusExplainsIt(t *testing.T) {
+	overflow := &executor.Error{Tool: "claude", ExitCode: -1,
+		Output: "Reviewing the branch.\nStill reviewing.",
+		Err:    fmt.Errorf("read output: %w", bufio.ErrTooLong)}
+	c := executor.Describe(overflow)
+	if c.Summary() != "claude: failure" {
+		t.Errorf("summary = %q", c.Summary())
+	}
+	if want := "read output: bufio.Scanner: token too long\nReviewing the branch.\nStill reviewing."; c.Detail() != want {
+		t.Errorf("detail = %q, want %q", c.Detail(), want)
+	}
+	cancelled := &executor.Error{Tool: "claude", ExitCode: -1, Output: "Reviewing.", Err: context.Canceled}
+	if got := executor.Describe(cancelled).Detail(); got != "Reviewing." {
+		t.Errorf("detail = %q, want a cancellation to carry the tail alone", got)
 	}
 }
 

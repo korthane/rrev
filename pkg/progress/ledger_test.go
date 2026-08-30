@@ -259,10 +259,16 @@ func TestRejectingAPreviouslyConfirmedFindingMakesItStandAgain(t *testing.T) {
 	log.Confirmed(progress.Finding{Reviewer: "quality", Severity: "major", File: "a.go", Line: 7}, "fixed")
 	log.IterationStart("comprehensive", 2, 10)
 	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "testing", File: "a.go", Line: 7}, "already fixed in iteration 1")
+	log.LoopEnd("comprehensive", "converged", 2)
 
 	got := readLog(t, log)
 	if strings.Contains(got, "no longer standing") {
 		t.Errorf("a re-rejected entry must not stay retired\n--- log ---\n%s", got)
+	}
+	// A confirmation is a judgement too: re-raising a fixed finding is
+	// re-litigation, not a new question.
+	if want := "rejected 1 (0 new, 1 repeat)"; !strings.Contains(got, want) {
+		t.Errorf("iteration 2's summary missing %q\n--- log ---\n%s", want, got)
 	}
 	entries := log.PromptEntries()
 	if len(entries) != 1 || !strings.Contains(entries[0], "already fixed in iteration 1") {

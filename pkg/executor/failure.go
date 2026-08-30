@@ -172,8 +172,9 @@ type Cause struct {
 	// cancelled, or failure.
 	Kind     string
 	ExitCode int
-	// Reason is the classifier's own line: the refusal it matched, or the
-	// bound that expired. A refusal that exited zero has no other trace.
+	// Reason is the line that explains the end: the refusal the classifier
+	// matched, the bound that expired, or the error a call with no exit
+	// status wrapped. A refusal that exited zero has no other trace.
 	Reason string
 	// Tail is the diagnostic text: the tool's stderr, or the last lines of its
 	// stdout when stderr is empty.
@@ -216,12 +217,16 @@ func Describe(err error) Cause {
 	if strings.TrimSpace(source) == "" {
 		source = failure.Output
 	}
-	// A known exit status is already in the summary, and the wrapped error
-	// then says nothing more; a start failure or a signal has no such status.
-	if strings.TrimSpace(source) == "" && failure.Err != nil && failure.ExitCode < 0 && c.Reason == "" {
-		source = failure.Err.Error()
-	}
 	c.Tail, c.Truncated = lastLines(source, causeTailLines)
+	// A known exit status is already in the summary, and the wrapped error
+	// then says nothing more. Without one — a start failure, a signal, output
+	// rrev could not read — the wrapped error is what explains the end, and
+	// the tail beneath it is the review the tool was giving up on.
+	if failure.ExitCode < 0 && c.Reason == "" && failure.Err != nil && !errors.Is(failure.Err, context.Canceled) {
+		if reason := failure.Err.Error(); c.Tail == "" || !strings.Contains(reason, c.Tail) {
+			c.Reason = reason
+		}
+	}
 	return c
 }
 

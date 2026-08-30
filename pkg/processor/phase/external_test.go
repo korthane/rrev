@@ -132,6 +132,12 @@ func TestExternalAlternatesToolAndExecutor(t *testing.T) {
 	if !strings.Contains(evalPrompt, "the mode flags are not mutually exclusive") {
 		t.Error("the evaluation prompt does not carry the external tool's report")
 	}
+	// With logging disabled no ids were assigned, so the parsed findings are
+	// shown bare rather than under an empty token.
+	if !strings.Contains(evalPrompt, "FINDING: major | pkg/a.go:10 | external | Run modes | the mode flags are not mutually exclusive") ||
+		strings.Contains(evalPrompt, "FINDING[R1]:") || strings.Contains(evalPrompt, "FINDING[]:") {
+		t.Errorf("the evaluation prompt must list the tool's findings without ids when none were assigned:\n%s", evalPrompt)
+	}
 }
 
 func TestExternalCarriesPriorRoundsForward(t *testing.T) {
@@ -174,6 +180,11 @@ func TestExternalUserBreakEndsLoop(t *testing.T) {
 		return executor.Result{Output: "evaluated"}, nil
 	}
 	env.Break = func() <-chan struct{} { return brk }
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
 
 	res := External(context.Background(), env)
 
@@ -185,6 +196,10 @@ func TestExternalUserBreakEndsLoop(t *testing.T) {
 	}
 	if res.OK() {
 		t.Error("a broken loop must not report OK")
+	}
+	// The user ending the loop is an outcome, not a failure to diagnose.
+	if got := readFile(t, log.Path()); strings.Contains(got, "**failed**") {
+		t.Errorf("a user break must not leave a failure record\n--- log ---\n%s", got)
 	}
 }
 

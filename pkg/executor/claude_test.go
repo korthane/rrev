@@ -123,6 +123,10 @@ func TestClaudeRunResultReportsError(t *testing.T) {
 	if !strings.Contains(runErr.Stderr, "tool execution failed") {
 		t.Errorf("error drops the reported reason: %v", runErr)
 	}
+	// The wrapped error repeats the message the tail already carries.
+	if got := executor.Describe(err).Detail(); got != "tool execution failed" {
+		t.Errorf("detail = %q, want the reported reason once", got)
+	}
 }
 
 // claude reports its own failure as a result event on stdout and then exits
@@ -176,6 +180,25 @@ func TestClaudeResultErrorSurvivesNoisyStderr(t *testing.T) {
 	}
 	if want := "(node:123) ExperimentalWarning: something\nYou have hit your usage limit"; c.Detail() != want {
 		t.Errorf("detail = %q, want %q", c.Detail(), want)
+	}
+}
+
+// claude may print the reason on stderr as well as report it in the result
+// event; the tail then shows it once.
+func TestClaudeResultErrorAlreadyOnStderrIsNotRepeated(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n",
+		stderr: "You have hit your usage limit\n",
+		exit:   1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want it classified as a usage limit", err)
+	}
+	if got := executor.Describe(err).Detail(); got != "You have hit your usage limit" {
+		t.Errorf("detail = %q, want the reason once", got)
 	}
 }
 
