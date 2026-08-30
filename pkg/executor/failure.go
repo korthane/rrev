@@ -241,11 +241,14 @@ func Describe(err error) Cause {
 		return c
 	}
 	c.Tool, c.ExitCode = failure.Tool, failure.ExitCode
-	source := failure.Stderr
-	if strings.TrimSpace(source) == "" {
-		source = failure.Output
+	// Decided on the rendered tail, not on the raw stderr: a spinner's escape
+	// sequences are non-empty bytes that flatten to nothing, and testing them
+	// raw would keep the stdout fallback off for a call whose stderr said
+	// nothing a reader can see.
+	c.Tail, c.Truncated = lastLines(bounded(failure.Stderr), causeTailLines)
+	if c.Tail == "" {
+		c.Tail, c.Truncated = lastLines(bounded(failure.Output), causeTailLines)
 	}
-	c.Tail, c.Truncated = lastLines(bounded(source), causeTailLines)
 	// A known exit status is already in the summary, and the wrapped error
 	// then says nothing more. Without one — a start failure, a signal, output
 	// rrev could not read — the wrapped error is what explains the end, and

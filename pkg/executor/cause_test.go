@@ -55,6 +55,19 @@ func TestDescribeFallsBackToStdoutWhenStderrIsEmpty(t *testing.T) {
 	}
 }
 
+// Stderr holding only terminal noise is non-empty bytes that flatten to
+// nothing, so choosing the source on the raw text would leave the record with
+// the exit status alone — the state the stdout fallback exists to prevent.
+func TestNoiseOnlyStderrStillFallsBackToStdout(t *testing.T) {
+	for _, stderr := range []string{"\x1b[2K\r\x1b[2K\r", "\x1b[?25l\x1b[?25h", "\x00\x00"} {
+		err := &executor.Error{Tool: "codex", ExitCode: 1, Stderr: stderr, Output: "Reviewing.\nError: context window exceeded"}
+		want := "Reviewing.\nError: context window exceeded"
+		if got := executor.Describe(err).Detail(); got != want {
+			t.Errorf("detail with stderr %q = %q, want %q", stderr, got, want)
+		}
+	}
+}
+
 // The error shapes here are the ones the executors actually return: a timeout
 // is a *TimeoutError wrapped by the process failure, a cancellation is the
 // process failure wrapping context.Canceled, and a refusal that exited zero is

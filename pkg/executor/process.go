@@ -204,8 +204,13 @@ type tailWriter struct {
 func (w *tailWriter) Write(p []byte) (int, error) {
 	w.buf = append(w.buf, p...)
 	if len(w.buf) > w.limit {
-		w.buf = w.buf[len(w.buf)-w.limit:]
-		w.cut = true
+		at := len(w.buf) - w.limit
+		// Only a cut that fell inside a line leaves a fragment for String to
+		// drop. Landing on a line break keeps the first retained line whole,
+		// and a later cut supersedes an earlier one: the bytes it judged are
+		// already gone from the window.
+		w.cut = w.buf[at-1] != '\n'
+		w.buf = w.buf[at:]
 	}
 	return len(p), nil
 }
