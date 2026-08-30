@@ -93,6 +93,42 @@ const (
 	taskFailed   = "<<<RREV:TASK_FAILED>>>"
 )
 
+// A prompt that cannot be expanded returns before an attempt exists, so the
+// held-back report is nil. Every call site runs it through writeReports, and
+// without that helper's nil guard the phase panics on a typo in a user's own
+// prompt override rather than reporting the template error.
+func TestUnexpandablePromptOverrideFailsWithoutPanicking(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectDir, config.KindPrompt), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	override := filepath.Join(projectDir, config.KindPrompt, PromptComprehensive+".txt")
+	if err := os.WriteFile(override, []byte("review {{NOT_A_VARIABLE}}\n"), 0o600); err != nil {
+		t.Fatalf("write override: %v", err)
+	}
+	resolved, err := config.Resolve(config.Options{UserDir: t.TempDir(), ProjectDir: projectDir})
+	if err != nil {
+		t.Fatalf("resolve config: %v", err)
+	}
+	env := &Env{
+		Dir: t.TempDir(), Repo: &fakeRepo{head: "head0", tree: "tree0"},
+		Log: progress.Disabled(), Config: resolved.Config, Assets: resolved.Assets,
+		Vars:    config.Vars{Change: "add-user-auth", BaseRef: "main", DiffInstruction: "git diff main...HEAD"},
+		Primary: mock("claude", reviewDone), Out: &bytes.Buffer{},
+	}
+
+	res := Comprehensive(context.Background(), env)
+	if res.Err == nil {
+		t.Fatalf("res = %+v, want the template error surfaced", res)
+	}
+	if res.Reason != ReasonFailure {
+		t.Errorf("Reason = %q, want %q", res.Reason, ReasonFailure)
+	}
+	if !strings.Contains(res.Err.Error(), "NOT_A_VARIABLE") {
+		t.Errorf("Err = %v, want it to name the unknown variable", res.Err)
+	}
+}
+
 // TestTransientFailureRetriesTheIteration covers the retryable classification:
 // a blip the tool itself calls transient must not end a run that still has
 // iterations left.

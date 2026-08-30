@@ -356,6 +356,87 @@ esac`,
 	}
 }
 
+// A re-raise declared on a FINDING has to reach the ledger by the same route a
+// rejection's does. Only the rejection leg was covered, so the line carrying a
+// finding's declared id into the log was free to go missing.
+func TestEndToEndDeclaredReRaiseOnAConfirmedFindingUpdatesOneEntry(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1)
+    echo "FINDING: major | auth.go:9 | quality | - | the token is echoed"
+    commit "fix the echo"
+    ;;
+  comprehensive:2)
+    echo "FINDING[R1]: major | auth.go:9 | testing | - | the token is echoed"
+    commit "fix the echo again"
+    ;;
+  comprehensive:3) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  external-eval:1) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+  final:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `echo "<<<RREV:EXTERNAL_DONE>>>"`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d; output:\n%s", code, out.String())
+	}
+	log := progressLog(t, repo)
+	// A confirmed finding never enters the ledger, so the record lines are the
+	// whole evidence: both must carry the same id.
+	if strings.Contains(log, "`R2`") {
+		t.Errorf("the declared re-raise opened a second entry:\n%s", log)
+	}
+	if n := strings.Count(log, "- **confirmed** `R1`"); n != 2 {
+		t.Errorf("R1 carries %d confirmations, want both iterations:\n%s", n, log)
+	}
+	if strings.Contains(log, "recorded as a new finding") ||
+		strings.Contains(log, "unknown entry") {
+		t.Errorf("R1 failed to resolve:\n%s", log)
+	}
+}
+
+// ledger_budget only bounds a real run if it survives the hand-written struct
+// literal that builds the run's Vars. Bounding Vars directly, as the unit test
+// does, leaves that copy free to go missing and every prompt unlimited.
+func TestEndToEndConfiguredLedgerBudgetTruncatesThePrompt(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	writeFile(t, repo, ".rrev/config.ini", "ledger_budget = 120\n")
+	scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1)
+    echo "REJECTED: auth.go:9 | quality | the token is echoed | the value is not key material"
+    commit "reject the first"
+    ;;
+  comprehensive:2)
+    echo "REJECTED: auth.go:11 | testing | the salt is reused | the salt is per-record"
+    commit "reject the second"
+    ;;
+  comprehensive:3)
+    grep -q TRUNCATED "$prompt" && commit "saw the truncation notice"
+    echo "<<<RREV:REVIEW_DONE>>>"
+    ;;
+  external-eval:1) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+  final:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `echo "<<<RREV:EXTERNAL_DONE>>>"`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d; output:\n%s", code, out.String())
+	}
+	log := progressLog(t, repo)
+	if !strings.Contains(log, "saw the truncation notice") {
+		t.Errorf("the configured ledger_budget never reached the prompt:\n%s", log)
+	}
+}
+
 // Re-litigation crosses phases: in the run that motivated this, the final
 // phase re-raised findings the comprehensive phase had rejected ten times.
 func TestEndToEndReRaiseAcrossPhasesResolvesToOneEntry(t *testing.T) {

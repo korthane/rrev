@@ -376,6 +376,11 @@ func TestClaudeFlushesHeldCallsWhenTheStreamEndsWithoutAResult(t *testing.T) {
 	if !strings.Contains(stream.String(), "· tool: Bash go build ./...") {
 		t.Errorf("a call held for its outcome was lost when the stream ended:\n%s", stream.String())
 	}
+	// A run killed with several reviewers in flight is the case this flush
+	// exists for, and the agent prefix is what tells those reviewers apart.
+	if !strings.Contains(stream.String(), "· [testing] tool: Grep writeReport") {
+		t.Errorf("a flushed sub-agent call lost its attribution:\n%s", stream.String())
+	}
 }
 
 // A sub-agent launch is announced when it starts and again when it ends, and

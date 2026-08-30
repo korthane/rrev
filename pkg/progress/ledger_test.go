@@ -270,6 +270,58 @@ func TestRejectingAPreviouslyConfirmedFindingMakesItStandAgain(t *testing.T) {
 	}
 }
 
+// The first rationale wins only across consecutive rejections. A confirmation
+// in between settled the question the other way, so the reason it was once
+// dismissed for describes code that no longer exists; handing that to a later
+// reviewer is handing them an argument they can see is wrong.
+func TestConfirmationClearsTheRationaleARejectionOnceSettled(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 9,
+		Summary: "the token is echoed"}, "the value is not key material")
+	log.IterationStart("comprehensive", 2, 10)
+	log.Confirmed(progress.Finding{ReRaises: "R1", Reviewer: "quality", Severity: "major",
+		File: "a.go", Line: 9}, "fixed")
+	log.IterationStart("comprehensive", 3, 10)
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "testing", File: "a.go", Line: 9},
+		"already fixed in iteration 2")
+
+	entries := log.PromptEntries()
+	if len(entries) != 1 {
+		t.Fatalf("PromptEntries = %q, want the re-stood entry", entries)
+	}
+	if !strings.Contains(entries[0], "already fixed in iteration 2") {
+		t.Errorf("PromptEntries = %q, want the rationale that stands now", entries)
+	}
+	if strings.Contains(entries[0], "the value is not key material") {
+		t.Errorf("PromptEntries = %q, want the pre-fix rationale gone", entries)
+	}
+}
+
+// A declared re-raise asserting a different claim is a mis-declared id. The
+// record line is the only place that difference can surface, since the ledger
+// keeps the claim the first raise supplied.
+func TestReRaiseClaimingSomethingElseIsRecordedOnTheLine(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7,
+		Summary: "the buffer is unbounded"}, "bounded by the caller")
+	log.IterationStart("comprehensive", 2, 10)
+	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "testing", File: "a.go", Line: 7,
+		Summary: "the mutex is held twice"}, "the second acquisition is on a copy")
+
+	got := readLog(t, log)
+	if !strings.Contains(got, "the mutex is held twice") {
+		t.Errorf("the divergent claim left no record\n--- log ---\n%s", got)
+	}
+	if entries := log.PromptEntries(); len(entries) != 1 ||
+		!strings.Contains(entries[0], "claim: the buffer is unbounded") {
+		t.Errorf("PromptEntries = %q, want the first claim still authoritative", entries)
+	}
+}
+
 // A rejection whose reason went missing is the one finding guaranteed to come
 // back unchanged, so it still has to reach the ledger and say what it lacks.
 func TestRejectionWithoutAReasonStillEntersTheLedger(t *testing.T) {

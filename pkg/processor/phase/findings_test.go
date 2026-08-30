@@ -62,6 +62,36 @@ func TestParseReportIgnoresNonReportText(t *testing.T) {
 	}
 }
 
+// Prose that names an entry before the colon is not a declaration. The
+// bracket tolerance that accepts `FINDING[R3:` must not turn a sentence about
+// a finding into one whose severity is that sentence.
+func TestParseReportIgnoresProseNamingAnEntry(t *testing.T) {
+	findings, rejections, _ := ParseReport(
+		"FINDING[R7] restated: the mutex is still held twice\n" +
+			"REJECTED[R1] in iteration 3: the recorded reason still holds")
+	if len(findings) != 0 || len(rejections) != 0 {
+		t.Errorf("findings = %+v, rejections = %+v, want none", findings, rejections)
+	}
+}
+
+// The tolerated malformations still have to parse, or a reviewer's report is
+// lost to a stray keystroke.
+func TestParseReportToleratesBracketSpacingAndMissingClose(t *testing.T) {
+	for _, line := range []string{
+		"FINDING [R3]: major | a.go:9 | quality | - | leaks a handle",
+		"FINDING[R3: major | a.go:9 | quality | - | leaks a handle",
+		"FINDING[ R3 ]: major | a.go:9 | quality | - | leaks a handle",
+	} {
+		findings, _, _ := ParseReport(line)
+		if len(findings) != 1 {
+			t.Fatalf("%q: findings = %+v, want one", line, findings)
+		}
+		if findings[0].ReRaises != "R3" {
+			t.Errorf("%q: ReRaises = %q, want R3", line, findings[0].ReRaises)
+		}
+	}
+}
+
 func TestFindingRoundTrip(t *testing.T) {
 	f := Finding{Severity: "major", File: "a.go", Line: 9, Reviewer: "quality", Summary: "leaks a handle"}
 	if got, want := f.String(), "FINDING: major | a.go:9 | quality | - | leaks a handle"; got != want {

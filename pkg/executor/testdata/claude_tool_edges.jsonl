@@ -35,3 +35,6 @@
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "id": "t6", "input": {"command": "make lint", "description": "lint"}}]}}
 {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t6", "is_error": false, "content": "ok"}]}}
 {"type": "result", "subtype": "success", "is_error": false, "result": "done"}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "echo yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Glob"}]}}

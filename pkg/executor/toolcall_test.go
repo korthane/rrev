@@ -63,6 +63,36 @@ func TestAgentNameIsTakenAtTheWidthBoundAndNotPastIt(t *testing.T) {
 	}
 }
 
+// README states the argument bound as a number, so it has to be pinned as one:
+// covering it only with a grossly oversized path leaves the exact cut free to
+// drift by a byte in either direction.
+func TestToolArgumentIsTakenAtTheWidthBoundAndNotPastIt(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	atBound := "echo " + strings.Repeat("x", 95) // exactly 100 bytes
+	if !strings.Contains(stream, "tool: Bash "+atBound+"\n") {
+		t.Errorf("an argument exactly at the bound was cut:\n%s", stream)
+	}
+	pastBound := "echo " + strings.Repeat("y", 96) // 101 bytes
+	if strings.Contains(stream, pastBound) {
+		t.Errorf("an argument one past the bound rendered whole:\n%s", stream)
+	}
+	if !strings.Contains(stream, "tool: Bash "+pastBound[:100]+"…") {
+		t.Errorf("the over-long argument was not cut at the bound and marked:\n%s", stream)
+	}
+}
+
+// A tool_use carrying no input at all is a routine stream shape. Without the
+// bare fallback the line would render with a dangling separator and no hint of
+// which tool ran.
+func TestToolCallWithoutAnInputStillNamesItsTool(t *testing.T) {
+	stream := runToolEdgeFixture(t)
+
+	if !strings.Contains(stream, "tool: Glob\n") {
+		t.Errorf("a call with no input lost its tool name:\n%s", stream)
+	}
+}
+
 // A line emitted under a launch rrev refused to name falls back to the phase
 // alone. Labelling it with the raw tool-use id would read as attribution that
 // succeeded rather than as the fallback the format's silence calls for.

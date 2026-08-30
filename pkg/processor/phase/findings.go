@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/korthane/rrev/pkg/progress"
 )
@@ -165,6 +166,13 @@ func cutKind(line string) (kind, id, rest string, ok bool) {
 	kind = head
 	if before, after, found := strings.Cut(head, "["); found {
 		kind, id = strings.TrimSpace(before), strings.Trim(after, "] \t")
+		// An id never contains whitespace, so a bracket body that does is
+		// prose mentioning a finding, not a declaration of one. Without this
+		// the tolerance above swallows `FINDING[R7] restated: ...` and mints
+		// a finding whose severity is the sentence.
+		if strings.ContainsFunc(id, unicode.IsSpace) {
+			return "", "", "", false
+		}
 	}
 	switch kind {
 	case findingKind, rejectedKind, validationKind:

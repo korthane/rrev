@@ -86,6 +86,11 @@ func TestShippedAgentsExpandForBothExecutors(t *testing.T) {
 			if !strings.Contains(got, "git diff main...HEAD") {
 				t.Errorf("%s agent %q never tells the reviewer how to obtain the diff:\n%s", executor, name, got)
 			}
+			// fullVars carries one standing rejection: an agent that expands
+			// without it keeps rediscovering what the run already settled.
+			if !strings.Contains(got, "R1") {
+				t.Errorf("%s agent %q did not expand the ledger:\n%s", executor, name, got)
+			}
 		}
 	}
 }

@@ -358,8 +358,11 @@ func (l *Log) track(f Finding, d disposition, rationale string) (*ledgerEntry, s
 		// has to answer. A later re-rejection tends to restate it as "as
 		// recorded above", which would hollow out every prompt built from it.
 		// The placeholder is not such a rationale: it settles nothing, so a
-		// real reason arriving later replaces it.
-		if e.Rationale == "" || e.Rationale == noReasonGiven {
+		// real reason arriving later replaces it. Neither does a rationale
+		// the code has since moved past: a confirmation settled the question
+		// the other way, so the reason it was once dismissed for describes
+		// code that no longer exists and the new one has to win.
+		if e.Rationale == "" || e.Rationale == noReasonGiven || e.Confirmed {
 			e.Rationale = rationale
 		}
 		// Confirming is not final: a finding fixed in one iteration and
@@ -403,8 +406,10 @@ func (l *Log) bullet(d disposition, f Finding, e *ledgerEntry) string {
 		fmt.Fprintf(&b, " — %s", f.Reviewer)
 	}
 	// A rejection carries its reason on the line below, and the summary a
-	// reviewer wrote for it is already the ledger entry's claim.
-	if d != rejected && f.Summary != "" {
+	// reviewer wrote for it is normally already the ledger entry's claim.
+	// When it is not, the re-raise claimed something the entry does not, and
+	// dropping it here would leave no record that the id was mis-declared.
+	if f.Summary != "" && (d != rejected || f.Summary != e.Claim) {
 		fmt.Fprintf(&b, ": %s", oneLine(f.Summary))
 	}
 	return b.String()

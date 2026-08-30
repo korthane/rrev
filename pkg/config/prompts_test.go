@@ -362,27 +362,3 @@ func TestShippedAgentsAreShownTheStandingRejections(t *testing.T) {
 		}
 	}
 }
-
-// Every agent must still expand under both executors after carrying the ledger.
-func TestShippedAgentsExpandForBothExecutorsWithALedger(t *testing.T) {
-	assets := embeddedPrompts(t)
-	names := assets.AgentNames()
-	vars := fullVars()
-	vars.Ledger = []string{"- R1  a.go:1  (raised comprehensive 1)\n    rejected because: out of scope\n"}
-	for _, exec := range []string{ExecutorClaude, ExecutorCodex} {
-		for _, name := range names {
-			exp := Expander{Assets: assets, Executor: exec, Vars: vars}
-			agent, err := assets.Agent(name)
-			if err != nil {
-				t.Fatalf("agent %q: %v", name, err)
-			}
-			got, err := exp.Expand(agent)
-			if err != nil {
-				t.Fatalf("agent %q under %s: %v", name, exec, err)
-			}
-			if !strings.Contains(got, "R1") {
-				t.Errorf("agent %q under %s did not expand the ledger", name, exec)
-			}
-		}
-	}
-}
