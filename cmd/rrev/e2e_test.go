@@ -584,10 +584,15 @@ esac`,
 			t.Errorf("progress log missing %q:\n%s", want, log)
 		}
 	}
-	for _, want := range []string{"final review failed: claude: failure (exit 1)", "Error: prompt is too long for the context window"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("console missing %q:\n%s", want, out.String())
-		}
+	// The script's own echo is streamed under a "[final]" prefix; the record
+	// is the unprefixed, indented copy after the summary line.
+	console := out.String()
+	summary := strings.Index(console, "final review failed: claude: failure (exit 1)")
+	if summary < 0 {
+		t.Fatalf("console missing the failure summary:\n%s", console)
+	}
+	if !strings.Contains(console[summary:], "\n  Error: prompt is too long for the context window\n") {
+		t.Errorf("console missing the failure's detail after its summary:\n%s", console)
 	}
 }
 

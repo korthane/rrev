@@ -119,7 +119,7 @@ func reviewed(result Result) bool {
 func diagnostics(result Result, err error) []string {
 	lines := spoken(result.Output)
 	if failure, ok := errors.AsType[*Error](err); ok && failure.Stderr != "" {
-		lines = append(lines, strings.Split(failure.Stderr, "\n")...)
+		lines = append(lines, flatLines(failure.Stderr)...)
 	}
 	return lines
 }
@@ -131,7 +131,7 @@ func diagnostics(result Result, err error) []string {
 func spoken(output string) []string {
 	var lines []string
 	fenced := false
-	for line := range strings.SplitSeq(output, "\n") {
+	for _, line := range flatLines(output) {
 		line = strings.TrimSpace(line)
 		if isFence(line) {
 			fenced = !fenced
@@ -225,15 +225,10 @@ func Describe(err error) Cause {
 	return c
 }
 
-// lastLines keeps the final n non-blank lines of text. Terminal noise is
-// flattened first: a carriage return a progress bar redraws with becomes a
-// line break, and escape sequences go, so the log and the console both show
-// what the tool said rather than how it painted it.
+// lastLines keeps the final n non-blank lines of text.
 func lastLines(text string, n int) (string, bool) {
 	var lines []string
-	text = ansiSequence.ReplaceAllString(newlines.Replace(text), "")
-	for line := range strings.SplitSeq(text, "\n") {
-		line = strings.Map(printable, line)
+	for _, line := range flatLines(text) {
 		if strings.TrimSpace(line) != "" {
 			lines = append(lines, strings.TrimRight(line, " \t"))
 		}
@@ -244,9 +239,24 @@ func lastLines(text string, n int) (string, bool) {
 	return strings.Join(lines[len(lines)-n:], "\n"), true
 }
 
+// flatLines splits text into lines with terminal noise flattened: a carriage
+// return a progress bar redraws with becomes a line break, and escape
+// sequences go. The classifier matches and the tails render on these same
+// lines, so the log and the console show what the tool said rather than how
+// it painted it, and the matched reason is found in the tail it came from.
+func flatLines(text string) []string {
+	text = ansiSequence.ReplaceAllString(newlines.Replace(text), "")
+	var lines []string
+	for line := range strings.SplitSeq(text, "\n") {
+		lines = append(lines, strings.Map(printable, line))
+	}
+	return lines
+}
+
 var (
-	newlines     = strings.NewReplacer("\r\n", "\n", "\r", "\n")
-	ansiSequence = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+	newlines = strings.NewReplacer("\r\n", "\n", "\r", "\n")
+	// CSI sequences (colour, cursor) and OSC ones (window title, hyperlinks).
+	ansiSequence = regexp.MustCompile(`\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))`)
 )
 
 // printable drops the control characters left once line breaks and escape

@@ -155,6 +155,30 @@ func TestClaudeResultErrorSurvivesNonZeroExit(t *testing.T) {
 	}
 }
 
+// The claude CLI is a Node program and routinely writes a warning to stderr.
+// That must not hide the reason claude reported: a usage limit with a warning
+// beside it is still a usage limit.
+func TestClaudeResultErrorSurvivesNoisyStderr(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n",
+		stderr: "(node:123) ExperimentalWarning: something\n",
+		exit:   1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want it classified as a usage limit", err)
+	}
+	c := executor.Describe(err)
+	if c.Summary() != "claude: usage limit (exit 1)" {
+		t.Errorf("summary = %q", c.Summary())
+	}
+	if want := "(node:123) ExperimentalWarning: something\nYou have hit your usage limit"; c.Detail() != want {
+		t.Errorf("detail = %q, want %q", c.Detail(), want)
+	}
+}
+
 func TestClaudeRunMissingBinary(t *testing.T) {
 	_, err := (executor.Claude{Command: "rrev-no-such-tool"}).Run(t.Context(), executor.Request{Prompt: "p"})
 	if err == nil {

@@ -656,3 +656,44 @@ func TestEvaluatorConfirmationLandsOnTheReportedEntry(t *testing.T) {
 		t.Errorf("the confirmation opened a second entry:\n%s", got)
 	}
 }
+
+// The tool may itself name a standing entry, or an id the log does not hold.
+// Either way the evaluator must be shown the id the log resolved the finding
+// to — the standing entry, or the new one opened for the unknown id — since a
+// disposition against the tool's own token would land on nothing.
+func TestEvaluatorIsShownTheResolvedIdNotTheToolsToken(t *testing.T) {
+	external := mock("codex",
+		"FINDING[R1]: major | pkg/a.go:7 | external | - | the token is echoed\n"+
+			"FINDING[R99]: minor | pkg/b.go:2 | external | - | the cast is unchecked")
+	primary := mock("claude", "")
+	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	log.Rejected(progress.Finding{Reviewer: "quality", Severity: "major", File: "pkg/a.go", Line: 7, Summary: "the token is echoed"},
+		"the value is not key material")
+	var shown string
+	primary.Handler = func(_ context.Context, req executor.Request) (executor.Result, error) {
+		shown = req.Prompt
+		repo.commit("head-eval")
+		return executor.Result{Output: "REJECTED[R1]: pkg/a.go:7 | external | the token is echoed | the value is not key material\n" +
+			"REJECTED[R2]: pkg/b.go:2 | external | the cast is unchecked | the type is fixed by the caller"}, nil
+	}
+
+	External(context.Background(), env)
+
+	for _, want := range []string{
+		"FINDING[R1]: major | pkg/a.go:7 | external | - | the token is echoed",
+		"FINDING[R2]: minor | pkg/b.go:2 | external | - | the cast is unchecked",
+	} {
+		if !strings.Contains(shown, want) {
+			t.Errorf("evaluator prompt missing %q:\n%s", want, shown)
+		}
+	}
+	got := readFile(t, log.Path())
+	if strings.Contains(got, "`R3`") {
+		t.Errorf("a disposition opened a third entry:\n%s", got)
+	}
+}

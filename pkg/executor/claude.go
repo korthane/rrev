@@ -52,8 +52,8 @@ func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
 	col := &collector{stream: out}
 	tools := newClaudeTools()
 	// The result event's message is kept aside: run reports a non-zero exit
-	// ahead of it, and claude writes nothing to stderr, so it is the only
-	// reason such a failure can carry.
+	// ahead of it, and what claude wrote to stderr is at most a runtime
+	// warning, so the message is the reason such a failure carries.
 	var reported *claudeResultError
 	err := cmd.run(ctx, col, func(line string) error {
 		err := claudeLine(col, tools, line)
@@ -69,8 +69,11 @@ func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
 		if !ok {
 			failure = &Error{Tool: c.Name(), Args: args, ExitCode: -1, Err: err}
 		}
-		if failure.Stderr == "" {
-			failure.Stderr = reported.msg
+		// Appended, not used only when stderr is empty: a Node warning on
+		// stderr must not hide the reason, and last keeps it inside the
+		// rendered tail's line bound.
+		if !strings.Contains(failure.Stderr, reported.msg) {
+			failure.Stderr = strings.TrimSpace(failure.Stderr + "\n" + reported.msg)
 		}
 		err = failure
 	}

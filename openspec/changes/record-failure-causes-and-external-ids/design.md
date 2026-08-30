@@ -40,6 +40,10 @@ Positional or textual pairing is the inference the identity requirement forbids,
 
 `Finding` records the entry and returns the id it assigned, so a call site cannot hold an id for something the log does not yet hold. That matters for the degraded no-lock path, where the record is appended without a ledger refresh: the id is still assigned in memory and still resolvable next round.
 
+### A reported entry's first disposition counts as newly raised
+
+The iteration summary splits rejections into newly raised and re-raised, and a rejection naming an existing entry used to be the latter without exception. The evaluator's disposition now names the tool's reported entry, so that rule would count every external round as re-litigation. A rejection is re-raised only when the entry it names was already judged — rejected with a rationale, or confirmed. The tool's report is a claim, not a judgement, so its first disposition is a new rejection; the same holds for any later phase naming a reported-only entry.
+
 ### The invocation line moves before the review call's report
 
 `ExternalTool(…, "invoked")` is already written before the call; the outcome line is written after the call returns, but the call's own `writeReport` has already written the findings by then. The outcome line moves to precede `writeReport`, and when the round goes on to evaluation the tool's `writeReport` runs as soon as the tool returns rather than being held to the round's end, since the evaluator has to be shown the ids it hands back; a call that failed or converged is never evaluated, so its report is still handed back to the loop as before. That inverts the earlier hold-both-reports-together rule, so the round keeps the tool's recorded report across an evaluation re-run after a transient failure: the retry answers the same report and the same ids instead of invoking the tool again and recording its findings a second time. It reads correctly and it also means a run killed during evaluation leaves the outcome on disk.

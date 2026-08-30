@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
@@ -698,35 +699,47 @@ func TestStandingRejectionsReachTheNextIterationsPrompt(t *testing.T) {
 // A dead or rate-limited external tool that logged as a clean pass is the exact
 // confusion the recorded-activity requirement exists to remove.
 func TestExternalToolFailureIsRecordedWithItsCause(t *testing.T) {
-	external := &executor.Mock{Tool: "codex", Responses: []executor.Response{
-		{Err: &executor.Error{Tool: "codex", ExitCode: 1, Stderr: "fatal: no api key configured", Err: errors.New("exit status 1")}},
-	}}
-	env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
-	dir := t.TempDir()
-	log, err := progress.Open(dir, "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
-
-	res := External(context.Background(), env)
-
-	if res.Reason != ReasonFailure {
-		t.Errorf("reason = %q, want the phase to fail rather than read as converged", res.Reason)
-	}
-	data, err := os.ReadFile(log.Path())
-	if err != nil {
-		t.Fatalf("read progress log: %v", err)
-	}
 	// The outcome line carries the summary; the failure record that follows
 	// carries the tail. Neither may be found only by way of the other.
-	for _, want := range []string{
-		"- external tool `codex`: failed\n  codex: failure (exit 1)\n",
-		"- **failed** codex: failure (exit 1) — external iteration 1\n  fatal: no api key configured\n",
+	for name, tc := range map[string]struct {
+		err            error
+		outcome, cause string
+	}{
+		"exit status": {
+			err:     &executor.Error{Tool: "codex", ExitCode: 1, Stderr: "fatal: no api key configured", Err: errors.New("exit status 1")},
+			outcome: "- external tool `codex`: failed\n  codex: failure (exit 1)\n",
+			cause:   "- **failed** codex: failure (exit 1) — external iteration 1\n  fatal: no api key configured\n",
+		},
+		"timeout": {
+			err:     &executor.Error{Tool: "codex", ExitCode: -1, Output: "Reviewing.", Err: &executor.TimeoutError{Tool: "codex", Limit: time.Minute}},
+			outcome: "- external tool `codex`: failed\n  codex: timeout\n",
+			cause:   "- **failed** codex: timeout — external iteration 1\n  codex exceeded its 1m0s session timeout\n  Reviewing.\n",
+		},
 	} {
-		if !strings.Contains(string(data), want) {
-			t.Errorf("progress log missing %q:\n%s", want, data)
-		}
+		t.Run(name, func(t *testing.T) {
+			external := &executor.Mock{Tool: "codex", Responses: []executor.Response{{Err: tc.err}}}
+			env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
+			log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+			if err != nil {
+				t.Fatalf("open progress log: %v", err)
+			}
+			env.Log = log
+
+			res := External(context.Background(), env)
+
+			if res.Reason != ReasonFailure {
+				t.Errorf("reason = %q, want the phase to fail rather than read as converged", res.Reason)
+			}
+			data, err := os.ReadFile(log.Path())
+			if err != nil {
+				t.Fatalf("read progress log: %v", err)
+			}
+			for _, want := range []string{tc.outcome, tc.cause} {
+				if !strings.Contains(string(data), want) {
+					t.Errorf("progress log missing %q:\n%s", want, data)
+				}
+			}
+		})
 	}
 }
 

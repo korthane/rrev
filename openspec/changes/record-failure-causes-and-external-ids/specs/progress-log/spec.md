@@ -46,7 +46,7 @@ Every finding recorded in the progress log SHALL carry an identifier that is sta
 
 #### Scenario: Evaluated external finding keeps its identifier
 - **WHEN** the external tool reports a finding and the primary executor then confirms or rejects it, naming the identifier it was shown
-- **THEN** the log records the disposition against the reported entry, and the ledger holds one entry for the finding
+- **THEN** the log records the disposition against the reported entry, the ledger holds one entry for the finding, and the iteration summary counts the disposition as newly raised rather than re-raised, since the reported entry carried no judgement to repeat
 
 #### Scenario: Evaluator omits the identifier
 - **WHEN** the primary executor's disposition names no identifier

@@ -25,7 +25,9 @@ Change artifacts:
 ---
 
 The findings rrev parsed out of that report, each under the id it was recorded
-in the progress log with. These ids are what your report lines must carry:
+in the progress log with. These ids are what your report lines must carry; the
+raw report above still holds the tool's reasoning, which the parsed lines drop,
+so read both:
 
 {{EXTERNAL_FINDINGS}}
 

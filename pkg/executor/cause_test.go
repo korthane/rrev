@@ -222,8 +222,29 @@ func TestStderrTailStartsOnALineBoundary(t *testing.T) {
 // A progress bar redrawn with carriage returns and coloured with escape
 // sequences must not paint over the console or land raw in the log.
 func TestDescribeFlattensTerminalNoiseInTheTail(t *testing.T) {
-	err := &executor.Error{Tool: "codex", ExitCode: 1, Stderr: "10%\r20%\r100%\r\n\x1b[31mError: boom\x1b[0m\x07\n"}
-	if want := "10%\n20%\n100%\nError: boom"; executor.Describe(err).Detail() != want {
+	for stderr, want := range map[string]string{
+		"10%\r20%\r100%\r\n\x1b[31mError: boom\x1b[0m\x07\n":                      "10%\n20%\n100%\nError: boom",
+		"\x1b]0;codex\x07\x1b]8;;https://x.test\x1b\\Error: boom\x1b]8;;\x1b\\\n": "Error: boom",
+	} {
+		err := &executor.Error{Tool: "codex", ExitCode: 1, Stderr: stderr}
+		if got := executor.Describe(err).Detail(); got != want {
+			t.Errorf("detail of %q = %q, want %q", stderr, got, want)
+		}
+	}
+}
+
+// The classifier's matched line leads the detail unless the tail holds it. A
+// reason matched on a raw line the tool painted with a progress bar and colour
+// must be the flattened line, or it is repeated raw above its cleaned twin.
+func TestMatchedReasonIsFlattenedLikeTheTail(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{stderr: "10%\r20%\r\x1b[31mrate limit exceeded\x1b[0m\n", exit: 1})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "review", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Fatalf("err = %v, want a usage limit", err)
+	}
+	if want := "10%\n20%\nrate limit exceeded"; executor.Describe(err).Detail() != want {
 		t.Errorf("detail = %q, want %q", executor.Describe(err).Detail(), want)
 	}
 }

@@ -439,9 +439,9 @@ gets one, including a rejection that arrived with no reason.
 When an executor call fails, the log records why, not only that it did: the
 phase and iteration, the tool, its classification — usage limit, transient
 failure, timeout, cancelled, or plain failure — and its exit status when the
-tool exited on its own; a call cut short by a bound or a cancellation, or one
-that ended on `<<<RREV:TASK_FAILED>>>`, has none and the summary omits it. A
-diagnostic tail follows. The tail is the tool's standard error, or the last
+tool exited on its own; a call cut short by a bound or a cancellation, one
+that ended on `<<<RREV:TASK_FAILED>>>`, or a refusal the tool printed before
+exiting zero, has none and the summary omits it. A diagnostic tail follows. The tail is the tool's standard error, or the last
 lines it wrote to standard output when standard error is empty, because a tool
 that reports its own error on stdout and exits silently otherwise leaves an exit
 status and nothing else. The tail keeps the final twenty non-blank lines of the
