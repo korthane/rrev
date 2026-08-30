@@ -185,8 +185,11 @@ func TestStdoutTailStartsOnALineBoundary(t *testing.T) {
 	if !ok {
 		t.Fatalf("err = %v, want *executor.Error", err)
 	}
-	if len(failure.Output) > tailBytes {
-		t.Errorf("tail holds %d bytes, want at most %d", len(failure.Output), tailBytes)
+	// Bounded from both sides: an upper bound alone passes just as well with
+	// the bound lowered to nothing, and a tail is only diagnostic when it is
+	// as much of the tool's last words as the bound allows.
+	if len(failure.Output) > tailBytes || len(failure.Output) < tailBytes/2 {
+		t.Errorf("tail holds %d bytes, want close to the bound of %d", len(failure.Output), tailBytes)
 	}
 	first, _, _ := strings.Cut(failure.Output, "\n")
 	if !strings.HasPrefix(first, "line ") || !strings.HasSuffix(first, "still reviewing") {
@@ -338,8 +341,8 @@ func TestStderrTailStartsOnALineBoundary(t *testing.T) {
 	if !ok {
 		t.Fatalf("err = %v, want *executor.Error", err)
 	}
-	if len(failure.Stderr) > tailBytes {
-		t.Errorf("stderr tail holds %d bytes, want at most %d", len(failure.Stderr), tailBytes)
+	if len(failure.Stderr) > tailBytes || len(failure.Stderr) < tailBytes/2 {
+		t.Errorf("stderr tail holds %d bytes, want close to the bound of %d", len(failure.Stderr), tailBytes)
 	}
 	first, _, _ := strings.Cut(failure.Stderr, "\n")
 	if !strings.HasPrefix(first, "line ") || !strings.HasSuffix(first, "still reviewing") {
@@ -405,5 +408,44 @@ func TestDescribeDropsAReasonTheTailAlreadyEnds(t *testing.T) {
 
 	if c := executor.Describe(err); c.Detail() != "tool execution failed" {
 		t.Errorf("detail = %q, want the message once", c.Detail())
+	}
+}
+
+// The tail is trimmed of blank lines and trailing whitespace before it is
+// rendered, so a reason compared against it raw never matches the text it
+// repeats: claude's result message is the case, since it reaches the record
+// both as the wrapped error and as the stderr the message was appended to.
+func TestDescribeDropsAReasonTheTailEndsPastItsBlankLines(t *testing.T) {
+	msg := "Error: the request was rejected   \n\nRetry with a smaller prompt."
+	err := &executor.Error{Tool: "claude", ExitCode: -1, Stderr: msg,
+		Err: fmt.Errorf("claude reported an error: %s", msg)}
+
+	want := "Error: the request was rejected\nRetry with a smaller prompt."
+	if c := executor.Describe(err); c.Detail() != want {
+		t.Errorf("detail = %q, want the message once as %q", c.Detail(), want)
+	}
+}
+
+// A wrapped error carrying everything the tool said is held to the same bound
+// as the tail, so a failure with no exit status cannot flood the record the
+// bound exists to keep small.
+func TestDescribeBoundsTheReasonLikeTheTail(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("claude reported an error:\n")
+	for i := range 400 {
+		fmt.Fprintf(&b, "stack frame %d\n", i)
+	}
+	err := &executor.Error{Tool: "claude", ExitCode: -1, Output: "Reviewing.", Err: errors.New(b.String())}
+
+	c := executor.Describe(err)
+
+	if lines := strings.Count(c.Reason, "\n") + 1; lines > 20 {
+		t.Errorf("reason holds %d lines, want at most the tail bound of 20", lines)
+	}
+	if !strings.HasSuffix(c.Reason, "stack frame 399") {
+		t.Errorf("reason lost the end of the error: %q", c.Reason)
+	}
+	if !strings.Contains(c.Detail(), "[earlier lines omitted]") {
+		t.Errorf("detail does not mark the omission:\n%s", c.Detail())
 	}
 }

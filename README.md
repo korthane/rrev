@@ -454,13 +454,14 @@ lines it wrote to standard output when standard error is empty, because a tool
 that reports its own error on stdout and exits silently otherwise leaves an
 exit status and nothing else. The tail keeps the final twenty non-blank lines
 of the last 8 KiB the tool wrote, led by the line that explains the end — the
-matched refusal, the bound a timeout expired, or, when there is no exit
-status, the error that stopped the call — and marks the omission when the line
-bound cut earlier ones. Lines are counted after terminal noise is flattened: a
-carriage return a progress bar redraws with becomes a line break, and escape
-sequences and other control characters are dropped, so the log and the console
-show what the tool said rather than how it painted it. The console prints the
-same summary and tail as the phase ends.
+matched refusal, the bound a timeout expired, or, when there is no exit status
+and the call was not cancelled, the error that stopped it — and marks the
+omission when the line bound cut earlier ones. That leading line is held to
+the same bounds as the tail beneath it. Lines are counted after terminal noise
+is flattened: a carriage return a progress bar redraws with becomes a line
+break, and escape sequences and other control characters are dropped, so the
+log and the console show what the tool said rather than how it painted it. The
+console prints the same summary and tail as the phase ends.
 
 A call the executor classified as a transient failure is retried, up to twice
 per iteration, and every attempt is recorded the same way, followed by a note

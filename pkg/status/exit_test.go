@@ -82,7 +82,9 @@ func TestSummaryNamesThePhaseThatDidNotConverge(t *testing.T) {
 }
 
 func TestSummaryNamesTheFailingPhase(t *testing.T) {
-	failure := errors.New("claude reported <<<RREV:TASK_FAILED>>>")
+	// A failure no tool owns — a prompt that would not expand — is the shape
+	// that reaches the closing line as its own text.
+	failure := errors.New("expand comprehensive prompt: unknown variable {{TYPO}}")
 	res := processor.Result{
 		Mode: processor.ModeFull,
 		Phases: []phase.Result{
@@ -96,6 +98,33 @@ func TestSummaryNamesTheFailingPhase(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary is missing %q:\n%s", want, got)
 		}
+	}
+}
+
+// A review the model gave up on returns a process failure carrying the marker
+// as its wrapped error, not a bare error naming it. The closing line is the
+// summary form of that shape; the marker itself is in the failure record's
+// detail, which the console has already shown.
+func TestSummaryNamesAFailureTheModelSignalled(t *testing.T) {
+	failure := &executor.Error{Tool: "claude", ExitCode: -1,
+		Output: "I cannot review this branch.", Err: errors.New("reported <<<RREV:TASK_FAILED>>>")}
+	res := processor.Result{
+		Mode:   processor.ModeFull,
+		Phases: []phase.Result{{Name: phase.NameComprehensive, Reason: phase.ReasonFailure, Err: failure}},
+		Err:    failure,
+	}
+
+	got := Summary(res)
+	for _, want := range []string{
+		"comprehensive review did not converge: executor failure: claude: failure",
+		"run failed during the comprehensive review",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "I cannot review this branch.") {
+		t.Errorf("the closing line must not repeat the tail its record carried:\n%s", got)
 	}
 }
 

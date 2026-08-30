@@ -74,6 +74,24 @@ func TestQuotedLimitTextIsNotAFailure(t *testing.T) {
 	}
 }
 
+// The done signal is not what saves the quoted wording: an answer short enough
+// to read as a refusal is judged on its lines alone, and the fence is what
+// keeps the code it quotes out of the tool's own voice.
+func TestLimitWordingInsideAFenceIsNotARefusal(t *testing.T) {
+	quoted := strings.Join([]string{
+		"Throttling is mishandled here:",
+		"```go",
+		"// rate limit exceeded is retried forever",
+		"```",
+		"",
+	}, "\n")
+	tool := newFakeTool(t, fakeToolOpts{stdout: quoted})
+
+	if _, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"}); err != nil {
+		t.Fatalf("wording quoted inside a fence was read as a provider refusal: %v", err)
+	}
+}
+
 // A review that ends on its done signal reviewed something; limit wording it
 // quotes from the code under review must not abort the run.
 func TestReportedLimitWordingIsNotARefusal(t *testing.T) {

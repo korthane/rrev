@@ -362,6 +362,40 @@ func TestLoopEndsOnAbort(t *testing.T) {
 	}
 }
 
+// The mock returns a bare context.Canceled, but a real executor kills its
+// process group and reports the cancellation as a process failure carrying
+// what the tool had said. That record names the tool and keeps its last words.
+func TestCancelledCallRecordsTheToolAndItsLastWords(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	primary := &executor.Mock{Tool: "claude", Handler: func(context.Context, executor.Request) (executor.Result, error) {
+		cancel()
+		return executor.Result{}, &executor.Error{Tool: "claude", ExitCode: -1,
+			Output: "Reviewing the diff.\nStill reviewing.", Err: context.Canceled}
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+	console := &bytes.Buffer{}
+	env.Out = console
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := Comprehensive(ctx, env)
+
+	if res.Reason != ReasonAborted {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonAborted)
+	}
+	for _, want := range []string{"- **failed** claude: cancelled — comprehensive iteration 1", "  Still reviewing."} {
+		if got := readFile(t, log.Path()); !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+	if want := "comprehensive review failed: claude: cancelled"; !strings.Contains(console.String(), want) {
+		t.Errorf("console missing %q:\n%s", want, console.String())
+	}
+}
+
 func TestStalemateEndsLoop(t *testing.T) {
 	primary := mock("claude", "still working on it")
 	env, _ := newEnv(t, primary, nil, func(c *config.Config) {

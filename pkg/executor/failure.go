@@ -120,20 +120,17 @@ func reviewed(result Result) bool {
 // diagnostics collects the lines a tool spoke in its own voice: everything it
 // wrote to stderr, plus the parts of its output that are not quoted material.
 func diagnostics(result Result, err error) []string {
-	lines := spoken(result.Output)
+	lines := speech(flatLines(result.Output))
 	if failure, ok := errors.AsType[*Error](err); ok && failure.Stderr != "" {
 		lines = append(lines, flatLines(failure.Stderr)...)
 	}
 	return lines
 }
 
-// spoken drops fenced blocks, markdown list, quote and heading lines, and the
+// speech drops fenced blocks, markdown list, quote and heading lines, and the
 // pipe-delimited report lines the prompts mandate: a reviewer citing "rate limit
 // exceeded" from the code under review must not be mistaken for the provider
-// refusing the call.
-func spoken(output string) []string { return speech(flatLines(output)) }
-
-// speech applies that filter to lines already split, so the classifier and the
+// refusing the call. It takes lines already split, so the classifier and the
 // refusal bound can disagree about what counts as a line without disagreeing
 // about which lines are the tool's own voice.
 func speech(lines []string) []string {
@@ -231,13 +228,19 @@ func Describe(err error) Cause {
 	// rrev could not read — the wrapped error is what explains the end, and
 	// the tail beneath it is the review the tool was giving up on.
 	if failure.ExitCode < 0 && c.Reason == "" && failure.Err != nil && !errors.Is(failure.Err, context.Canceled) {
+		// Bounded and trimmed exactly as the tail is: a wrapped error carrying
+		// the whole of what the tool said would otherwise flood the record the
+		// bound exists to keep small, and a reason normalised differently from
+		// the tail it is compared against would not match the text it repeats.
+		//
 		// Suffix, not containment: the wrapped error says nothing more only
 		// when the tail is what it ends with, as "claude reported an error:
 		// <msg>" ends with <msg>. A tail that merely occurs inside a longer
 		// reason is the reason's own word, and dropping it would leave a
 		// failure with no exit status saying nothing about what stopped it.
-		if reason := flat(failure.Err.Error()); c.Tail == "" || !strings.HasSuffix(reason, c.Tail) {
-			c.Reason = reason
+		reason, cut := lastLines(bounded(failure.Err.Error()), causeTailLines)
+		if c.Tail == "" || !strings.HasSuffix(reason, c.Tail) {
+			c.Reason, c.Truncated = reason, c.Truncated || cut
 		}
 	}
 	return c
