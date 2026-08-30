@@ -251,7 +251,9 @@ func PromptUses(m Mode, finalize bool) []PromptUse {
 // promptSequence mirrors sequence: the prompts the mode's phases expand, in the
 // order those phases run.
 func promptSequence(m Mode) []string {
-	comprehensive := []string{phase.PromptComprehensive}
+	// Both comprehensive prompts, so a broken override of the repeat one is
+	// caught at startup rather than at iteration 2, after a full pass is spent.
+	comprehensive := []string{phase.PromptComprehensive, phase.PromptComprehensiveRepeat}
 	external := []string{phase.PromptExternal, phase.PromptExternalEval}
 	final := []string{phase.PromptFinal}
 	switch m {

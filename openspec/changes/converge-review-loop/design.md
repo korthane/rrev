@@ -31,7 +31,7 @@ See proposal.md — Why. The relevant machinery today:
 
 ### 2. The gate requires at least one parsed finding
 
-The gate fires only when the report parsed at least one confirmed finding, none critical or major, and no `VALIDATION:` line reported `fail`. A report with zero findings and no signal keeps today's behavior (iterate): an empty report is indistinguishable from a reporting failure — an executor that crashed mid-output or never printed its report section must not read as a clean review. The zero-finding case already has a correct path: the prompt tells the executor to emit the done signal.
+The gate fires only when the report parsed at least one confirmed finding, every one of them an explicit `minor`, and no `VALIDATION:` line reported a failure (matched on the `fail` prefix, so `failed` and `failure` count). It fails closed on anything else: a severity outside the template's vocabulary, or one a shifted report line left holding a file path, is a line rrev could not read, which is the same case as the empty report and not a cleaner one. A report with zero findings and no signal keeps today's behavior (iterate): an empty report is indistinguishable from a reporting failure — an executor that crashed mid-output or never printed its report section must not read as a clean review. The zero-finding case already has a correct path: the prompt tells the executor to emit the done signal.
 
 `stepResult` grows a `Validations` field so the gate can see outcomes; today they only pass through the `writeReport` closure.
 
@@ -59,7 +59,7 @@ The new prompt repeats the structure (ledger, agents, verify, fix, report, signa
 - [A late major slips through because the loop stopped at the first all-minor iteration] → The final phase runs a full fresh review restricted to critical/major and iterates until clean; both dogfooding logs show it would have caught the one such major (run 1, iteration 4).
 - [Narrowed repeat scope hides a branch-wide issue the first sweep missed] → The full branch diff stays named in the repeat instruction as context and regressions anywhere remain in scope; the external loop and final phase still review the full branch with different eyes.
 - [The severity gate converges on a report whose severities the executor mislabeled (majors filed as minor)] → The same executor controls the done signal today, so this adds no new trust; the final phase re-reviews with severity as its explicit brief.
-- [An executor emits findings but no VALIDATION line after fixing, and the gate converges without proof of validation] → The prompts already require the validation line; the final phase re-runs validation-sensitive review. Tightening the gate to require an explicit pass would block convergence on prompt-format drift, which is the failure mode this change exists to remove.
+- [An executor emits findings but no VALIDATION line after fixing, and the gate converges without proof of validation] → The prompts already require the validation line; the final phase re-runs validation-sensitive review. Tightening the gate to require an explicit pass would block convergence on prompt-format drift, which is the failure mode this change exists to remove. A line that is present but reports a failure does block, whichever tense it is written in.
 
 ## Migration Plan
 

@@ -2,10 +2,12 @@
 
 Repeat comprehensive review of: {{GOAL_LINE}}
 
-An earlier iteration swept this branch and committed fixes. This pass is about
-those fixes: whether each one is correct, complete, and did not break something
-else. The whole branch stays in scope for regressions, but re-auditing code no
-fix has touched is what runs a review to its iteration limit without ending it.
+An earlier iteration swept this branch. This pass is about the fixes it made
+since: whether each one is correct, complete, and did not break something else.
+The diff instruction below says what that covers - if that iteration committed
+nothing, it is the whole branch again. Either way the branch stays in scope for
+regressions, but re-auditing code no fix has touched is what runs a review to
+its iteration limit without ending it.
 
 Iteration {{ITERATION}} of at most {{MAX_ITERATIONS}} for this phase.
 

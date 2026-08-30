@@ -102,6 +102,77 @@ func TestFailedValidationBlocksConvergence(t *testing.T) {
 	}
 }
 
+// The gate reads the severity the report wrote, and the parser hands over
+// whatever word stood in that field. A vocabulary rrev does not know, and a
+// line whose fields shifted so the location lands in the severity slot, are
+// both reports it could not read — the same case as an empty one, and neither
+// may end the phase.
+func TestUnreadableSeverityDoesNotConverge(t *testing.T) {
+	for name, report := range map[string]string{
+		"drifted vocabulary": "FINDING: blocker | a.go:9 | quality | - | the token is logged in plaintext",
+		"shifted fields":     "FINDING: a.go:9 | quality | - | the token is logged in plaintext",
+		"absent severity":    "FINDING:  | a.go:9 | quality | - | the token is logged in plaintext",
+	} {
+		t.Run(name, func(t *testing.T) {
+			primary := mock("claude", report, reviewDone)
+			env, repo := newEnv(t, primary, nil, func(c *config.Config) { c.MaxIterations = 5 })
+			primary.Handler = changingHandler(primary, repo)
+
+			res := Comprehensive(context.Background(), env)
+
+			// Without this the case could pass for the wrong reason: a line
+			// that parsed into no finding at all is the empty-report path.
+			if len(res.Findings) != 1 {
+				t.Fatalf("findings = %d, want the line to have parsed into one", len(res.Findings))
+			}
+			if res.Iterations != 2 {
+				t.Errorf("iterations = %d, want a severity rrev cannot read to buy another iteration", res.Iterations)
+			}
+		})
+	}
+}
+
+// A model writes the outcome in whichever tense it reaches for, and the phase
+// must not converge on fixes the executor itself said do not build.
+func TestValidationReportedFailedInAnyTenseBlocksConvergence(t *testing.T) {
+	for _, outcome := range []string{"fail", "failed", "FAILED", "failure"} {
+		t.Run(outcome, func(t *testing.T) {
+			primary := mock("claude",
+				"FINDING: minor | a.go:3 | quality | - | the name reads oddly\n"+
+					"VALIDATION: "+outcome+" | make test | TestSignIn failed",
+				reviewDone)
+			env, repo := newEnv(t, primary, nil, func(c *config.Config) { c.MaxIterations = 5 })
+			primary.Handler = changingHandler(primary, repo)
+
+			res := Comprehensive(context.Background(), env)
+
+			if res.Iterations != 2 {
+				t.Errorf("iterations = %d, want %q to block the first iteration converging", res.Iterations, outcome)
+			}
+		})
+	}
+}
+
+// The gate decides on the iteration's report, which is what the requirement
+// says it reads. An executor that confirmed only minors and committed no fix
+// for them still converges the phase: whether it did the work the prompt asked
+// for is not something the report lets rrev check.
+func TestMinorOnlyIterationConvergesWithoutACommit(t *testing.T) {
+	primary := mock("claude",
+		"FINDING: minor | a.go:3 | quality | - | the name reads oddly\n"+
+			"VALIDATION: pass | make test | -")
+	env, _ := newEnv(t, primary, nil, func(c *config.Config) { c.MaxIterations = 5 })
+
+	res := Comprehensive(context.Background(), env)
+
+	if res.Reason != ReasonMinorOnly {
+		t.Errorf("reason = %q, want %q", res.Reason, ReasonMinorOnly)
+	}
+	if res.Changed {
+		t.Error("no iteration committed anything, so the phase changed nothing")
+	}
+}
+
 // A report with no findings at all cannot be told apart from an executor that
 // died before writing one, so it is not convergence: a review that genuinely
 // found nothing has the done signal to say so.
@@ -216,7 +287,10 @@ func TestRepeatIterationFallsBackToTheFullBranchWithoutACommit(t *testing.T) {
 	if !strings.Contains(calls[1].Prompt, "git diff head0..HEAD") {
 		t.Errorf("iteration 2 follows a commit and must be scoped to it:\n%s", calls[1].Prompt)
 	}
-	if strings.Contains(calls[2].Prompt, "git diff head1..HEAD") {
+	// The scope marker, not a specific base: a base carried forward from an
+	// older iteration is the regression worth catching, and naming one head
+	// would let it through.
+	if strings.Contains(calls[2].Prompt, "the fixes made since the last reviewed commit") {
 		t.Errorf("iteration 3 follows an iteration that committed nothing and must review the whole branch:\n%s", calls[2].Prompt)
 	}
 	if !strings.Contains(calls[2].Prompt, "git diff main...HEAD") {
@@ -263,6 +337,11 @@ func TestOtherPhasesKeepTheFullBranchDiff(t *testing.T) {
 	External(context.Background(), env)
 	Final(context.Background(), env)
 
+	// A phase that never ran would satisfy every assertion below vacuously.
+	if len(primary.Calls()) == 0 || len(external.Calls()) == 0 {
+		t.Fatalf("primary calls = %d, external calls = %d, want both phases to have run",
+			len(primary.Calls()), len(external.Calls()))
+	}
 	for _, call := range append(primary.Calls(), external.Calls()...) {
 		if strings.Contains(call.Prompt, "the fixes made since the last reviewed commit") {
 			t.Errorf("a phase outside the comprehensive loop was scoped to the fixes:\n%s", call.Prompt)

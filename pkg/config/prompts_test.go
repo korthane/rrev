@@ -142,11 +142,14 @@ func TestComprehensivePromptVerifiesFixesValidatesAndCommits(t *testing.T) {
 func TestComprehensivePromptsConvergeOnSeverityNotOnAnEmptyReport(t *testing.T) {
 	for _, name := range []string{"review_first", "review_repeat"} {
 		got := expandPrompt(t, name)
+		// Compared with the wrapping collapsed: the rule has to survive a
+		// reflow of the paragraph it lives in, which is what a copy-edit does.
+		flat := strings.Join(strings.Fields(got), " ")
 		for _, want := range []string{
-			"emit when nothing you confirmed this iteration is\n  critical or major",
+			"emit when nothing you confirmed this iteration is critical or major",
 			"fixed, validated, and committed the minor",
 		} {
-			if !strings.Contains(got, want) {
+			if !strings.Contains(flat, want) {
 				t.Errorf("%s prompt missing %q:\n%s", name, want, got)
 			}
 		}
@@ -182,9 +185,17 @@ func TestRepeatPromptIsASiblingOfTheFirstSweep(t *testing.T) {
 		}
 	}
 	// What it does not share: the repeat pass is about the fixes the iteration
-	// before it made, which is the whole reason it is a separate prompt.
-	if !strings.Contains(got, "This pass is about\nthose fixes") {
-		t.Errorf("review_repeat prompt does not scope itself to the previous iteration's fixes:\n%s", got)
+	// before it made, which is the whole reason it is a separate prompt. The
+	// same iteration may follow one that committed nothing, so the framing has
+	// to hold when the scope falls back to the whole branch.
+	flat := strings.Join(strings.Fields(got), " ")
+	for _, want := range []string{
+		"This pass is about the fixes it made since",
+		"if that iteration committed nothing, it is the whole branch again",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("review_repeat prompt missing %q:\n%s", want, got)
+		}
 	}
 }
 

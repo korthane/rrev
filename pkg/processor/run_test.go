@@ -335,12 +335,12 @@ func TestPromptUsesCoversEveryPhaseTheModeRuns(t *testing.T) {
 		finalize bool
 		want     []string
 	}{
-		{ModeFull, false, []string{"review_first", "external_review", "external_eval", "review_final"}},
-		{ModeFull, true, []string{"review_first", "external_review", "external_eval", "review_final", "finalize"}},
-		{ModePhase1Only, true, []string{"review_first"}},
+		{ModeFull, false, []string{"review_first", "review_repeat", "external_review", "external_eval", "review_final"}},
+		{ModeFull, true, []string{"review_first", "review_repeat", "external_review", "external_eval", "review_final", "finalize"}},
+		{ModePhase1Only, true, []string{"review_first", "review_repeat"}},
 		{ModeExternalOnly, true, []string{"external_review", "external_eval", "review_final", "finalize"}},
-		{ModeReportOnly, true, []string{"review_first", "external_review", "external_eval", "review_final"}},
-		{"", false, []string{"review_first", "external_review", "external_eval", "review_final"}},
+		{ModeReportOnly, true, []string{"review_first", "review_repeat", "external_review", "external_eval", "review_final"}},
+		{"", false, []string{"review_first", "review_repeat", "external_review", "external_eval", "review_final"}},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.mode)+fmt.Sprint(tt.finalize), func(t *testing.T) {

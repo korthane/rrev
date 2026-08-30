@@ -10,7 +10,7 @@ conformance criteria for the diff that followed.
 
 A run alternates independent reviewer agents with a fixing executor across three
 phases — comprehensive review, cross-model external review, and a final
-regression pass — iterating until the reviewers go quiet.
+regression pass — iterating until nothing serious is left.
 
 ## Installation
 
@@ -101,13 +101,17 @@ reporting convergence.
    It converges on the first iteration that confirms nothing critical or major:
    the minor findings are still fixed and committed, but hunting the last one is
    what runs a review to its iteration limit, since every fix is itself
-   reviewable. The final regression pass looks at the branch again afterwards.
-   The executor is asked to signal that itself, and rrev enforces the same rule
-   from the iteration's report — an iteration that confirmed findings, none of
-   them critical or major, and did not report a failed validation ends the phase
-   as `converged: minor findings only`. A report with no findings at all does
-   not: it cannot be told apart from an executor that died before writing one,
-   and a review that truly found nothing has `<<<RREV:REVIEW_DONE>>>` to say so.
+   reviewable. The final regression pass looks at the branch again afterwards,
+   whenever those fixes changed anything. The executor is asked to signal that
+   itself, and rrev enforces the same rule from the iteration's report — an
+   iteration that confirmed findings, all of them minor, and no validation
+   reported as failed ends the phase as `converged: minor findings only`.
+   Anything rrev cannot read that way keeps the loop going: a report with no
+   findings at all cannot be told apart from an executor that died before
+   writing one, and a severity outside `critical|major|minor` is a line it could
+   not parse rather than a clean one, so a replacement prompt has to keep that
+   vocabulary for the rule to hold. A review that truly found nothing has
+   `<<<RREV:REVIEW_DONE>>>` to say so.
 
    Iterations after the first are driven by `review_repeat.txt` instead, and are
    pointed primarily at the fixes the previous iteration committed — `git diff
@@ -298,6 +302,11 @@ is shown the tool's findings without their ids, so each confirmation or rejectio
 opens a second entry beside the reported one. Copy the parsed-findings block and
 the carry-the-id paragraph from the shipped default.
 
+The comprehensive phase runs two prompts, so a `review_first.txt` override
+written before `review_repeat.txt` existed now covers the first iteration only
+and every iteration after it runs the shipped repeat prompt. A project that
+wants its own wording throughout the phase has to override both.
+
 | Prompt | Phase |
 | --- | --- |
 | `review_first.txt` | comprehensive review, first iteration |
@@ -333,7 +342,7 @@ naming the file and the variable rather than text passed through to the model.
 | `{{CHANGE}}` | the selected change's name |
 | `{{GOAL}}`, `{{GOAL_LINE}}` | the derived one-line review goal |
 | `{{BASE_REF}}` | the resolved base ref |
-| `{{DIFF_INSTRUCTION}}` | the command that produces the diff under review |
+| `{{DIFF_INSTRUCTION}}` | the command that produces the diff under review — two of them on comprehensive iterations after the first, the fixes since the last reviewed commit and the full branch, each with a note on what it is for. Every reviewer agent expands the same value, so the rescoping reaches them without editing an agent file |
 | `{{PROGRESS_LOG}}` | path of this run's progress log |
 | `{{REPORT_FILE}}` | path of the findings report |
 | `{{VALIDATION_COMMAND}}` | the configured validation command |

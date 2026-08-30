@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Comprehensive review phase
-The first phase SHALL launch a set of independent reviewer agents concurrently against the branch diff, then have the executor deduplicate their findings, verify each against the actual code, fix the confirmed ones, run the project's validation commands, and commit. The agent set MUST include reviewers for spec conformance and for task completeness in addition to general code quality. The phase SHALL converge on the first iteration that confirms nothing critical or major, and rrev MUST enforce that rule from the iteration's parsed report even when the executor does not emit the convergence signal.
+The first phase SHALL launch a set of independent reviewer agents concurrently against the branch diff, then have the executor deduplicate their findings, verify each against the actual code, fix the confirmed ones, run the project's validation commands, and commit. The agent set MUST include reviewers for spec conformance and for task completeness in addition to general code quality. The phase SHALL converge on the first iteration whose confirmed findings are all minor, and rrev MUST enforce that rule from the iteration's parsed report even when the executor does not emit the convergence signal. A report rrev cannot read that way MUST NOT converge it.
 
 #### Scenario: Agents run concurrently
 - **WHEN** the phase starts
@@ -30,8 +30,12 @@ The first phase SHALL launch a set of independent reviewer agents concurrently a
 - **THEN** the executor fixes any confirmed minor findings, validates, commits, emits the review-done signal, and the phase ends as converged
 
 #### Scenario: Convergence enforced without the signal
-- **WHEN** an iteration's parsed report confirms at least one finding, none of them critical or major, validation was not reported as failed, and the executor emitted no signal
+- **WHEN** an iteration's parsed report confirms at least one finding, every one of them minor, validation was not reported as failed, and the executor emitted no signal
 - **THEN** rrev ends the phase as converged and reports that convergence came from the severity of the confirmed findings rather than the signal
+
+#### Scenario: Unreadable severity does not converge without the signal
+- **WHEN** an iteration's parsed report carries a confirmed finding whose severity is not one rrev recognises, including a report line whose fields shifted or omitted it
+- **THEN** the phase runs another iteration, since a severity it could not read is a reporting failure rather than a clean review
 
 #### Scenario: Empty report does not converge without the signal
 - **WHEN** an iteration's parsed report contains no findings and the executor emitted no signal
@@ -42,8 +46,31 @@ The first phase SHALL launch a set of independent reviewer agents concurrently a
 - **THEN** the executor fixes, validates, and commits without emitting the convergence signal, and the phase runs another iteration to check the fixes
 
 #### Scenario: Failed validation blocks convergence
-- **WHEN** an iteration confirms only minor findings but reports its validation as failed
+- **WHEN** an iteration confirms only minor findings but reports its validation as failed, in whatever spelling of failure the executor used
 - **THEN** the phase does not converge and runs another iteration
+
+### Requirement: Loop termination
+Each review loop SHALL terminate on the first of: the convergence signal, a phase rule that reads convergence off the iteration's own parsed report, its iteration limit, a detected stalemate, an unrecoverable executor failure, or a user break. rrev MUST report which condition ended the loop.
+
+#### Scenario: Iteration limit
+- **WHEN** a loop reaches its configured maximum iterations without converging
+- **THEN** it stops, reports that the limit was reached, and the run's exit status reflects non-convergence
+
+#### Scenario: Stalemate detected
+- **WHEN** stalemate patience is configured and the configured number of consecutive iterations produce no new commit and no working-tree change
+- **THEN** the loop terminates early and reports the stalemate
+
+#### Scenario: Patience disabled
+- **WHEN** stalemate patience is not configured
+- **THEN** unchanged iterations do not by themselves terminate the loop
+
+#### Scenario: Termination reason reported
+- **WHEN** any loop ends
+- **THEN** rrev prints the terminating condition and the iteration count, and records both in the progress log
+
+#### Scenario: The two convergence mechanisms are distinguishable
+- **WHEN** a loop ends because a phase rule read convergence off the report rather than because the executor emitted the signal
+- **THEN** the condition it reports names the rule, so a reader can tell the two apart
 
 ## ADDED Requirements
 

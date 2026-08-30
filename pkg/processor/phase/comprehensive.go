@@ -3,6 +3,7 @@ package phase
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
@@ -34,7 +35,7 @@ func Comprehensive(ctx context.Context, e *Env) Result {
 }
 
 // minorOnly reports an iteration that found nothing worth another full pass:
-// every finding it confirmed is below major, and the fixes validated. Hunting
+// every finding it confirmed is a minor, and the fixes validated. Hunting
 // the last minor is what runs a review to its iteration limit — the well never
 // empties, since each fix is itself reviewable — so the phase stops here and
 // leaves the regression pass to look for what the fixes broke.
@@ -47,24 +48,33 @@ func minorOnly(step stepResult) bool {
 		return false
 	}
 	for _, f := range step.Findings {
-		if f.Severity == severityCritical || f.Severity == severityMajor {
+		// Only an explicit minor converges. The parser takes whatever word the
+		// report put in the severity field, so a drifted vocabulary or a line
+		// whose fields shifted arrives here as a severity rrev cannot read —
+		// the same reporting failure an empty report is, and the loop is what
+		// an unreadable report deserves.
+		if f.Severity != severityMinor {
 			return false
 		}
 	}
 	for _, v := range step.Validations {
-		if v.Outcome == outcomeFail {
+		// Prefix, because a model writes the outcome as fail, failed, or
+		// failure about as often as the word the template asks for. A line
+		// that is missing entirely still converges: requiring an explicit pass
+		// would block on the format drift this change exists to stop punishing.
+		if strings.HasPrefix(v.Outcome, outcomeFail) {
 			return false
 		}
 	}
 	return true
 }
 
-// Severities that keep the loop alive, and the validation outcome that does.
-// Parsing lowercases both, so these are compared as written.
+// The one severity that converges the phase, and the prefix of the validation
+// outcomes that keep it going. Parsing lowercases both, so these are compared
+// as written.
 const (
-	severityCritical = "critical"
-	severityMajor    = "major"
-	outcomeFail      = "fail"
+	severityMinor = "minor"
+	outcomeFail   = "fail"
 )
 
 // comprehensivePrompt picks the prompt for one iteration: the first sweeps the
