@@ -71,17 +71,15 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, state *externalSt
 	vars.PriorFindings = renderPriorFindings(state.rounds)
 
 	tool := state.pending
+	state.pending = nil
 	if tool == nil || tool.n != n {
 		tool = e.runExternalTool(ctx, vars)
-		state.pending = tool
 	}
 	report, err := tool.step, tool.failed
 	if err != nil || report.Converged {
 		// A round that ends here was never evaluated, so the tool's own claims
-		// stay out of the phase's result. A converged round has already
-		// recorded them as reported-only entries; a failed round hands them
-		// back in writeReport for whoever decides the attempt is final.
-		state.pending = nil
+		// stay out of the phase's result. Its report was not written eagerly
+		// either: it is handed back for whoever decides the attempt is final.
 		return stepResult{Converged: report.Converged, output: report.output, writeReport: report.writeReport}, err
 	}
 
@@ -102,10 +100,10 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, state *externalSt
 		verified: true,
 	})
 	state.rounds = recordRound(state.rounds, round{n: n, reported: report.Findings, confirmed: eval.Findings, rejections: eval.Rejections})
-	if err == nil || !errors.Is(err, executor.ErrRetryable) {
-		// The report has been answered, or the failure is final either way;
-		// a retry of this iteration would need a fresh one.
-		state.pending = nil
+	if errors.Is(err, executor.ErrRetryable) {
+		// The retry of this iteration answers the same report, under the
+		// same ids, rather than invoking the tool again.
+		state.pending = tool
 	}
 
 	// A round whose output could not be read as a review is not this phase
@@ -170,7 +168,7 @@ func (e *Env) runExternalTool(ctx context.Context, vars config.Vars) *toolReport
 	e.Log.ExternalTool(e.External.Name(), outcome, detail)
 	tool := &toolReport{n: vars.Iteration, step: step, failed: err, unreadable: unreadable}
 	if err == nil && !step.Converged {
-		tool.ids = writeReports(step.writeReport)()
+		tool.ids = step.recordReport()
 		tool.step.writeReport = nil
 	}
 	return tool
@@ -180,7 +178,7 @@ func (e *Env) runExternalTool(ctx context.Context, vars config.Vars) *toolReport
 // evaluator will answer, each opening with the id the log assigned it. When the
 // log handed out no ids — logging disabled — the lines are rendered bare, and
 // the evaluator's dispositions are recorded as new, as any undeclared report is.
-func renderExternalFindings(ids []string, findings []Finding) []string {
+func renderExternalFindings(ids []string, findings []Finding) string {
 	lines := make([]string, 0, len(findings))
 	for i, f := range findings {
 		if i < len(ids) && ids[i] != "" {
@@ -188,7 +186,7 @@ func renderExternalFindings(ids []string, findings []Finding) []string {
 		}
 		lines = append(lines, f.String())
 	}
-	return lines
+	return strings.Join(lines, "\n")
 }
 
 // recordRound keeps one round per iteration: an iteration re-run after a

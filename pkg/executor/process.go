@@ -209,12 +209,15 @@ func (w *tailWriter) String() string { return strings.TrimSpace(string(w.buf)) }
 // puts its reason.
 func tailOf(text string, limit int) string {
 	if len(text) > limit {
-		text = text[len(text)-limit:]
-		// The cut lands mid-line, possibly mid-rune; what precedes the first
-		// newline is a fragment the tool never wrote as a line.
+		text = strings.TrimRight(text[len(text)-limit:], "\n")
+		// The cut lands mid-line; what precedes the first newline is a
+		// fragment the tool never wrote as a line. A last line longer than
+		// the bound has no such newline and keeps its end, minus any bytes
+		// the cut left mid-rune, rather than leaving nothing.
 		if i := strings.IndexByte(text, '\n'); i >= 0 {
 			text = text[i+1:]
 		}
+		text = strings.ToValidUTF8(text, "")
 	}
 	return strings.TrimSpace(text)
 }

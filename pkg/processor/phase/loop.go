@@ -29,18 +29,13 @@ type stepResult struct {
 	writeReport func() []string
 }
 
-// writeReports orders held-back reports so the log reads in the order the calls
-// that produced them ran.
-func writeReports(writes ...func() []string) func() []string {
-	return func() []string {
-		var ids []string
-		for _, write := range writes {
-			if write != nil {
-				ids = append(ids, write()...)
-			}
-		}
-		return ids
+// recordReport runs the held-back report, if there is one, and returns the ids
+// the reported-only findings were recorded under.
+func (s stepResult) recordReport() []string {
+	if s.writeReport == nil {
+		return nil
 	}
+	return s.writeReport()
 }
 
 // loopSpec describes one review loop: what to call it, how many times it may
@@ -156,7 +151,7 @@ func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, n
 			ctx.Err() != nil || interrupted(brk) {
 			// Nothing supersedes this attempt, so whatever it managed to
 			// report is worth keeping even when the call failed.
-			writeReports(step.writeReport)()
+			step.recordReport()
 			return step, err
 		}
 		// A superseded attempt still failed: its cause is recorded like any
@@ -232,7 +227,14 @@ func (e *Env) review(ctx context.Context, call reviewCall) (stepResult, error) {
 	case runErr != nil:
 		return step, fmt.Errorf("%s: %w", call.exec.Name(), runErr)
 	case out.Signal == executor.SignalFailed:
-		return step, fmt.Errorf("%s reported %s", call.exec.Name(), out.Signal.Marker())
+		// Typed like a process failure so the recorded cause names the tool
+		// and carries the model's last lines, which say why it gave up.
+		return step, &executor.Error{
+			Tool:     call.exec.Name(),
+			ExitCode: -1,
+			Output:   out.Output,
+			Err:      fmt.Errorf("reported %s", out.Signal.Marker()),
+		}
 	}
 	step.Converged = out.Signal == call.done
 	return step, nil

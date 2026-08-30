@@ -277,6 +277,13 @@ func TestLoopEndsOnExecutorFailure(t *testing.T) {
 func TestLoopEndsOnFailureSignal(t *testing.T) {
 	primary := mock("claude", "cannot obtain the diff\n"+taskFailed)
 	env, _ := newEnv(t, primary, nil, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	var console strings.Builder
+	env.Out = &console
 
 	res := Comprehensive(context.Background(), env)
 
@@ -285,6 +292,18 @@ func TestLoopEndsOnFailureSignal(t *testing.T) {
 	}
 	if res.Err == nil || !strings.Contains(res.Err.Error(), taskFailed) {
 		t.Errorf("err = %v, want it to name the failure signal", res.Err)
+	}
+	// The signal is a failure the model chose, so its record names the tool
+	// and carries what the model said before giving up.
+	for _, want := range []string{"- **failed** claude: failure — comprehensive iteration 1", "  cannot obtain the diff"} {
+		if got := readFile(t, log.Path()); !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+	for _, want := range []string{"comprehensive review failed: claude: failure", "  cannot obtain the diff"} {
+		if !strings.Contains(console.String(), want) {
+			t.Errorf("console missing %q:\n%s", want, console.String())
+		}
 	}
 }
 

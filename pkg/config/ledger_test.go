@@ -213,10 +213,8 @@ func TestLedgerFreeAssetExpandsUnderANonZeroBudget(t *testing.T) {
 // The evaluator is handed the tool's findings under their recorded ids, so it
 // has an id to carry into its own disposition.
 func TestExternalFindingsExpandWithTheirIds(t *testing.T) {
-	exp, projectDir := expanderFor(t, ExecutorClaude, Vars{ExternalFindings: []string{
-		"FINDING[R7]: minor | a.go:1 | external | - | off by one",
-		"FINDING[R8]: major | b.go:2 | external | - | nil deref",
-	}})
+	exp, projectDir := expanderFor(t, ExecutorClaude, Vars{ExternalFindings: "FINDING[R7]: minor | a.go:1 | external | - | off by one\n" +
+		"FINDING[R8]: major | b.go:2 | external | - | nil deref"})
 	writeAsset(t, projectDir, KindPrompt, "external_eval", "{{EXTERNAL_FINDINGS}}")
 	got, err := exp.Prompt("external_eval")
 	if err != nil {

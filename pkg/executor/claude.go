@@ -51,11 +51,28 @@ func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
 	cmd := command{tool: c.Name(), bin: c.Bin(), args: args, dir: req.Dir, prompt: req.Prompt, limits: c.Limits, debug: c.Debug}
 	col := &collector{stream: out}
 	tools := newClaudeTools()
-	err := cmd.run(ctx, col, func(line string) error { return claudeLine(col, tools, line) })
+	// The result event's message is kept aside: run reports a non-zero exit
+	// ahead of it, and claude writes nothing to stderr, so it is the only
+	// reason such a failure can carry.
+	var reported *claudeResultError
+	err := cmd.run(ctx, col, func(line string) error {
+		err := claudeLine(col, tools, line)
+		if r, ok := errors.AsType[*claudeResultError](err); ok {
+			reported = r
+		}
+		return err
+	})
 	tools.flush(col)
 	result := col.result()
-	if reported, ok := errors.AsType[*claudeResultError](err); ok {
-		err = &Error{Tool: c.Name(), Args: args, ExitCode: -1, Stderr: reported.msg, Err: err}
+	if reported != nil {
+		failure, ok := errors.AsType[*Error](err)
+		if !ok {
+			failure = &Error{Tool: c.Name(), Args: args, ExitCode: -1, Err: err}
+		}
+		if failure.Stderr == "" {
+			failure.Stderr = reported.msg
+		}
+		err = failure
 	}
 	return result, classify(c.Name(), result, err)
 }

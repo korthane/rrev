@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/korthane/rrev/pkg/executor"
 )
@@ -160,5 +161,27 @@ func TestStdoutTailStartsOnALineBoundary(t *testing.T) {
 	}
 	if !strings.HasSuffix(failure.Output, "line 1999 — still reviewing") {
 		t.Errorf("tail lost the last line: %q", failure.Output[max(0, len(failure.Output)-80):])
+	}
+}
+
+// A last line longer than the byte bound — one minified error blob — has no
+// earlier line boundary to start from. Keeping its end beats keeping nothing.
+func TestStdoutTailKeepsAnOversizedLastLine(t *testing.T) {
+	line := "Error: " + strings.Repeat("é", 12000) + " END"
+	tool := newFakeTool(t, fakeToolOpts{stdout: "Reviewing.\n" + line + "\n", exit: 1})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "review", Dir: t.TempDir()})
+	failure, ok := errors.AsType[*executor.Error](err)
+	if !ok {
+		t.Fatalf("err = %v, want *executor.Error", err)
+	}
+	if !strings.HasSuffix(failure.Output, "é END") {
+		t.Errorf("tail lost the oversized last line: %q", failure.Output[max(0, len(failure.Output)-40):])
+	}
+	if !utf8.ValidString(failure.Output) {
+		t.Error("tail opens mid-rune")
+	}
+	if c := executor.Describe(err); !strings.HasSuffix(c.Detail(), "é END") {
+		t.Errorf("detail = %q, want the line's end", c.Detail()[max(0, len(c.Detail())-40):])
 	}
 }

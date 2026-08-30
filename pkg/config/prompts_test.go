@@ -376,7 +376,7 @@ func TestExternalEvalPromptShowsReportedIdsAndSaysToCarryThem(t *testing.T) {
 		}
 	}
 	vars := fullVars()
-	vars.ExternalFindings = []string{"FINDING[R7]: minor | a.go:1 | external | - | off by one"}
+	vars.ExternalFindings = "FINDING[R7]: minor | a.go:1 | external | - | off by one"
 	for _, exec := range []string{ExecutorClaude, ExecutorCodex} {
 		got, err := (Expander{Assets: embeddedPrompts(t), Executor: exec, Vars: vars}).Prompt("external_eval")
 		if err != nil {

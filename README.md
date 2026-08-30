@@ -437,15 +437,22 @@ gets one, including a rejection that arrived with no reason.
 
 When an executor call fails, the log records why, not only that it did: the
 phase and iteration, the tool, its classification — usage limit, transient
-failure, timeout, cancelled, or plain failure — and its exit status, followed by
-a diagnostic tail. The tail is the tool's standard error, or the last lines it
-wrote to standard output when standard error is empty, because a tool that
-reports its own error on stdout and exits silently otherwise leaves an exit
-status and nothing else. The tail keeps the final twenty lines of the last 8 KiB
-the tool wrote, led by the line the classification was made from — the matched
-refusal, or the bound a timeout expired — and says so when
-it cut earlier ones. The console prints the same summary and tail as the phase
-ends.
+failure, timeout, cancelled, or plain failure — and its exit status when the
+tool exited on its own; a call cut short by a bound or a cancellation, or one
+that ended on `<<<RREV:TASK_FAILED>>>`, has none and the summary omits it. A
+diagnostic tail follows. The tail is the tool's standard error, or the last
+lines it wrote to standard output when standard error is empty, because a tool
+that reports its own error on stdout and exits silently otherwise leaves an exit
+status and nothing else. The tail keeps the final twenty non-blank lines of the
+last 8 KiB the tool wrote, led by the line the classification was made from —
+the matched refusal, or the bound a timeout expired — and marks the omission
+when the line bound cut earlier ones. The console prints the same summary and
+tail as the phase ends.
+
+A call the executor classified as a transient failure is retried, up to twice
+per iteration, and every attempt is recorded the same way, followed by a note
+that the iteration is being retried — so a flaky provider is diagnosable
+afterwards even when the retry succeeded.
 
 ### Standing rejections
 
@@ -477,6 +484,9 @@ disposition updates the reported entry rather than opening a second one. rrev
 still infers nothing — an evaluator that drops the id files a new finding, as
 any undeclared report does. An evaluation re-run after a transient failure
 answers the same report and the same ids rather than invoking the tool again.
+That first disposition counts in the iteration summary as a new rejection
+rather than a repeat: the tool's report was a claim, not a judgement, so there
+was nothing yet to recur.
 
 The ledger spans the whole run rather than resetting per phase, because
 re-litigation crosses phases: a final-phase reviewer will re-raise what the

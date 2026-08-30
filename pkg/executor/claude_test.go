@@ -125,6 +125,36 @@ func TestClaudeRunResultReportsError(t *testing.T) {
 	}
 }
 
+// claude reports its own failure as a result event on stdout and then exits
+// non-zero with nothing on stderr. The message is the only cause such a
+// failure can carry, and it is what the classifier has to see.
+func TestClaudeResultErrorSurvivesNonZeroExit(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"assistant","message":{"content":[{"type":"text","text":"Reviewing the branch."}]}}` + "\n" +
+			`{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n",
+		exit: 1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want it classified as a usage limit", err)
+	}
+	runErr, ok := errors.AsType[*executor.Error](err)
+	if !ok {
+		t.Fatalf("error = %v, want *executor.Error", err)
+	}
+	if runErr.ExitCode != 1 {
+		t.Errorf("exit = %d, want 1", runErr.ExitCode)
+	}
+	if !strings.Contains(runErr.Stderr, "You have hit your usage limit") {
+		t.Errorf("error drops the reported reason: %v", runErr)
+	}
+	if c := executor.Describe(err); c.Summary() != "claude: usage limit (exit 1)" || !strings.Contains(c.Detail(), "You have hit your usage limit") {
+		t.Errorf("cause = %q / %q, want the classification and the reported reason", c.Summary(), c.Detail())
+	}
+}
+
 func TestClaudeRunMissingBinary(t *testing.T) {
 	_, err := (executor.Claude{Command: "rrev-no-such-tool"}).Run(t.Context(), executor.Request{Prompt: "p"})
 	if err == nil {

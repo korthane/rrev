@@ -93,10 +93,10 @@ type Vars struct {
 	// findings and how they were dispositioned, so the external tool does not
 	// re-report what was rejected with a reason.
 	PriorFindings string
-	// ExternalFindings are the external tool's parsed findings, each rendered
-	// as a report line opening with the identifier the log assigned it, so the
+	// ExternalFindings are the external tool's parsed findings, one report
+	// line each, opening with the identifier the log assigned it so the
 	// evaluator has an id to carry into its own disposition.
-	ExternalFindings []string
+	ExternalFindings string
 	// ExternalOutput is the external tool's raw report, evaluated by the
 	// primary executor.
 	ExternalOutput string
@@ -313,7 +313,7 @@ func (v Vars) values() map[string]string {
 		varLedger:           "",
 		"PRIOR_FINDINGS":    orElse(v.PriorFindings, noPriorFindings),
 		"EXTERNAL_OUTPUT":   orElse(v.ExternalOutput, noExternalOutput),
-		"EXTERNAL_FINDINGS": orElse(strings.Join(v.ExternalFindings, "\n"), noExternalFindings),
+		"EXTERNAL_FINDINGS": orElse(v.ExternalFindings, noExternalFindings),
 		"OPENSPEC_DIR":      orElse(v.OpenSpecDir, missingPath),
 		"CHANGE_DIR":        orElse(v.ChangeDir, missingPath),
 		"PROPOSAL":          orElse(v.Proposal, missingPath),

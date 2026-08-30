@@ -564,10 +564,82 @@ func TestRenderExternalFindingsPairsIdsByPosition(t *testing.T) {
 		"FINDING: minor | c.go:3 | external | - | three",
 	}
 	got := renderExternalFindings([]string{"R1", "R3"}, findings)
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Errorf("rendered:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	if got != strings.Join(want, "\n") {
+		t.Errorf("rendered:\n%s\nwant:\n%s", got, strings.Join(want, "\n"))
 	}
-	if got := renderExternalFindings(nil, findings[:1]); len(got) != 1 || got[0] != "FINDING: minor | a.go:1 | external | - | one" {
+	if got := renderExternalFindings(nil, findings[:1]); got != "FINDING: minor | a.go:1 | external | - | one" {
 		t.Errorf("with no ids the lines must render bare, got %q", got)
+	}
+}
+
+// A transient failure of the tool itself leaves no report to reuse: the retry
+// invokes the tool again, and the report it then gives is the one the
+// evaluator is shown, recorded once, after the failed attempt's cause.
+func TestExternalToolRetriedAfterTransientFailure(t *testing.T) {
+	external := mock("codex", "FINDING: major | pkg/a.go:10 | external | - | the loop bound is off by one")
+	external.Responses = append([]executor.Response{
+		{Err: &executor.LimitError{Tool: "codex", Reason: "overloaded_error", Retryable: true}},
+	}, external.Responses...)
+	primary := mock("claude", "")
+	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	var shown string
+	primary.Handler = func(_ context.Context, req executor.Request) (executor.Result, error) {
+		shown = req.Prompt
+		repo.commit("head-eval")
+		return executor.Result{Output: "REJECTED[R1]: pkg/a.go:10 | external | off by one | the bound is inclusive by design"}, nil
+	}
+
+	External(context.Background(), env)
+
+	if external.CallCount() != 2 {
+		t.Errorf("external calls = %d, want 2: a tool that failed left nothing to reuse", external.CallCount())
+	}
+	if !strings.Contains(shown, "FINDING[R1]: major | pkg/a.go:10 | external | - | the loop bound is off by one") {
+		t.Errorf("the evaluator was not shown the retried tool's finding under its id:\n%s", shown)
+	}
+	got := readFile(t, log.Path())
+	if !strings.Contains(got, "- **failed** codex: transient failure — external iteration 1") {
+		t.Errorf("the failed attempt's cause is not recorded:\n%s", got)
+	}
+	// The ledger below the iterations echoes the claim; the record itself
+	// must appear once.
+	iterations, _, _ := strings.Cut(got, "## Standing rejections")
+	if n := strings.Count(iterations, "the loop bound is off by one"); n != 1 {
+		t.Errorf("the tool's finding is recorded %d times, want once:\n%s", n, got)
+	}
+}
+
+// The confirming half of the round trip: a FINDING line carrying the reported
+// id lands on that entry, so the ledger holds one finding, now confirmed.
+func TestEvaluatorConfirmationLandsOnTheReportedEntry(t *testing.T) {
+	external := mock("codex", "FINDING: minor | pkg/a.go:10 | external | - | the loop bound is off by one")
+	primary := mock("claude", "")
+	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
+		repo.commit("head-eval")
+		return executor.Result{Output: "FINDING[R1]: minor | pkg/a.go:10 | external | - | the loop bound is off by one"}, nil
+	}
+
+	res := External(context.Background(), env)
+
+	if len(res.Findings) != 1 {
+		t.Fatalf("findings = %+v, want the one the evaluator confirmed", res.Findings)
+	}
+	got := readFile(t, log.Path())
+	if !strings.Contains(got, "- **confirmed** `R1`") {
+		t.Errorf("the confirmation did not land on the reported entry:\n%s", got)
+	}
+	if strings.Contains(got, "`R2`") {
+		t.Errorf("the confirmation opened a second entry:\n%s", got)
 	}
 }
