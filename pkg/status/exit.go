@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/korthane/rrev/pkg/executor"
 	"github.com/korthane/rrev/pkg/processor"
 	"github.com/korthane/rrev/pkg/processor/phase"
 )
@@ -56,7 +57,9 @@ func Summary(res processor.Result) string {
 		}
 		line := fmt.Sprintf("%s did not converge: %s", phase.Label(p.Name), p.Reason)
 		if p.Err != nil {
-			line += ": " + p.Err.Error()
+			// The summary form: the error's own text carries the command line
+			// and the stderr tail, which the failure record already rendered.
+			line += ": " + executor.Describe(p.Err).Summary()
 		}
 		lines = append(lines, line)
 	}

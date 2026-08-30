@@ -272,6 +272,26 @@ func TestDescribeNamesTheErrorWhenNoToolOwnsIt(t *testing.T) {
 	if c.Summary() != "claude: failure" || c.Detail() != "signal: killed\nReviewing." {
 		t.Errorf("summary = %q, detail = %q; want the tool's summary and a flattened reason", c.Summary(), c.Detail())
 	}
+	multi := executor.Describe(errors.New("template external_eval.txt: unknown variable\nnear line 12"))
+	if multi.Summary() != "template external_eval.txt: unknown variable" || multi.Detail() != "near line 12" {
+		t.Errorf("summary = %q, detail = %q; want the first line as the summary and the rest as detail", multi.Summary(), multi.Detail())
+	}
+}
+
+// A failure the model signalled carries its whole output rather than the tail
+// the process reader keeps, so the byte bound is applied when the cause is
+// described: one pasted blob must not put kilobytes on a single log line.
+func TestDescribeBoundsATailTheReaderDidNotCut(t *testing.T) {
+	signalled := &executor.Error{Tool: "claude", ExitCode: -1,
+		Output: "Reviewing.\n" + strings.Repeat("x", 9000) + "\nI cannot continue.\n<<<RREV:TASK_FAILED>>>",
+		Err:    errors.New("reported <<<RREV:TASK_FAILED>>>")}
+	c := executor.Describe(signalled)
+	if len(c.Detail()) > 8<<10 {
+		t.Errorf("detail is %d bytes, want at most 8 KiB", len(c.Detail()))
+	}
+	if want := "reported <<<RREV:TASK_FAILED>>>\nI cannot continue.\n<<<RREV:TASK_FAILED>>>"; c.Detail() != want {
+		t.Errorf("detail = %q, want %q", c.Detail(), want)
+	}
 }
 
 // A tool that exits non-zero having said nothing has only its exit status to

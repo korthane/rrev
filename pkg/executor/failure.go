@@ -217,7 +217,7 @@ func Describe(err error) Cause {
 	if strings.TrimSpace(source) == "" {
 		source = failure.Output
 	}
-	c.Tail, c.Truncated = lastLines(source, causeTailLines)
+	c.Tail, c.Truncated = lastLines(bounded(source), causeTailLines)
 	// A known exit status is already in the summary, and the wrapped error
 	// then says nothing more. Without one — a start failure, a signal, output
 	// rrev could not read — the wrapped error is what explains the end, and
@@ -228,6 +228,15 @@ func Describe(err error) Cause {
 		}
 	}
 	return c
+}
+
+// bounded applies the capture bound to text that did not pass through the
+// process reader: a failure the model signalled carries its whole output.
+// Text the reader already bounded passes unchanged.
+func bounded(text string) string {
+	w := &tailWriter{limit: stderrTailBytes}
+	_, _ = w.Write([]byte(text))
+	return w.String()
 }
 
 // flat is text with the same terminal noise removed that the tail's lines

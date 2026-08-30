@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/korthane/rrev/pkg/executor"
 	"github.com/korthane/rrev/pkg/processor"
 	"github.com/korthane/rrev/pkg/processor/phase"
 )
@@ -94,6 +95,29 @@ func TestSummaryNamesTheFailingPhase(t *testing.T) {
 	for _, want := range []string{"comprehensive review did not converge", failure.Error(), "run failed during the comprehensive review"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary is missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// The closing line names the failure the way its record did. The error's own
+// text carries the command line and the stderr tail, which the console has
+// already shown as indented detail under that record.
+func TestSummaryDoesNotRepeatTheCommandLineOrTheTail(t *testing.T) {
+	failure := &executor.Error{Tool: "claude", Args: []string{"--print", "--verbose"}, ExitCode: 1,
+		Stderr: "Error: prompt is too long\nfor the context window", Err: errors.New("exit status 1")}
+	res := processor.Result{
+		Mode:   processor.ModeFull,
+		Phases: []phase.Result{{Name: phase.NameFinal, Reason: phase.ReasonFailure, Err: failure}},
+		Err:    failure,
+	}
+
+	got := Summary(res)
+	if !strings.Contains(got, "did not converge: executor failure: claude: failure (exit 1)") {
+		t.Errorf("summary does not name the failure in its summary form:\n%s", got)
+	}
+	for _, leak := range []string{"--print", "prompt is too long"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("summary repeats %q from the error's text:\n%s", leak, got)
 		}
 	}
 }

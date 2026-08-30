@@ -456,6 +456,7 @@ func TestRealRationaleReplacesTheMissingReasonPlaceholder(t *testing.T) {
 	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "")
 	log.IterationStart("comprehensive", 2, 10)
 	log.Rejected(progress.Finding{ReRaises: "R1", Reviewer: "quality", File: "a.go", Line: 7}, "the buffer is reused, not aliased")
+	log.LoopEnd("comprehensive", "converged", 2)
 
 	entries := log.PromptEntries()
 	if len(entries) != 1 || !strings.Contains(entries[0], "the buffer is reused, not aliased") {
@@ -463,6 +464,11 @@ func TestRealRationaleReplacesTheMissingReasonPlaceholder(t *testing.T) {
 	}
 	if strings.Contains(entries[0], "no reason given") {
 		t.Errorf("the placeholder outlived a stated reason: %q", entries[0])
+	}
+	// A rejection that arrived without a reason was still a judgement, so
+	// re-raising it is re-litigation and the split must say so.
+	if want := "rejected 1 (0 new, 1 repeat)"; !strings.Contains(readLog(t, log), want) {
+		t.Errorf("iteration 2's summary missing %q\n--- log ---\n%s", want, readLog(t, log))
 	}
 }
 

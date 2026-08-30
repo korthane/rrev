@@ -262,6 +262,43 @@ func TestExternalRetriedIterationRecordsOneRound(t *testing.T) {
 	}
 }
 
+// An evaluation that keeps failing transiently exhausts the retry budget and
+// ends the phase. Every retry answers the report the tool already gave: the
+// tool is invoked once, its findings are recorded once, and every attempt
+// leaves its own failure record.
+func TestPersistentEvaluationFailureKeepsTheToolsOneReport(t *testing.T) {
+	external := mock("codex", "FINDING: major | pkg/a.go:10 | external | - | the loop bound is off by one")
+	primary := &executor.Mock{Tool: "claude", Responses: []executor.Response{
+		{Err: &executor.LimitError{Tool: "claude", Reason: "overloaded_error", Retryable: true}},
+	}}
+	env, _ := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 3 })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := External(context.Background(), env)
+
+	if res.Reason != ReasonFailure || res.Err == nil {
+		t.Fatalf("result = %+v, want the phase to fail", res)
+	}
+	if primary.CallCount() != retryBudget+1 {
+		t.Errorf("evaluator calls = %d, want %d", primary.CallCount(), retryBudget+1)
+	}
+	if external.CallCount() != 1 {
+		t.Errorf("external calls = %d, want 1: every retry must reuse the tool's report", external.CallCount())
+	}
+	got := readFile(t, log.Path())
+	if n := strings.Count(got, "the loop bound is off by one"); n != 1 {
+		t.Errorf("the tool's finding is recorded %d times, want once:\n%s", n, got)
+	}
+	want := "- **failed** claude: transient failure — external iteration 1"
+	if strings.Count(got, want) != retryBudget+1 {
+		t.Errorf("failure records = %d, want one per attempt (%d):\n%s", strings.Count(got, want), retryBudget+1, got)
+	}
+}
+
 // A transient failure re-runs the whole iteration. Recording the attempt it
 // superseded opens a second ledger entry for a finding the retry reports again,
 // so the same argument stands twice in every prompt built from the ledger.
