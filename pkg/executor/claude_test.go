@@ -183,6 +183,30 @@ func TestClaudeResultErrorSurvivesNoisyStderr(t *testing.T) {
 	}
 }
 
+// The scanner keeps reading after a line error, so a stream carrying a second
+// result event must not overwrite the first: the first is the error run
+// returns, and a reason disagreeing with it would misclassify the failure.
+func TestClaudeKeepsTheFirstReportedResultError(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n" +
+			`{"type":"result","subtype":"error_during_execution","is_error":true,"result":"tool execution failed"}` + "\n",
+		exit: 1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want the first result event to classify the failure", err)
+	}
+	runErr, ok := errors.AsType[*executor.Error](err)
+	if !ok {
+		t.Fatalf("error = %v, want *executor.Error", err)
+	}
+	if !strings.Contains(runErr.Stderr, "You have hit your usage limit") {
+		t.Errorf("stderr = %q, want the first reported reason", runErr.Stderr)
+	}
+}
+
 // claude may print the reason on stderr as well as report it in the result
 // event; the tail then shows it once.
 func TestClaudeResultErrorAlreadyOnStderrIsNotRepeated(t *testing.T) {

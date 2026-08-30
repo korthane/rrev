@@ -383,6 +383,9 @@ func TestDescribeFlattensTerminalNoiseInTheTail(t *testing.T) {
 	for stderr, want := range map[string]string{
 		"10%\r20%\r100%\r\n\x1b[31mError: boom\x1b[0m\x07\n":                      "10%\n20%\n100%\nError: boom",
 		"\x1b]0;codex\x07\x1b]8;;https://x.test\x1b\\Error: boom\x1b]8;;\x1b\\\n": "Error: boom",
+		// A tab is indentation, not noise: dropping it flattens every stack
+		// frame and diff hunk in the tail against the margin.
+		"panic: boom\n\tmain.go:12 +0x1f\n": "panic: boom\n\tmain.go:12 +0x1f",
 	} {
 		err := &executor.Error{Tool: "codex", ExitCode: 1, Stderr: stderr}
 		if got := executor.Describe(err).Detail(); got != want {
@@ -471,5 +474,41 @@ func TestDescribeBoundsTheReasonLikeTheTail(t *testing.T) {
 	}
 	if !strings.Contains(c.Detail(), "[earlier lines omitted]") {
 		t.Errorf("detail does not mark the omission:\n%s", c.Detail())
+	}
+}
+
+// The line bound alone does not hold a reason down: twenty lines of a wrapped
+// error can still be tens of kilobytes, so the byte bound has to cut first.
+func TestDescribeBoundsTheReasonByBytesTooNotOnlyByLines(t *testing.T) {
+	var b strings.Builder
+	for i := range 20 {
+		fmt.Fprintf(&b, "frame %d %s\n", i, strings.Repeat("x", 2000))
+	}
+	err := &executor.Error{Tool: "claude", ExitCode: -1, Output: "Reviewing.", Err: errors.New(b.String())}
+
+	c := executor.Describe(err)
+
+	if len(c.Reason) > 8<<10 {
+		t.Errorf("reason holds %d bytes, want at most the 8 KiB capture bound", len(c.Reason))
+	}
+	if !strings.HasSuffix(c.Reason, strings.Repeat("x", 2000)) {
+		t.Error("reason lost the end of the error, which is the part that explains it")
+	}
+}
+
+// A classification carries the line that matched it. That line is the
+// diagnosis, so the process error a failure with no exit status wraps must not
+// displace it.
+func TestDescribeKeepsTheMatchedReasonOverTheWrappedError(t *testing.T) {
+	err := &executor.LimitError{Tool: "claude", Reason: "rate limit exceeded", Err: &executor.Error{
+		Tool: "claude", ExitCode: -1,
+		Stderr: "rate limit exceeded\n(node:1) ExperimentalWarning: something",
+		Err:    errors.New("read output: token too long"),
+	}}
+
+	c := executor.Describe(err)
+
+	if c.Reason != "rate limit exceeded" {
+		t.Errorf("reason = %q, want the matched refusal rather than the process error", c.Reason)
 	}
 }

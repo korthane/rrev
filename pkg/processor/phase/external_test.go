@@ -132,11 +132,17 @@ func TestExternalAlternatesToolAndExecutor(t *testing.T) {
 	if !strings.Contains(evalPrompt, "the mode flags are not mutually exclusive") {
 		t.Error("the evaluation prompt does not carry the external tool's report")
 	}
-	// With logging disabled no ids were assigned, so the parsed findings are
-	// shown bare rather than under an empty token.
-	if !strings.Contains(evalPrompt, "FINDING: major | pkg/a.go:10 | external | Run modes | the mode flags are not mutually exclusive") ||
-		strings.Contains(evalPrompt, "FINDING[R1]:") || strings.Contains(evalPrompt, "FINDING[]:") {
-		t.Errorf("the evaluation prompt must list the tool's findings without ids when none were assigned:\n%s", evalPrompt)
+	// Twice: once in the tool's raw report, once in the parsed block. Counting
+	// is what distinguishes the two — the line is identical, so a parsed block
+	// that collapsed to its no-findings placeholder still contains it once.
+	line := "FINDING: major | pkg/a.go:10 | external | Run modes | the mode flags are not mutually exclusive"
+	if strings.Count(evalPrompt, line) != 2 {
+		t.Errorf("the evaluation prompt must list the tool's findings beside its raw report:\n%s", evalPrompt)
+	}
+	// With logging disabled no ids were assigned, so the lines are shown bare
+	// rather than under an empty token.
+	if strings.Contains(evalPrompt, "FINDING[R1]:") || strings.Contains(evalPrompt, "FINDING[]:") {
+		t.Errorf("the evaluation prompt must carry no ids when none were assigned:\n%s", evalPrompt)
 	}
 }
 
@@ -227,11 +233,7 @@ func TestExternalRetriedIterationRecordsOneRound(t *testing.T) {
 	external := mock("codex", "FINDING: major | pkg/a.go:10 | external | - | the loop bound is off by one")
 	primary := mock("claude", "")
 	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 2 })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	openLog(t, env)
 	evals := 0
 	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
 		evals++
@@ -263,11 +265,7 @@ func TestPersistentEvaluationFailureKeepsTheToolsOneReport(t *testing.T) {
 		{Err: &executor.LimitError{Tool: "claude", Reason: "overloaded_error", Retryable: true}},
 	}}
 	env, _ := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 3 })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := External(context.Background(), env)
 
@@ -297,11 +295,7 @@ func TestRetriedIterationRecordsOneCopyOfItsFindings(t *testing.T) {
 	external := mock("codex", "FINDING: major | pkg/a.go:10 | external | - | the loop bound is off by one")
 	primary := mock("claude", "")
 	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	var console strings.Builder
 	env.Out = &console
 	evals := 0
@@ -371,11 +365,7 @@ func TestExternalBreakCancelsTheCallInFlight(t *testing.T) {
 		return executor.Result{}, ctx.Err()
 	}
 	env.Break = func() <-chan struct{} { return brk }
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	var console strings.Builder
 	env.Out = &console
 
@@ -512,11 +502,7 @@ func TestExternalRoundEndingEarlyStillRecordsWhatTheToolReported(t *testing.T) {
 			primary := mock("claude", reviewDone)
 			external := &executor.Mock{Tool: "codex", Responses: []executor.Response{response}}
 			env, _ := newEnv(t, primary, external, nil)
-			log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-			if err != nil {
-				t.Fatalf("open progress log: %v", err)
-			}
-			env.Log = log
+			log := openLog(t, env)
 
 			External(context.Background(), env)
 
@@ -533,11 +519,7 @@ func TestExternalRoundEndingEarlyStillRecordsWhatTheToolReported(t *testing.T) {
 func TestFailureCauseReachesTheLogAndConsole(t *testing.T) {
 	primary := mock("claude", "")
 	env, _ := newEnv(t, primary, nil, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	var console strings.Builder
 	env.Out = &console
 	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
@@ -574,11 +556,7 @@ func TestEvaluatorDispositionLandsOnTheReportedEntry(t *testing.T) {
 	external := mock("codex", "FINDING: minor | pkg/a.go:10 | external | - | the loop bound is off by one")
 	primary := mock("claude", "")
 	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	var shown string
 	primary.Handler = func(_ context.Context, req executor.Request) (executor.Result, error) {
 		shown = req.Prompt
@@ -615,11 +593,7 @@ func TestEachRoundShowsTheEvaluatorItsOwnIds(t *testing.T) {
 		"FINDING: major | pkg/b.go:20 | external | - | the retry count is unbounded")
 	primary := mock("claude", "")
 	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 2 })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	var shown []string
 	primary.Handler = func(_ context.Context, req executor.Request) (executor.Result, error) {
 		shown = append(shown, req.Prompt)
@@ -660,11 +634,7 @@ func TestEvaluatorOmittingTheIdRecordsANewFinding(t *testing.T) {
 	external := mock("codex", "FINDING: minor | pkg/a.go:10 | external | - | the loop bound is off by one")
 	primary := mock("claude", "REJECTED: pkg/a.go:10 | external | off by one | the bound is inclusive by design")
 	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	primary.Handler = changingHandler(primary, repo)
 
 	External(context.Background(), env)
@@ -703,6 +673,14 @@ func TestRenderExternalFindingsPairsIdsByPosition(t *testing.T) {
 	if got := renderExternalFindings([]string{""}, findings[:1]); got != "FINDING: minor | a.go:1 | external | - | one" {
 		t.Errorf("an empty id must render the line bare, got %q", got)
 	}
+	// The tool's own token is not an id the log assigned, so it does not stand
+	// in for one: the evaluator would name an entry rrev cannot resolve.
+	if got := renderExternalFindings([]string{""}, findings[1:2]); got != "FINDING: major | b.go:2 | external | - | two" {
+		t.Errorf("the tool's own token must not survive an empty id, got %q", got)
+	}
+	if got := renderExternalFindings(nil, findings[1:2]); got != "FINDING: major | b.go:2 | external | - | two" {
+		t.Errorf("the tool's own token must not survive a missing id, got %q", got)
+	}
 }
 
 // A transient failure of the tool itself leaves no report to reuse: the retry
@@ -715,11 +693,7 @@ func TestExternalToolRetriedAfterTransientFailure(t *testing.T) {
 	}, external.Responses...)
 	primary := mock("claude", "")
 	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	var shown string
 	primary.Handler = func(_ context.Context, req executor.Request) (executor.Result, error) {
 		shown = req.Prompt
@@ -753,11 +727,7 @@ func TestEvaluatorConfirmationLandsOnTheReportedEntry(t *testing.T) {
 	external := mock("codex", "FINDING: minor | pkg/a.go:10 | external | - | the loop bound is off by one")
 	primary := mock("claude", "")
 	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
 		repo.commit("head-eval")
 		return executor.Result{Output: "FINDING[R1]: minor | pkg/a.go:10 | external | - | the loop bound is off by one"}, nil
@@ -787,11 +757,7 @@ func TestEvaluatorIsShownTheResolvedIdNotTheToolsToken(t *testing.T) {
 			"FINDING[R99]: minor | pkg/b.go:2 | external | - | the cast is unchecked")
 	primary := mock("claude", "")
 	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	log.Rejected(progress.Finding{Reviewer: "quality", Severity: "major", File: "pkg/a.go", Line: 7, Summary: "the token is echoed"},
 		"the value is not key material")
 	var shown string

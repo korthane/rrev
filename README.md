@@ -457,8 +457,9 @@ exit status and nothing else. The tail keeps the final twenty non-blank lines
 of the last 8 KiB the tool wrote, led by the line that explains the end — the
 matched refusal, the bound a timeout expired, or, when there is no exit status
 and the call was not cancelled, the error that stopped it. That leading line is
-dropped when the tail's last line already says it, and the line bound marks its
-omission above whichever of the two it cut. When that leading line is the
+dropped when the tail already holds it, anywhere in the tail and not only at
+its end, and the line bound marks its omission above whichever of the two it
+cut. When that leading line is the
 error a call with no exit status wrapped, it is held to the same bounds as the
 tail beneath it. Lines are counted after terminal noise
 is flattened: a carriage return a progress bar redraws with becomes a line

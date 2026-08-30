@@ -80,6 +80,18 @@ func newEnv(t *testing.T, primary, external executor.Executor, tune func(*config
 	return env, repo
 }
 
+// openLog gives env a real progress log to read back, in place of the disabled
+// one newEnv leaves it with.
+func openLog(t *testing.T, env *Env) *progress.Log {
+	t.Helper()
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	return log
+}
+
 func mock(tool string, outputs ...string) *executor.Mock {
 	responses := make([]executor.Response, 0, len(outputs))
 	for _, out := range outputs {
@@ -117,11 +129,7 @@ func TestUnexpandablePromptOverrideFailsWithoutPanicking(t *testing.T) {
 		Vars:    config.Vars{Change: "add-user-auth", BaseRef: "main", DiffInstruction: "git diff main...HEAD"},
 		Primary: mock("claude", reviewDone),
 	}
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	var console strings.Builder
 	env.Out = &console
 
@@ -180,11 +188,7 @@ func TestPersistentTransientFailureEndsTheLoop(t *testing.T) {
 		{Err: &executor.LimitError{Tool: "claude", Reason: "service unavailable", Retryable: true}},
 	}}
 	env, _ := newEnv(t, primary, nil, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := Comprehensive(context.Background(), env)
 
@@ -309,11 +313,7 @@ func TestLoopEndsOnExecutorFailure(t *testing.T) {
 func TestLoopEndsOnFailureSignal(t *testing.T) {
 	primary := mock("claude", "cannot obtain the diff\n"+taskFailed)
 	env, _ := newEnv(t, primary, nil, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	var console strings.Builder
 	env.Out = &console
 
@@ -344,11 +344,7 @@ func TestLoopEndsOnAbort(t *testing.T) {
 	cancel()
 	primary := mock("claude", "fixed something")
 	env, _ := newEnv(t, primary, nil, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := Comprehensive(ctx, env)
 
@@ -375,11 +371,7 @@ func TestCancelledCallRecordsTheToolAndItsLastWords(t *testing.T) {
 	env, _ := newEnv(t, primary, nil, nil)
 	console := &bytes.Buffer{}
 	env.Out = console
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := Comprehensive(ctx, env)
 
@@ -407,11 +399,7 @@ func TestUsageLimitRefusalRecordsItsClassificationAndReason(t *testing.T) {
 	env, _ := newEnv(t, primary, nil, nil)
 	console := &bytes.Buffer{}
 	env.Out = console
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := Comprehensive(context.Background(), env)
 
@@ -443,11 +431,7 @@ func TestSilentFailureRecordIsJustItsSummary(t *testing.T) {
 	env, _ := newEnv(t, primary, nil, nil)
 	console := &bytes.Buffer{}
 	env.Out = console
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	Comprehensive(context.Background(), env)
 
@@ -583,11 +567,7 @@ func TestFailedCallStillRecordsWhatItReported(t *testing.T) {
 		{Output: reported, Err: errors.New("claude exited with status 1")},
 	}}
 	env, _ := newEnv(t, primary, nil, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := Comprehensive(context.Background(), env)
 
@@ -796,11 +776,7 @@ func TestStandingRejectionsReachTheNextIterationsPrompt(t *testing.T) {
 		"REJECTED: pkg/a.go:7 | quality | the token is echoed | the value is not key material",
 		reviewDone)
 	env, _ := newEnv(t, primary, nil, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	openLog(t, env)
 
 	Comprehensive(context.Background(), env)
 
@@ -841,11 +817,7 @@ func TestExternalToolFailureIsRecordedWithItsCause(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			external := &executor.Mock{Tool: "codex", Responses: []executor.Response{{Err: tc.err}}}
 			env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
-			log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-			if err != nil {
-				t.Fatalf("open progress log: %v", err)
-			}
-			env.Log = log
+			log := openLog(t, env)
 
 			res := External(context.Background(), env)
 
@@ -873,11 +845,7 @@ func TestUnverifiedRejectionDoesNotEnterTheLedger(t *testing.T) {
 	reported := "REJECTED: pkg/a.go:7 | external | the mutex is held twice | it is not\n" + externalDone
 	external := mock("codex", reported)
 	env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	External(context.Background(), env)
 
@@ -973,11 +941,7 @@ func TestTheToolsFindingsAreLoggedBeforeTheEvaluationOfThem(t *testing.T) {
 func TestExternalToolOutputRrevCannotInterpretIsRecordedAsSuch(t *testing.T) {
 	external := mock("codex", "I looked at the diff and it seems fine to me.")
 	env, _ := newEnv(t, mock("claude", externalDone, externalDone), external, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	External(context.Background(), env)
 
@@ -1006,11 +970,7 @@ func TestExternalToolOutputRrevCannotInterpretIsRecordedAsSuch(t *testing.T) {
 func TestUnreadableExternalOutputDoesNotEndThePhaseAsConverged(t *testing.T) {
 	external := mock("codex", "I looked at the diff and it seems fine to me.")
 	env, _ := newEnv(t, mock("claude", externalDone, externalDone, externalDone), external, nil)
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := External(context.Background(), env)
 

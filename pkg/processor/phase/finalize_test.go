@@ -9,7 +9,6 @@ import (
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
-	"github.com/korthane/rrev/pkg/progress"
 )
 
 func TestFinalizeSkippedWhenTheRunMayNotModifyTheRepository(t *testing.T) {
@@ -54,11 +53,7 @@ func TestFinalizeReportsChangesItMade(t *testing.T) {
 func TestFinalizeRecordsItsFindingsInsideAnIterationSection(t *testing.T) {
 	primary := mock("claude", "REJECTED: pkg/a.go:7 | quality | the token is echoed | the value is not key material")
 	env, _ := newEnv(t, primary, nil, func(c *config.Config) { c.Finalize = true })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	Finalize(context.Background(), env, Result{Name: NameComprehensive, Reason: ReasonConverged, Iterations: 1})
 
@@ -81,11 +76,7 @@ func TestFinalizeRecordsItsFindingsInsideAnIterationSection(t *testing.T) {
 func TestFinalizeFailureIsRecordedWithItsCause(t *testing.T) {
 	primary := mock("claude", "")
 	env, _ := newEnv(t, primary, nil, func(c *config.Config) { c.Finalize = true })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 	var console strings.Builder
 	env.Out = &console
 	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
@@ -117,11 +108,7 @@ func TestFinalizeAbortedByCancellationIsRecordedAsCancelled(t *testing.T) {
 	cancel()
 	primary := mock("claude", "")
 	env, _ := newEnv(t, primary, nil, func(c *config.Config) { c.Finalize = true })
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
+	log := openLog(t, env)
 
 	res := Finalize(ctx, env, Result{Name: NameComprehensive, Reason: ReasonConverged, Iterations: 1})
 

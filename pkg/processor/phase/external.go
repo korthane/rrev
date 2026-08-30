@@ -181,7 +181,10 @@ func (e *Env) runExternalTool(ctx context.Context, vars config.Vars) *toolReport
 func renderExternalFindings(ids []string, findings []Finding) string {
 	lines := make([]string, 0, len(findings))
 	for i, f := range findings {
-		if i < len(ids) && ids[i] != "" {
+		// The log's id replaces whatever token the tool wrote: an id rrev did
+		// not assign resolves to nothing the evaluator can be held to.
+		f.ReRaises = ""
+		if i < len(ids) {
 			f.ReRaises = ids[i]
 		}
 		lines = append(lines, f.String())

@@ -50,6 +50,10 @@ func (e *LimitError) Is(target error) bool {
 var rateLimitPatterns = []string{
 	"usage limit reached",
 	"hit your usage limit",
+	// Claude throttles with "session limit", not "usage limit": without these
+	// its refusal is recorded as a plain crash.
+	"session limit reached",
+	"hit your session limit",
 	"rate limit exceeded",
 	"rate_limit_error",
 	"429 too many requests",
