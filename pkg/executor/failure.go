@@ -99,7 +99,7 @@ const refusalLines = 5
 // carriage return says one line's worth, and counting each frame would put a
 // throttled call over the bound and leave its refusal unclassified.
 func refusal(result Result) bool {
-	return !reviewed(result) && len(speech(writtenLines(result.Output))) <= refusalLines
+	return !reviewed(result) && len(speech(cleanLines(result.Output))) <= refusalLines
 }
 
 // reviewed reports whether the call produced a review rather than a refusal. A
@@ -282,11 +282,12 @@ func lastLines(text string, n int) (string, bool) {
 // it painted it, and the matched reason is found in the tail it came from.
 func flatLines(text string) []string { return cleanLines(redraws.Replace(text)) }
 
-// writtenLines splits on the line breaks the tool wrote, leaving a line a
-// progress bar repainted as the one line it is. Only the refusal bound counts
-// these; everything else reads the frames as the separate lines they render as.
-func writtenLines(text string) []string { return cleanLines(crlf.Replace(text)) }
-
+// cleanLines splits on the line breaks the tool wrote, leaving a line a
+// progress bar repainted as the one line it is. Escape sequences go, and so do
+// the control characters left over — a bare carriage return among them, which
+// is why normalising CRLF first would change nothing. Only the refusal bound
+// reads lines this way; everything else goes through flatLines, which reads a
+// repainted line as the separate lines it renders as.
 func cleanLines(text string) []string {
 	text = ansiSequence.ReplaceAllString(text, "")
 	var lines []string
@@ -298,8 +299,6 @@ func cleanLines(text string) []string {
 
 var (
 	redraws = strings.NewReplacer("\r\n", "\n", "\r", "\n")
-	// crlf normalises line endings without breaking a repainted line apart.
-	crlf = strings.NewReplacer("\r\n", "\n")
 	// CSI sequences (colour, cursor) and OSC ones (window title, hyperlinks).
 	ansiSequence = regexp.MustCompile(`\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))`)
 )

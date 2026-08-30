@@ -95,8 +95,8 @@ const (
 )
 
 // A prompt that cannot be expanded returns before an attempt exists, so the
-// held-back report is nil. Every call site runs it through writeReports, and
-// without that helper's nil guard the phase panics on a typo in a user's own
+// held-back report is nil. Every call site runs it through recordReport, and
+// without that method's nil guard the phase panics on a typo in a user's own
 // prompt override rather than reporting the template error.
 func TestUnexpandablePromptOverrideFailsWithoutPanicking(t *testing.T) {
 	projectDir := t.TempDir()

@@ -202,6 +202,59 @@ func TestClaudeResultErrorAlreadyOnStderrIsNotRepeated(t *testing.T) {
 	}
 }
 
+// claude declares its own failure in the result event while still exiting
+// zero. That path returns the line error rather than a wait error, so it is
+// the one where the tool's stderr and stdout tails are easiest to lose — and
+// they are the only account of why it gave up.
+func TestClaudeResultErrorAtExitZeroKeepsBothTails(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"assistant","message":{"content":[{"type":"text","text":"working on it"}]}}` + "\n" +
+			`{"type":"result","subtype":"error_during_execution","is_error":true,"result":"tool execution failed"}` + "\n",
+		stderr: "node: FATAL heap out of memory\nstack trace line\n",
+		exit:   0,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if err == nil {
+		t.Fatal("a result event declaring an error must fail the call")
+	}
+	detail := executor.Describe(err).Detail()
+	for _, want := range []string{"tool execution failed", "node: FATAL heap out of memory", "stack trace line"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("detail lost %q:\n%s", want, detail)
+		}
+	}
+}
+
+// The result message is appended after whatever the tool wrote to stderr, so
+// the capture bound cuts the earlier noise rather than the reason itself.
+func TestClaudeResultErrorSurvivesStderrPastTheCaptureBound(t *testing.T) {
+	tool := newFakeTool(t, fakeToolOpts{
+		stdout: `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"You have hit your usage limit"}` + "\n",
+		stderr: strings.Repeat("(node:123) ExperimentalWarning: noise\n", 400),
+		exit:   1,
+	})
+
+	_, err := (executor.Claude{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p", Dir: t.TempDir()})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Errorf("err = %v, want it classified as a usage limit past the bound", err)
+	}
+	c := executor.Describe(err)
+	if !strings.HasSuffix(c.Detail(), "You have hit your usage limit") {
+		t.Errorf("the reason did not survive the bound; detail ends:\n%s", lastRunes(c.Detail(), 200))
+	}
+}
+
+func lastRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[len(r)-n:])
+}
+
 func TestClaudeRunMissingBinary(t *testing.T) {
 	_, err := (executor.Claude{Command: "rrev-no-such-tool"}).Run(t.Context(), executor.Request{Prompt: "p"})
 	if err == nil {

@@ -356,6 +356,11 @@ func TestRetriedIterationRecordsOneCopyOfItsFindings(t *testing.T) {
 	if !strings.Contains(console.String(), "external review iteration 1 attempt failed: claude: transient failure") {
 		t.Errorf("console does not announce the retried attempt:\n%s", console.String())
 	}
+	// The recorded cause says what went wrong; the note says what rrev did
+	// about it, which is the only account of why a second attempt appeared.
+	if !strings.Contains(console.String(), "external review iteration 1: retrying") {
+		t.Errorf("console does not say the iteration is being retried:\n%s", console.String())
+	}
 	if strings.Contains(console.String(), "external review failed:") {
 		t.Errorf("console announces the phase as failed for an attempt that was retried:\n%s", console.String())
 	}
@@ -375,6 +380,13 @@ func TestExternalBreakCancelsTheCallInFlight(t *testing.T) {
 		return executor.Result{}, ctx.Err()
 	}
 	env.Break = func() <-chan struct{} { return brk }
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	var console strings.Builder
+	env.Out = &console
 
 	res := External(context.Background(), env)
 
@@ -386,6 +398,16 @@ func TestExternalBreakCancelsTheCallInFlight(t *testing.T) {
 	}
 	if primary.CallCount() != 0 {
 		t.Errorf("the evaluation ran %d times after the break; want 0", primary.CallCount())
+	}
+	// The call really was cancelled mid-flight, so this is the path where a
+	// failure record would be written if the break were not downgrading the
+	// cancellation to an outcome. The user ending the loop is not a failure
+	// to diagnose, in the log or on the console.
+	if got := readFile(t, log.Path()); strings.Contains(got, "**failed**") {
+		t.Errorf("a cancelled call under a user break left a failure record\n--- log ---\n%s", got)
+	}
+	if strings.Contains(console.String(), "failed:") {
+		t.Errorf("console announces a failure for a user break:\n%s", console.String())
 	}
 }
 
@@ -589,6 +611,55 @@ func TestEvaluatorDispositionLandsOnTheReportedEntry(t *testing.T) {
 	invoked, reported := strings.Index(got, "external tool `codex`: reported 1 finding(s)"), strings.Index(got, "- **reported** `R1`")
 	if invoked < 0 || reported < 0 || invoked > reported {
 		t.Errorf("the tool's outcome must precede its findings:\n%s", got)
+	}
+}
+
+// Every round assigns its own ids and shows the evaluator those, not the ids
+// of the round before. A loop that handed round 2 stale ids would file its
+// dispositions against round 1's entries, which is the merge rrev must never
+// make on its own.
+func TestEachRoundShowsTheEvaluatorItsOwnIds(t *testing.T) {
+	external := mock("codex",
+		"FINDING: major | pkg/a.go:10 | external | - | the loop bound is off by one",
+		"FINDING: major | pkg/b.go:20 | external | - | the retry count is unbounded")
+	primary := mock("claude", "")
+	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 2 })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	var shown []string
+	primary.Handler = func(_ context.Context, req executor.Request) (executor.Result, error) {
+		shown = append(shown, req.Prompt)
+		repo.commit("head-eval" + strings.Repeat("x", len(shown)))
+		if len(shown) == 1 {
+			return executor.Result{Output: "REJECTED[R1]: pkg/a.go:10 | external | off by one | the bound is inclusive by design"}, nil
+		}
+		return executor.Result{Output: "REJECTED[R2]: pkg/b.go:20 | external | unbounded retries | the caller's budget bounds it"}, nil
+	}
+
+	External(context.Background(), env)
+
+	if len(shown) != 2 {
+		t.Fatalf("evaluations = %d, want 2", len(shown))
+	}
+	if !strings.Contains(shown[1], "FINDING[R2]: major | pkg/b.go:20 | external | - | the retry count is unbounded") {
+		t.Errorf("the second round's evaluator was not shown its own finding under R2:\n%s", shown[1])
+	}
+	if strings.Contains(shown[1], "FINDING[R1]") {
+		t.Errorf("the second round's evaluator was shown the first round's id:\n%s", shown[1])
+	}
+	got := readFile(t, log.Path())
+	// Two reports, two dispositions, two entries: neither disposition opened
+	// one of its own.
+	if strings.Contains(got, "`R3`") {
+		t.Errorf("a disposition opened a third entry over two rounds:\n%s", got)
+	}
+	for _, want := range []string{"- **reported** `R1`", "- **reported** `R2`", "- **R1** `pkg/a.go:10`", "- **R2** `pkg/b.go:20`"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
 	}
 }
 

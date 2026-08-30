@@ -17,7 +17,7 @@
 - [x] 3.2 Collect the identifiers of the external tool's reported findings in the external round and render them as `FINDING[<id>]:` lines through a new `{{EXTERNAL_FINDINGS}}` template variable, verified by a template test
 - [x] 3.3 Instruct the evaluator in `external_eval.txt` to carry each shown identifier into its own report line, and verify the shipped prompt expands with the new variable under both executors
 - [x] 3.4 Verify by a phase test that an evaluator rejecting `REJECTED[<id>]:` updates the reported entry so the ledger holds one entry for the finding, and that an evaluator omitting the id records a new finding with the reported entry left as reported
-- [x] 3.5 Move the external tool's outcome record to precede the findings it reports, verified by a test asserting the outcome line's position in the log
+- [x] 3.5 Record the external tool's report as soon as the tool returns, with the outcome record preceding the findings it reports, and reuse that recorded report and its identifiers when an evaluation is re-run after a transient failure rather than invoking the tool again; verified by tests asserting the outcome line's position in the log and that a retried iteration records one copy of the tool's findings
 - [x] 3.6 Write tests for new functionality and run project tests - must pass before next task
 
 ## 4. Integration and Documentation

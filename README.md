@@ -366,8 +366,8 @@ A line naming an entry the log already holds carries that entry's id in its
 opening token, `FINDING[R7]:` or `REJECTED[R7]:` — a standing rejection a
 reviewer is re-raising, or a finding the log holds as reported, which is how the
 external evaluator's disposition lands on the entry the tool's finding was
-recorded under. This is the one thing rrev
-will not work out for itself: file, line and wording all drift between
+recorded under. This is the one thing rrev will not work out for itself: file,
+line and wording all drift between
 iterations while the finding stays the same, so a computed match would merge
 distinct findings as readily as it caught real recurrences. An undeclared line
 is recorded as a new finding, and an id the log does not hold is recorded as new
@@ -425,8 +425,8 @@ whose tool died quietly are recorded differently, because they call for opposite
 responses, and the tool's invocation and outcome — how many findings it
 reported, that it reported none, or that it failed — are written before the
 entries for those findings, so a reader meets the summary before its detail. A
-progress directory that cannot be written degrades the run to
-logging disabled rather than aborting it. Logging disabled takes the ledger with
+progress directory that cannot be written degrades the run to logging disabled
+rather than aborting it. Logging disabled takes the ledger with
 it: with nothing recorded there are no standing rejections to expand, so every
 prompt is told nothing has been rejected yet and no recurrence is counted. The
 review still runs — it just re-argues what it dismissed, as it did before the
@@ -448,7 +448,8 @@ failure, timeout, cancelled, or plain failure — and its exit status when the
 tool exited on its own; a call cut short by a bound or a cancellation, one
 that ended on `<<<RREV:TASK_FAILED>>>`, or a refusal the tool printed before
 exiting zero, has none and the summary omits it. A failure no tool owns — a
-prompt that would not expand — is summarised by its own error text instead. A
+prompt that would not expand — is summarised by its own first line instead,
+with the rest of its message indented beneath as the detail. A
 diagnostic tail follows. The tail is the tool's standard error, or the last
 lines it wrote to standard output when standard error is empty, because a tool
 that reports its own error on stdout and exits silently otherwise leaves an
@@ -456,8 +457,9 @@ exit status and nothing else. The tail keeps the final twenty non-blank lines
 of the last 8 KiB the tool wrote, led by the line that explains the end — the
 matched refusal, the bound a timeout expired, or, when there is no exit status
 and the call was not cancelled, the error that stopped it — and marks the
-omission when the line bound cut earlier ones. That leading line is held to
-the same bounds as the tail beneath it. Lines are counted after terminal noise
+omission when the line bound cut earlier ones. When that leading line is the
+error a call with no exit status wrapped, it is held to the same bounds as the
+tail beneath it. Lines are counted after terminal noise
 is flattened: a carriage return a progress bar redraws with becomes a line
 break, and escape sequences and other control characters are dropped, so the
 log and the console show what the tool said rather than how it painted it. The
@@ -500,7 +502,10 @@ any undeclared report does. An evaluation re-run after a transient failure
 answers the same report and the same ids rather than invoking the tool again.
 That first disposition counts in the iteration summary as a new rejection
 rather than a repeat: the tool's report was a claim, not a judgement, so there
-was nothing yet to recur.
+was nothing yet to recur. The rule is general — a rejection is re-raised only
+when the entry it names was already judged, rejected with a reason or
+confirmed — so any later phase naming a reported-only entry counts the same
+way.
 
 The ledger spans the whole run rather than resetting per phase, because
 re-litigation crosses phases: a final-phase reviewer will re-raise what the

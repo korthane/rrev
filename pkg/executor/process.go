@@ -121,7 +121,10 @@ func (c command) run(ctx context.Context, col *collector, onLine func(string) er
 	case waitErr != nil:
 		return c.fail(stderr, col, waitErr)
 	case lineErr != nil:
-		return lineErr
+		// Wrapped like every other failure: a tool that declares its own
+		// failure while exiting zero still wrote a stderr tail and a stdout
+		// tail, and they are the only account of why it gave up.
+		return c.fail(stderr, col, lineErr)
 	case scanErr != nil:
 		return c.fail(stderr, col, fmt.Errorf("read output: %w", scanErr))
 	default:
@@ -150,17 +153,15 @@ func killOnCancel(ctx context.Context, group *processGroup) func() {
 }
 
 func (c command) fail(stderr *tailWriter, col *collector, err error) error {
-	// The stdout tail goes through the same writer as stderr, so both are
-	// cut at the same bound and tidied the same way.
-	stdout := &tailWriter{limit: stderrTailBytes}
-	_, _ = stdout.Write([]byte(col.text.String()))
 	failure := &Error{
 		Tool:     c.tool,
 		Args:     c.args,
 		ExitCode: -1,
 		Stderr:   stderr.String(),
-		Output:   stdout.String(),
-		Err:      err,
+		// The same capture bound as stderr, so both tails are cut at the
+		// same size and tidied the same way.
+		Output: bounded(col.text.String()),
+		Err:    err,
 	}
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		failure.ExitCode = exitErr.ExitCode()
