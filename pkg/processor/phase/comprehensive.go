@@ -20,7 +20,7 @@ func Comprehensive(ctx context.Context, e *Env) Result {
 		limit:     e.Config.MaxIterations,
 		converged: minorOnly,
 		run: func(ctx context.Context, it iteration) (stepResult, error) {
-			return e.review(ctx, reviewCall{
+			step, err := e.review(ctx, reviewCall{
 				phase:    NameComprehensive,
 				prompt:   comprehensivePrompt(it),
 				exec:     e.Primary,
@@ -30,6 +30,15 @@ func Comprehensive(ctx context.Context, e *Env) Result {
 				renderAs: e.Config.Executor,
 				verified: true,
 			})
+			// The prompt now asks for the done signal on any all-minor
+			// iteration — the same iteration that just ran the validation
+			// command over its own fixes — so the marker and a failed
+			// validation arrive together. The report wins, or the gate's
+			// fail-closed check is one an executor skips by being confident.
+			if validationFailed(step) {
+				step.Converged = false
+			}
+			return step, err
 		},
 	})
 }
@@ -57,16 +66,21 @@ func minorOnly(step stepResult) bool {
 			return false
 		}
 	}
+	return !validationFailed(step)
+}
+
+// validationFailed reports an iteration whose own report says its fixes do not
+// validate. Prefix, because a model writes the outcome as fail, failed, or
+// failure about as often as the word the template asks for. A line that is
+// missing entirely is not a failure: requiring an explicit pass would block on
+// the format drift this change exists to stop punishing.
+func validationFailed(step stepResult) bool {
 	for _, v := range step.Validations {
-		// Prefix, because a model writes the outcome as fail, failed, or
-		// failure about as often as the word the template asks for. A line
-		// that is missing entirely still converges: requiring an explicit pass
-		// would block on the format drift this change exists to stop punishing.
 		if strings.HasPrefix(v.Outcome, outcomeFail) {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // The one severity that converges the phase, and the prefix of the validation

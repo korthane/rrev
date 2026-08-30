@@ -6,6 +6,7 @@
 - [x] 1.2 Add an optional `converged func(stepResult) bool` to `loopSpec`, consulted by `drive` after the `step.Converged` and `SinglePass` cases, ending the loop with a new reason constant rendered as `converged: minor findings only`; map that reason to the same exit status as `ReasonConverged` via `phase.Result.OK()`, which `pkg/status` already keys off. Verify with a unit test that the reason reaches `LoopEnd` and the console line.
 - [x] 1.3 Implement the gate in `Comprehensive`: fires only when the parsed report has at least one confirmed finding, every one of them an explicit `minor`, and no validation reported a failure. Unit-test all five spec scenarios: minor-only converges, at-least-one-major iterates, failed validation iterates in any spelling, a severity rrev cannot read iterates, empty report iterates.
 - [x] 1.4 Verify the gate does not relabel report-only runs: a single-pass run with minor-only findings still ends with the single-pass reason (unit test).
+- [x] 1.5 Let a reported validation failure override an emitted done signal in `Comprehensive`, the way the external phase already vetoes an unreadable round, so the marker cannot bypass the fail-closed check; unit-test the signal variant.
 
 ## 2. Prompt contract
 

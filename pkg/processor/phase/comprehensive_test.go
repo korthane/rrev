@@ -153,6 +153,30 @@ func TestValidationReportedFailedInAnyTenseBlocksConvergence(t *testing.T) {
 	}
 }
 
+// The done signal is the executor's claim that the phase is finished, and this
+// branch invites it on any all-minor iteration — the same iteration that has
+// just run the validation command over its own fixes. So the report saying
+// those fixes do not validate has to override the marker, or the gate's
+// fail-closed check is one an executor bypasses by being confident.
+func TestFailedValidationBlocksConvergenceEvenWithTheSignal(t *testing.T) {
+	primary := mock("claude",
+		"FINDING: minor | a.go:3 | quality | - | the name reads oddly\n"+
+			"VALIDATION: fail | make test | TestSignIn failed\n"+reviewDone,
+		"FINDING: minor | a.go:4 | quality | - | the comment is stale\n"+
+			"VALIDATION: pass | make test | -\n"+reviewDone)
+	env, repo := newEnv(t, primary, nil, func(c *config.Config) { c.MaxIterations = 5 })
+	primary.Handler = changingHandler(primary, repo)
+
+	res := Comprehensive(context.Background(), env)
+
+	if res.Iterations != 2 {
+		t.Errorf("iterations = %d, want the failed validation to override the done signal", res.Iterations)
+	}
+	if res.Reason != ReasonConverged {
+		t.Errorf("reason = %q, want the validated second iteration to converge on its signal", res.Reason)
+	}
+}
+
 // The gate decides on the iteration's report, which is what the requirement
 // says it reads. An executor that confirmed only minors and committed no fix
 // for them still converges the phase: whether it did the work the prompt asked

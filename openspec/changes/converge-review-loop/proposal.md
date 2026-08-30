@@ -20,7 +20,7 @@ None.
 ### Modified Capabilities
 
 - `review-pipeline`: the "Comprehensive review phase" requirement's convergence contract changes from zero-findings to all-findings-minor, with rrev-side enforcement that fails closed on a report it cannot read; "Loop termination" gains the phase rule as a sixth terminating condition and a scenario keeping it distinguishable from the signal; a new "Repeat iteration scope" requirement narrows what iterations after the first primarily review.
-- `agent-execution`: "Signal detection" carves the phase rule out of its "no signal means iterate again, not success" rule, and stops describing the review-done marker as meaning the iteration found nothing.
+- `agent-execution`: "Signal detection" carves the phase rule out of its "no signal means iterate again, not success" rule, lets a phase override an emitted marker the iteration's own report contradicts, and stops describing the review-done marker as meaning the iteration found nothing.
 
 ## Impact
 

@@ -3,11 +3,15 @@
 ## MODIFIED Requirements
 
 ### Requirement: Signal detection
-rrev SHALL detect termination signals emitted by the executor in its output and use them to decide the phase outcome. The recognized signals MUST include one for a review iteration whose findings do not warrant another pass, one for an external review loop reaching agreement, and one for an unrecoverable failure. Output containing no signal MUST be treated as "work was done, iterate again" rather than as success, except where the phase supplies a rule that reads convergence off the iteration's own parsed report.
+rrev SHALL detect termination signals emitted by the executor in its output and use them to decide the phase outcome. The recognized signals MUST include one for a review iteration whose findings do not warrant another pass, one for an external review loop reaching agreement, and one for an unrecoverable failure. Output containing no signal MUST be treated as "work was done, iterate again" rather than as success, except where the phase supplies a rule that reads convergence off the iteration's own parsed report. A phase MAY also override an emitted convergence marker from that same report, so an iteration contradicting its own marker is not filed as a clean pass.
 
 #### Scenario: Review-done signal
-- **WHEN** the executor's output contains the review-done marker
+- **WHEN** the executor's output contains the review-done marker and nothing in the iteration's own report contradicts it
 - **THEN** the phase is treated as converged and does not iterate again
+
+#### Scenario: The report overrides the marker
+- **WHEN** the executor emits the review-done marker but the same iteration's parsed report says its fixes did not validate
+- **THEN** the phase does not converge and runs another iteration
 
 #### Scenario: No signal emitted
 - **WHEN** the executor completes without emitting any recognized marker and the phase has no rule that reads convergence off the parsed report
