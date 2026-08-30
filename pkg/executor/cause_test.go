@@ -171,6 +171,28 @@ func TestDescribeTailBoundIsExactAndSkipsBlankLines(t *testing.T) {
 	}
 }
 
+// The reason and the tail are bounded separately, so the marker has to sit
+// above whichever of the two lost lines. Marking a complete tail tells the
+// reader something is missing from the two lines that are all there is.
+func TestCutMarkerSitsAboveTheTextItWasCutFrom(t *testing.T) {
+	var reason strings.Builder
+	for i := 1; i <= 40; i++ {
+		fmt.Fprintf(&reason, "reason line %d\n", i)
+	}
+	c := executor.Describe(&executor.Error{Tool: "codex", ExitCode: -1,
+		Stderr: "the tool's last word", Err: errors.New(reason.String())})
+
+	if !strings.HasPrefix(c.Detail(), "[earlier lines omitted]\nreason line 21") {
+		t.Errorf("a cut reason must be marked above itself: %q", c.Detail())
+	}
+	if want := "reason line 40\nthe tool's last word"; !strings.HasSuffix(c.Detail(), want) {
+		t.Errorf("an uncut tail must follow the reason unmarked: %q", c.Detail())
+	}
+	if n := strings.Count(c.Detail(), "[earlier lines omitted]"); n != 1 {
+		t.Errorf("marker appears %d times, want 1: %q", n, c.Detail())
+	}
+}
+
 // A byte bound lands mid-line; the fragment before the first newline is not a
 // line the tool wrote, and rendering it would put half a word in the log.
 func TestStdoutTailStartsOnALineBoundary(t *testing.T) {
@@ -292,7 +314,9 @@ func TestDescribeBoundsATailTheReaderDidNotCut(t *testing.T) {
 	if len(c.Detail()) > 8<<10 {
 		t.Errorf("detail is %d bytes, want at most 8 KiB", len(c.Detail()))
 	}
-	if want := "reported <<<RREV:TASK_FAILED>>>\nI cannot continue.\n<<<RREV:TASK_FAILED>>>"; c.Detail() != want {
+	// The wrapped "reported <marker>" is dropped, not repeated: the model's own
+	// last line is the marker, so the reason says nothing the tail does not.
+	if want := "I cannot continue.\n<<<RREV:TASK_FAILED>>>"; c.Detail() != want {
 		t.Errorf("detail = %q, want %q", c.Detail(), want)
 	}
 }

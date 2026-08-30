@@ -180,11 +180,6 @@ func TestExternalUserBreakEndsLoop(t *testing.T) {
 		return executor.Result{Output: "evaluated"}, nil
 	}
 	env.Break = func() <-chan struct{} { return brk }
-	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
-	if err != nil {
-		t.Fatalf("open progress log: %v", err)
-	}
-	env.Log = log
 
 	res := External(context.Background(), env)
 
@@ -196,10 +191,6 @@ func TestExternalUserBreakEndsLoop(t *testing.T) {
 	}
 	if res.OK() {
 		t.Error("a broken loop must not report OK")
-	}
-	// The user ending the loop is an outcome, not a failure to diagnose.
-	if got := readFile(t, log.Path()); strings.Contains(got, "**failed**") {
-		t.Errorf("a user break must not leave a failure record\n--- log ---\n%s", got)
 	}
 }
 

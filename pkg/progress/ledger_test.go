@@ -733,8 +733,10 @@ func TestExecutorFailureToleratesSparseFields(t *testing.T) {
 	log := openLog(t, t.TempDir(), "change", progress.Options{})
 	log.ExecutorFailure(progress.Failure{Phase: "finalize"})
 
-	if got := readLog(t, log); !strings.Contains(got, "- **failed** unknown — finalize\n") {
-		t.Errorf("log missing the sparse record\n--- log ---\n%s", got)
+	// Nothing follows the summary: splitting an empty detail yields one empty
+	// line, which would render as a line of bare indentation.
+	if got := readLog(t, log); !strings.HasSuffix(got, "- **failed** unknown — finalize\n") {
+		t.Errorf("the sparse record must end at its summary\n--- log ---\n%q", got)
 	}
 	progress.Disabled().ExecutorFailure(progress.Failure{Summary: "claude: failure (exit 1)"})
 }

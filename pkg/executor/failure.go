@@ -183,13 +183,19 @@ type Cause struct {
 	Reason string
 	// Tail is the diagnostic text: the tool's stderr, or the last lines of its
 	// stdout when stderr is empty.
-	Tail      string
+	Tail string
+	// Truncated and ReasonCut say which text the line bound cut, so the marker
+	// renders above the one that is missing lines rather than above both.
 	Truncated bool
+	ReasonCut bool
 }
 
 // causeTailLines bounds the rendered tail. A crashing tool puts its reason in
 // its last few lines; anything above that is the review it was giving up on.
 const causeTailLines = 20
+
+// omittedMark stands in for the lines causeTailLines dropped.
+const omittedMark = "[earlier lines omitted]"
 
 // Describe reduces a failed call's error to its cause.
 func Describe(err error) Cause {
@@ -233,14 +239,13 @@ func Describe(err error) Cause {
 		// bound exists to keep small, and a reason normalised differently from
 		// the tail it is compared against would not match the text it repeats.
 		//
-		// Suffix, not containment: the wrapped error says nothing more only
-		// when the tail is what it ends with, as "claude reported an error:
-		// <msg>" ends with <msg>. A tail that merely occurs inside a longer
-		// reason is the reason's own word, and dropping it would leave a
-		// failure with no exit status saying nothing about what stopped it.
+		// Against the tail's last line, not the whole tail: claude appends its
+		// result message to the stderr it captured, so the tail ends with the
+		// <msg> that "claude reported an error: <msg>" ends with, and matching
+		// whole strings would render the message twice under one warning line.
 		reason, cut := lastLines(bounded(failure.Err.Error()), causeTailLines)
-		if c.Tail == "" || !strings.HasSuffix(reason, c.Tail) {
-			c.Reason, c.Truncated = reason, c.Truncated || cut
+		if last := lastLine(c.Tail); last == "" || !strings.HasSuffix(reason, last) {
+			c.Reason, c.ReasonCut = reason, cut
 		}
 	}
 	return c
@@ -273,6 +278,12 @@ func lastLines(text string, n int) (string, bool) {
 		return strings.Join(lines, "\n"), false
 	}
 	return strings.Join(lines[len(lines)-n:], "\n"), true
+}
+
+// lastLine is the final line of text, empty only when text is: lastLines
+// leaves no blank line for it to land on.
+func lastLine(text string) string {
+	return text[strings.LastIndexByte(text, '\n')+1:]
 }
 
 // flatLines splits text into lines with terminal noise flattened: a carriage
@@ -349,12 +360,15 @@ func (c Cause) Detail() string {
 		_, reason, _ = strings.Cut(c.Reason, "\n")
 	}
 	if reason != "" && !strings.Contains(c.Tail, reason) {
+		if c.ReasonCut {
+			lines = append(lines, omittedMark)
+		}
 		lines = append(lines, reason)
 	}
-	if c.Truncated {
-		lines = append(lines, "[earlier lines omitted]")
-	}
 	if c.Tail != "" {
+		if c.Truncated {
+			lines = append(lines, omittedMark)
+		}
 		lines = append(lines, c.Tail)
 	}
 	return strings.Join(lines, "\n")

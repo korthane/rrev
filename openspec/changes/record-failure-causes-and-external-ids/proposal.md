@@ -17,7 +17,7 @@ That is the command line and an exit code. The executor keeps a stderr tail for 
 
 - **Executor failures are recorded with their cause.** When any phase's executor call fails, the log records the phase and iteration, the tool, the exit status, the failure's classification (rate limit, transient, timeout, cancelled, or plain failure), and a bounded diagnostic tail — standard error, or the last lines the tool wrote to standard output when standard error is empty. The same detail reaches the console.
 - **The external tool's findings keep their identity through evaluation.** Recording a reported finding returns its id, the evaluator is shown each of the tool's findings under the id it was assigned, and is instructed to carry that id into its own report line. A confirmed or rejected disposition then updates the reported entry rather than opening a second one. This stays inside the declared-not-inferred rule: the executor still writes the id; rrev only tells it which one.
-- **The external tool's record precedes its findings.** The `external tool: reported N finding(s)` line currently lands after the findings it summarises, because the review call writes them itself; it moves to its natural position.
+- **The external tool's report is recorded as soon as the tool returns.** Its findings are held to the end of the iteration today, so the evaluator cannot be shown the ids they were recorded under, and an evaluation retried after a transient failure re-invokes the tool and records its findings a second time. Recording them at the call keeps the existing invocation-then-findings order and lets the retry answer the same report.
 
 Non-goals: changing loop termination, retrying a failed final phase, or any change to how the comprehensive phase records findings.
 
@@ -27,7 +27,7 @@ Non-goals: changing loop termination, retrying a failed final phase, or any chan
 <!-- None. -->
 
 ### Modified Capabilities
-- `progress-log`: gains a requirement that executor failures are recorded with their cause; *Finding identity* gains the rule that an evaluated external finding keeps its reported identifier; *External tool activity recorded* orders the invocation record before the findings it reports.
+- `progress-log`: gains a requirement that executor failures are recorded with their cause; *Finding identity* gains the rule that an evaluated external finding keeps its reported identifier; *External tool activity recorded* requires the invocation record to precede the findings it reports.
 - `agent-execution`: *Executor contract*'s non-zero-exit scenario names what the diagnostic output consists of — standard error, or the standard-output tail when standard error is empty — since that is what the log will render.
 
 ## Impact

@@ -219,11 +219,12 @@ func TestClaudeResultErrorAtExitZeroKeepsBothTails(t *testing.T) {
 	if err == nil {
 		t.Fatal("a result event declaring an error must fail the call")
 	}
-	detail := executor.Describe(err).Detail()
-	for _, want := range []string{"tool execution failed", "node: FATAL heap out of memory", "stack trace line"} {
-		if !strings.Contains(detail, want) {
-			t.Errorf("detail lost %q:\n%s", want, detail)
-		}
+	// Exact, not by containment: the result message is appended to the stderr
+	// tail and also wrapped in the error, and a record that renders it in both
+	// places says the same thing twice.
+	want := "node: FATAL heap out of memory\nstack trace line\ntool execution failed"
+	if detail := executor.Describe(err).Detail(); detail != want {
+		t.Errorf("detail = %q, want %q", detail, want)
 	}
 }
 

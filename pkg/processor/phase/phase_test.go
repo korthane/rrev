@@ -396,6 +396,74 @@ func TestCancelledCallRecordsTheToolAndItsLastWords(t *testing.T) {
 	}
 }
 
+// A provider that refuses on its usage limit exits zero and says so in its own
+// output, so the classification and the refusal line are the whole diagnosis:
+// there is no exit status to fall back on and no retry to wait for.
+func TestUsageLimitRefusalRecordsItsClassificationAndReason(t *testing.T) {
+	refusal := "You've hit your usage limit · resets 9:40am (America/New_York)"
+	primary := &executor.Mock{Tool: "claude", Handler: func(context.Context, executor.Request) (executor.Result, error) {
+		return executor.Result{}, &executor.LimitError{Tool: "claude", Reason: refusal}
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+	console := &bytes.Buffer{}
+	env.Out = console
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := Comprehensive(context.Background(), env)
+
+	if res.Reason != ReasonFailure {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonFailure)
+	}
+	if primary.CallCount() != 1 {
+		t.Errorf("a usage limit was retried %d times; want the call made once", primary.CallCount())
+	}
+	for _, want := range []string{"- **failed** claude: usage limit — comprehensive iteration 1", "  " + refusal} {
+		if got := readFile(t, log.Path()); !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+	for _, want := range []string{"comprehensive review failed: claude: usage limit", "  " + refusal} {
+		if !strings.Contains(console.String(), want) {
+			t.Errorf("console missing %q:\n%s", want, console.String())
+		}
+	}
+}
+
+// A tool that exits non-zero having said nothing has only its summary to show.
+// Splitting an empty detail yields one empty line, so an unguarded renderer
+// follows the summary with a line of bare indentation in both places.
+func TestSilentFailureRecordIsJustItsSummary(t *testing.T) {
+	primary := &executor.Mock{Tool: "claude", Handler: func(context.Context, executor.Request) (executor.Result, error) {
+		return executor.Result{}, &executor.Error{Tool: "claude", ExitCode: 1, Err: errors.New("exit status 1")}
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+	console := &bytes.Buffer{}
+	env.Out = console
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	Comprehensive(context.Background(), env)
+
+	summary := "- **failed** claude: failure (exit 1) — comprehensive iteration 1\n"
+	got := readFile(t, log.Path())
+	if !strings.Contains(got, summary) {
+		t.Fatalf("log missing %q:\n%s", summary, got)
+	}
+	if _, rest, _ := strings.Cut(got, summary); strings.HasPrefix(rest, "  ") {
+		t.Errorf("an empty detail left an indented blank line:\n%q", rest)
+	}
+	if strings.Contains(console.String(), "\n  \n") {
+		t.Errorf("console printed a bare indented line:\n%q", console.String())
+	}
+}
+
 func TestStalemateEndsLoop(t *testing.T) {
 	primary := mock("claude", "still working on it")
 	env, _ := newEnv(t, primary, nil, func(c *config.Config) {
