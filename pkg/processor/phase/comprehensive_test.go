@@ -251,6 +251,12 @@ func TestRepeatIterationIsScopedToThePreviousIterationsFixes(t *testing.T) {
 	if strings.Contains(calls[0].Prompt, "git diff head0..HEAD") {
 		t.Error("the first iteration has nothing reviewed yet, so it must review the whole branch")
 	}
+	// The one positive assertion on the scope marker. Every other test checks
+	// only for its absence, so a reword would leave those guards passing over
+	// an instruction that no longer says which diff is primary.
+	if !strings.Contains(calls[1].Prompt, "the fixes made since the last reviewed commit") {
+		t.Errorf("a scoped iteration must say the fixes are the primary scope:\n%s", calls[1].Prompt)
+	}
 	for i, call := range calls {
 		// The full branch never leaves the instruction: a fix can regress code
 		// the scoped diff does not show.
@@ -274,8 +280,7 @@ func TestRepeatIterationFallsBackToTheFullBranchWithoutACommit(t *testing.T) {
 		if n == 1 {
 			repo.commit("head1")
 		}
-		out := primary.Responses[min(n, len(primary.Responses))-1]
-		return executor.Result{Output: out.Output, Signal: executor.Detect(out.Output)}, out.Err
+		return respond(primary, n)
 	}
 
 	Comprehensive(context.Background(), env)
@@ -295,6 +300,38 @@ func TestRepeatIterationFallsBackToTheFullBranchWithoutACommit(t *testing.T) {
 	}
 	if !strings.Contains(calls[2].Prompt, "git diff main...HEAD") {
 		t.Errorf("iteration 3 lost the full branch diff:\n%s", calls[2].Prompt)
+	}
+}
+
+// An executor that edited files but never committed them is the sharpest form
+// of "committed nothing": the loop counts the iteration as having changed the
+// branch, so only the head-versus-tree distinction keeps the next iteration off
+// an empty `git diff HEAD..HEAD` presented as the fixes to review.
+func TestUncommittedWorkDoesNotScopeTheNextIteration(t *testing.T) {
+	primary := mock("claude",
+		"FINDING: major | a.go:1 | quality | - | first",
+		"FINDING: major | a.go:2 | quality | - | second")
+	env, repo := newEnv(t, primary, nil, func(c *config.Config) { c.MaxIterations = 2 })
+	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
+		n := primary.CallCount()
+		repo.edit("tree" + strings.Repeat("x", n))
+		return respond(primary, n)
+	}
+
+	res := Comprehensive(context.Background(), env)
+
+	if !res.Changed {
+		t.Fatal("the working tree moved, so the loop must have seen the iteration change something")
+	}
+	calls := primary.Calls()
+	if len(calls) != 2 {
+		t.Fatalf("executor calls = %d, want 2", len(calls))
+	}
+	if strings.Contains(calls[1].Prompt, "the fixes made since the last reviewed commit") {
+		t.Errorf("nothing was committed, so iteration 2 must review the whole branch:\n%s", calls[1].Prompt)
+	}
+	if !strings.Contains(calls[1].Prompt, "git diff main...HEAD") {
+		t.Errorf("iteration 2 lost the full branch diff:\n%s", calls[1].Prompt)
 	}
 }
 

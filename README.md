@@ -342,7 +342,7 @@ naming the file and the variable rather than text passed through to the model.
 | `{{CHANGE}}` | the selected change's name |
 | `{{GOAL}}`, `{{GOAL_LINE}}` | the derived one-line review goal |
 | `{{BASE_REF}}` | the resolved base ref |
-| `{{DIFF_INSTRUCTION}}` | the command that produces the diff under review — two of them on comprehensive iterations after the first, the fixes since the last reviewed commit and the full branch, each with a note on what it is for. Every reviewer agent expands the same value, so the rescoping reaches them without editing an agent file |
+| `{{DIFF_INSTRUCTION}}` | the command(s) producing the diff under review, expanded identically in every reviewer agent; a comprehensive iteration following one that committed gets two, per [What a phase does](#what-a-phase-does) |
 | `{{PROGRESS_LOG}}` | path of this run's progress log |
 | `{{REPORT_FILE}}` | path of the findings report |
 | `{{VALIDATION_COMMAND}}` | the configured validation command |
@@ -377,9 +377,10 @@ fence, so a model quoting the protocol does not end a loop.
 | `<<<RREV:TASK_FAILED>>>` | unrecoverable failure; the pipeline stops and reports the phase |
 
 **Emitting no marker is not success.** rrev reads a missing marker as "work was
-done, iterate again" and runs another iteration, up to the phase's limit. This
-is the load-bearing property of the protocol: silence never ends a loop as
-converged.
+done, iterate again" and runs another iteration, up to the phase's limit. Silence
+ends a loop as converged in exactly one place: the comprehensive phase's severity
+gate, described under [What a phase does](#what-a-phase-does). Everywhere else —
+the external loop, the final pass — silence iterates.
 
 ### Report lines
 

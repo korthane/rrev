@@ -29,6 +29,40 @@ func TestFinalSkippedWhenNothingChanged(t *testing.T) {
 	}
 }
 
+// Converging on severity is the outcome this change makes common, and it
+// reaches skipFinal through Result.OK() exactly as the signal does. Whether the
+// regression pass runs turns on what the phase changed, not on which of the two
+// mechanisms ended it.
+func TestFinalKeysOffChangesNotOnWhichConvergenceEndedTheComprehensivePhase(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		changed   bool
+		wantSkip  bool
+		wantCalls int
+	}{
+		{"minor-only iteration committed fixes", true, false, 1},
+		{"minor-only iteration committed nothing", false, true, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			primary := mock("claude", reviewDone)
+			env, _ := newEnv(t, primary, nil, nil)
+			prior := []Result{
+				{Name: NameComprehensive, Reason: ReasonMinorOnly, Iterations: 1, Changed: tt.changed},
+				{Name: NameExternal, Reason: ReasonConverged, Iterations: 1},
+			}
+
+			res := Final(context.Background(), env, prior...)
+
+			if res.Skipped != tt.wantSkip {
+				t.Errorf("skipped = %v, want %v; result = %+v", res.Skipped, tt.wantSkip, res)
+			}
+			if primary.CallCount() != tt.wantCalls {
+				t.Errorf("executor calls = %d, want %d", primary.CallCount(), tt.wantCalls)
+			}
+		})
+	}
+}
+
 func TestFinalRunsAfterFixes(t *testing.T) {
 	primary := mock("claude", "no critical or major issues\n"+reviewDone)
 	env, _ := newEnv(t, primary, nil, nil)

@@ -722,6 +722,11 @@ esac`,
 	if strings.Contains(first, "the fixes made since the last reviewed commit") {
 		t.Errorf("iteration 1 has nothing reviewed yet and must review the whole branch:\n%s", first)
 	}
+	// Asserted positively too: an empty diff instruction would satisfy the
+	// absence above while telling iteration 1 to review nothing at all.
+	if !strings.Contains(first, "git diff main...HEAD") {
+		t.Errorf("iteration 1 lost the full branch diff:\n%s", first)
+	}
 	repeat := script.prompt(t, "claude", "comprehensive", 2)
 	if !strings.Contains(repeat, "Repeat comprehensive review of:") {
 		t.Errorf("iteration 2 must run the repeat prompt:\n%s", repeat)

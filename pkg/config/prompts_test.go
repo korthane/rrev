@@ -155,7 +155,7 @@ func TestComprehensivePromptsConvergeOnSeverityNotOnAnEmptyReport(t *testing.T) 
 		}
 		// The rule it replaced. Left in place it contradicts the new one, and
 		// the executor is the half of the gate rrev cannot enforce.
-		if strings.Contains(got, "confirmed zero findings") {
+		if strings.Contains(flat, "confirmed zero findings") {
 			t.Errorf("%s prompt still asks for a zero-finding iteration:\n%s", name, got)
 		}
 	}

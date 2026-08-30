@@ -7,7 +7,7 @@ Two dogfooding runs (`.rrev/progress/progress-record-failure-causes-and-external
 ## What Changes
 
 - The comprehensive phase converges on the first iteration that confirms nothing critical or major: the executor fixes the confirmed minors, commits, and emits the review-done signal. Today the signal is allowed only for a zero-finding, zero-change iteration.
-- rrev enforces the same rule itself as a backstop: when an iteration's parsed report confirms no critical or major finding and validation did not fail, the phase ends as converged even if the executor never emitted the signal.
+- rrev enforces the same rule itself as a backstop: when an iteration's parsed report confirms at least one finding, every one of them an explicit `minor`, and no validation reported a failure, the phase ends as converged even if the executor never emitted the signal. It fails closed on anything it cannot read that way — an empty report, or a severity outside the template's vocabulary — since neither can be told apart from a reporting failure.
 - Comprehensive iterations after the first use a new `review_repeat` prompt whose primary scope is the diff since the last reviewed commit — the fixes — with the full branch diff kept for context and regressions anywhere in it still in scope. When no commit landed since the last iteration, the repeat iteration falls back to the full branch scope.
 - The external loop's termination is untouched: its convergence already keys on the external tool reporting nothing, and cross-model disagreement is the phase's point. The final phase already ignores minors.
 
@@ -19,7 +19,7 @@ None.
 
 ### Modified Capabilities
 
-- `review-pipeline`: the "Comprehensive review phase" requirement's convergence contract changes from zero-findings to nothing-critical-or-major, with rrev-side enforcement; a new "Repeat iteration scope" requirement narrows what iterations after the first primarily review.
+- `review-pipeline`: the "Comprehensive review phase" requirement's convergence contract changes from zero-findings to all-findings-minor, with rrev-side enforcement that fails closed on a report it cannot read; "Loop termination" gains the phase rule as a sixth terminating condition and a scenario keeping it distinguishable from the signal; a new "Repeat iteration scope" requirement narrows what iterations after the first primarily review.
 
 ## Impact
 

@@ -120,16 +120,17 @@ block does nothing.
 
 - <<<RREV:REVIEW_DONE>>> - emit when nothing you confirmed this iteration is
   critical or major, after you have fixed, validated, and committed the minor
-  ones. It means "this branch has nothing serious left", not "I found nothing".
-  A later phase reviews the branch again for exactly what these fixes may have
-  broken, so do not keep the loop open hunting the last minor issue: that well
-  never empties, because every fix is itself reviewable.
+  ones, or merely reported them where the run mode forbids changing the
+  repository. It means "this branch has nothing serious left", not "I found
+  nothing". A later phase reviews the branch again for exactly what these fixes
+  may have broken, so do not keep the loop open hunting the last minor issue:
+  that well never empties, because every fix is itself reviewable.
 - <<<RREV:TASK_FAILED>>> - emit when you cannot proceed at all. The run stops and
   reports this phase.
 
 Emitting no marker is not success. rrev reads a missing marker as "work was done,
 iterate again" and runs this phase again, up to {{MAX_ITERATIONS}} iterations. So
-when you confirmed something critical or major, fix it and emit nothing: the next
-iteration has to check whether that fix broke anything.
+when you confirmed something critical or major, emit nothing: the next iteration
+has to check whether this one's fixes broke anything.
 
 OUTPUT FORMAT: no markdown formatting. Plain text and - lists are fine.

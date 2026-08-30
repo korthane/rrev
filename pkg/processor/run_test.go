@@ -339,7 +339,9 @@ func TestPromptUsesCoversEveryPhaseTheModeRuns(t *testing.T) {
 		{ModeFull, true, []string{"review_first", "review_repeat", "external_review", "external_eval", "review_final", "finalize"}},
 		{ModePhase1Only, true, []string{"review_first", "review_repeat"}},
 		{ModeExternalOnly, true, []string{"external_review", "external_eval", "review_final", "finalize"}},
-		{ModeReportOnly, true, []string{"review_first", "review_repeat", "external_review", "external_eval", "review_final"}},
+		// Read-only runs one pass per phase, so the repeat prompt is never
+		// reached and preflight must not fail the run over an override of it.
+		{ModeReportOnly, true, []string{"review_first", "external_review", "external_eval", "review_final"}},
 		{"", false, []string{"review_first", "review_repeat", "external_review", "external_eval", "review_final"}},
 	}
 	for _, tt := range tests {

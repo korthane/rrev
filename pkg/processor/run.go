@@ -253,7 +253,13 @@ func PromptUses(m Mode, finalize bool) []PromptUse {
 func promptSequence(m Mode) []string {
 	// Both comprehensive prompts, so a broken override of the repeat one is
 	// caught at startup rather than at iteration 2, after a full pass is spent.
-	comprehensive := []string{phase.PromptComprehensive, phase.PromptComprehensiveRepeat}
+	// A read-only run is capped at one iteration and never reaches the repeat
+	// prompt, so preflighting it there would fail the one mode that is safe to
+	// run anywhere over a file it would not send.
+	comprehensive := []string{phase.PromptComprehensive}
+	if !m.ReadOnly() {
+		comprehensive = append(comprehensive, phase.PromptComprehensiveRepeat)
+	}
 	external := []string{phase.PromptExternal, phase.PromptExternalEval}
 	final := []string{phase.PromptFinal}
 	switch m {

@@ -69,7 +69,8 @@ type loopSpec struct {
 
 // drive runs a review loop to one of its terminating conditions and reports
 // which one ended it. An iteration that emits no done signal means "work was
-// done, iterate again": convergence is only ever stated explicitly.
+// done, iterate again", unless the loop supplied a converged rule that reads
+// convergence off the iteration's own report.
 func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 	limit := max(spec.limit, 1)
 	if e.SinglePass {
