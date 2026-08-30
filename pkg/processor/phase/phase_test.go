@@ -159,6 +159,11 @@ func TestPersistentTransientFailureEndsTheLoop(t *testing.T) {
 		{Err: &executor.LimitError{Tool: "claude", Reason: "service unavailable", Retryable: true}},
 	}}
 	env, _ := newEnv(t, primary, nil, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
 
 	res := Comprehensive(context.Background(), env)
 
@@ -167,6 +172,12 @@ func TestPersistentTransientFailureEndsTheLoop(t *testing.T) {
 	}
 	if primary.CallCount() != retryBudget+1 {
 		t.Errorf("executor calls = %d, want %d", primary.CallCount(), retryBudget+1)
+	}
+	// Every attempt leaves one record: the superseded ones from the retry
+	// loop, the last from the phase ending. Neither path may record twice.
+	want := "- **failed** claude: transient failure — comprehensive iteration 1"
+	if got := readFile(t, log.Path()); strings.Count(got, want) != retryBudget+1 {
+		t.Errorf("failure records = %d, want one per attempt (%d):\n%s", strings.Count(got, want), retryBudget+1, got)
 	}
 }
 
@@ -312,11 +323,21 @@ func TestLoopEndsOnAbort(t *testing.T) {
 	cancel()
 	primary := mock("claude", "fixed something")
 	env, _ := newEnv(t, primary, nil, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
 
 	res := Comprehensive(ctx, env)
 
 	if res.Reason != ReasonAborted {
 		t.Fatalf("reason = %q, want %q", res.Reason, ReasonAborted)
+	}
+	// A cancelled run is the one a user most often reads the log after, and
+	// the record must say the run was cancelled rather than that the tool broke.
+	if got := readFile(t, log.Path()); !strings.Contains(got, "- **failed** cancelled — comprehensive iteration 1") {
+		t.Errorf("log does not record the cancellation:\n%s", got)
 	}
 }
 
@@ -678,7 +699,7 @@ func TestStandingRejectionsReachTheNextIterationsPrompt(t *testing.T) {
 // confusion the recorded-activity requirement exists to remove.
 func TestExternalToolFailureIsRecordedWithItsCause(t *testing.T) {
 	external := &executor.Mock{Tool: "codex", Responses: []executor.Response{
-		{Err: errors.New("codex exited with status 1")},
+		{Err: &executor.Error{Tool: "codex", ExitCode: 1, Stderr: "fatal: no api key configured", Err: errors.New("exit status 1")}},
 	}}
 	env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
 	dir := t.TempDir()
@@ -697,7 +718,12 @@ func TestExternalToolFailureIsRecordedWithItsCause(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read progress log: %v", err)
 	}
-	for _, want := range []string{"external tool `codex`: failed", "codex exited with status 1"} {
+	// The outcome line carries the summary; the failure record that follows
+	// carries the tail. Neither may be found only by way of the other.
+	for _, want := range []string{
+		"- external tool `codex`: failed\n  codex: failure (exit 1)\n",
+		"- **failed** codex: failure (exit 1) — external iteration 1\n  fatal: no api key configured\n",
+	} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("progress log missing %q:\n%s", want, data)
 		}
@@ -763,9 +789,8 @@ func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
 		t.Fatalf("read progress log: %v", err)
 	}
 	got := string(data)
-	// Ordering in the finished log proves nothing: the report is written by a
-	// deferred call, so the findings land last however late the invocation was
-	// recorded. What the requirement is about is a run that never reaches the
+	// Ordering in the finished log is the eager report's doing and is asserted
+	// elsewhere. What this requirement is about is a run that never reaches the
 	// end, so the claim is checked from inside the call itself.
 	if !duringCall {
 		t.Error("the invocation was not in the log while the tool was still running, so a run killed mid-call records nothing")
@@ -775,10 +800,11 @@ func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
 	}
 }
 
-// The two calls' reports are held back and written together, and the order they
-// are written in is the order the log reads and the order identifiers are
-// issued in. The tool's own claims must land ahead of the evaluation disposing
-// of them, or the log answers a question it has not yet asked.
+// The tool's report is written as soon as the tool returns, and the evaluator's
+// is held back until the attempt is final; the order they are written in is the
+// order the log reads and the order identifiers are issued in. The tool's own
+// claims must land ahead of the evaluation disposing of them, or the log
+// answers a question it has not yet asked.
 func TestTheToolsFindingsAreLoggedBeforeTheEvaluationOfThem(t *testing.T) {
 	const reported = "FINDING: major | pkg/a.go:7 | external | - | the token is echoed"
 	const disposed = "REJECTED: pkg/a.go:7 | external | the token is echoed | it is redacted before the log write\n" + externalDone

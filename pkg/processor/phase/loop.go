@@ -156,7 +156,7 @@ func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, n
 		}
 		// A superseded attempt still failed: its cause is recorded like any
 		// other, so a flaky provider is diagnosable from the log afterwards.
-		e.recordFailure(spec.name, n, err)
+		e.recordFailure(spec.name, n, err, fmt.Sprintf("%s iteration %d attempt failed", Label(spec.name), n))
 		e.note("%s iteration %d: retrying", Label(spec.name), n)
 	}
 }
@@ -165,7 +165,7 @@ func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, n
 // terminal and in the progress log.
 func (e *Env) report(res Result) {
 	if res.Err != nil {
-		e.recordFailure(res.Name, res.Iterations, res.Err)
+		e.recordFailure(res.Name, res.Iterations, res.Err, Label(res.Name)+" failed")
 	}
 	e.Log.LoopEnd(res.Name, string(res.Reason), res.Iterations)
 	e.say("%s ended after %s: %s", Label(res.Name), plural(res.Iterations, "iteration"), res.Reason)
@@ -174,8 +174,9 @@ func (e *Env) report(res Result) {
 // recordFailure writes a failed call's cause to the log and the console in the
 // same form, so a user watching the run and one reading the log afterwards
 // learn the same thing: what was classified, what exit status, what the tool
-// last said.
-func (e *Env) recordFailure(phase string, iteration int, err error) {
+// last said. headline opens the console line: an attempt about to be retried
+// must not be announced as the phase failing.
+func (e *Env) recordFailure(phase string, iteration int, err error, headline string) {
 	cause := executor.Describe(err)
 	e.Log.ExecutorFailure(progress.Failure{
 		Phase:     phase,
@@ -183,7 +184,7 @@ func (e *Env) recordFailure(phase string, iteration int, err error) {
 		Summary:   cause.Summary(),
 		Detail:    cause.Detail(),
 	})
-	e.say("%s failed: %s", Label(phase), cause.Summary())
+	e.say("%s: %s", headline, cause.Summary())
 	for line := range strings.SplitSeq(cause.Detail(), "\n") {
 		if strings.TrimSpace(line) != "" {
 			e.say("  %s", line)

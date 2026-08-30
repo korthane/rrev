@@ -185,3 +185,45 @@ func TestStdoutTailKeepsAnOversizedLastLine(t *testing.T) {
 		t.Errorf("detail = %q, want the line's end", c.Detail()[max(0, len(c.Detail())-40):])
 	}
 }
+
+// A tool that exits non-zero having said nothing has only its exit status to
+// show, and the summary already carries it; a call that never got an exit
+// status keeps the error that explains why.
+func TestDescribeDoesNotRepeatAKnownExitStatusAsTheTail(t *testing.T) {
+	silent := &executor.Error{Tool: "claude", ExitCode: 1, Err: errors.New("exit status 1")}
+	if c := executor.Describe(silent); c.Summary() != "claude: failure (exit 1)" || c.Detail() != "" {
+		t.Errorf("summary = %q, detail = %q; want the exit status once, in the summary", c.Summary(), c.Detail())
+	}
+	unstarted := &executor.Error{Tool: "claude", ExitCode: -1, Err: errors.New(`exec: "claude": executable file not found in $PATH`)}
+	if c := executor.Describe(unstarted); !strings.Contains(c.Detail(), "executable file not found") {
+		t.Errorf("detail = %q, want the start failure", c.Detail())
+	}
+}
+
+// The stderr tail is the preferred diagnostic source, so a cut inside it must
+// be tidied the way the stdout tail's is: no leading fragment, no half rune.
+func TestStderrTailStartsOnALineBoundary(t *testing.T) {
+	tool := newScript(t, "i=0\nwhile [ $i -lt 2000 ]; do echo \"line $i — still reviewing\" >&2; i=$((i+1)); done\nexit 1\n")
+
+	_, err := (executor.Custom{Command: tool}).Run(t.Context(), executor.Request{Prompt: "review", Dir: t.TempDir()})
+	failure, ok := errors.AsType[*executor.Error](err)
+	if !ok {
+		t.Fatalf("err = %v, want *executor.Error", err)
+	}
+	first, _, _ := strings.Cut(failure.Stderr, "\n")
+	if !strings.HasPrefix(first, "line ") || !strings.HasSuffix(first, "still reviewing") {
+		t.Errorf("stderr tail opens with a fragment %q, want a whole line", first)
+	}
+	if !strings.HasSuffix(failure.Stderr, "line 1999 — still reviewing") {
+		t.Errorf("stderr tail lost the last line: %q", failure.Stderr[max(0, len(failure.Stderr)-80):])
+	}
+}
+
+// A progress bar redrawn with carriage returns and coloured with escape
+// sequences must not paint over the console or land raw in the log.
+func TestDescribeFlattensTerminalNoiseInTheTail(t *testing.T) {
+	err := &executor.Error{Tool: "codex", ExitCode: 1, Stderr: "10%\r20%\r100%\r\n\x1b[31mError: boom\x1b[0m\x07\n"}
+	if want := "10%\n20%\n100%\nError: boom"; executor.Describe(err).Detail() != want {
+		t.Errorf("detail = %q, want %q", executor.Describe(err).Detail(), want)
+	}
+}

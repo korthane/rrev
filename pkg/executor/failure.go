@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -215,17 +216,24 @@ func Describe(err error) Cause {
 	if strings.TrimSpace(source) == "" {
 		source = failure.Output
 	}
-	if strings.TrimSpace(source) == "" && failure.Err != nil && c.Reason == "" {
+	// A known exit status is already in the summary, and the wrapped error
+	// then says nothing more; a start failure or a signal has no such status.
+	if strings.TrimSpace(source) == "" && failure.Err != nil && failure.ExitCode < 0 && c.Reason == "" {
 		source = failure.Err.Error()
 	}
 	c.Tail, c.Truncated = lastLines(source, causeTailLines)
 	return c
 }
 
-// lastLines keeps the final n non-blank lines of text.
+// lastLines keeps the final n non-blank lines of text. Terminal noise is
+// flattened first: a carriage return a progress bar redraws with becomes a
+// line break, and escape sequences go, so the log and the console both show
+// what the tool said rather than how it painted it.
 func lastLines(text string, n int) (string, bool) {
 	var lines []string
+	text = ansiSequence.ReplaceAllString(newlines.Replace(text), "")
 	for line := range strings.SplitSeq(text, "\n") {
+		line = strings.Map(printable, line)
 		if strings.TrimSpace(line) != "" {
 			lines = append(lines, strings.TrimRight(line, " \t"))
 		}
@@ -234,6 +242,20 @@ func lastLines(text string, n int) (string, bool) {
 		return strings.Join(lines, "\n"), false
 	}
 	return strings.Join(lines[len(lines)-n:], "\n"), true
+}
+
+var (
+	newlines     = strings.NewReplacer("\r\n", "\n", "\r", "\n")
+	ansiSequence = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+)
+
+// printable drops the control characters left once line breaks and escape
+// sequences are handled; a tab is kept as the indentation it is.
+func printable(r rune) rune {
+	if r < 0x20 && r != '\t' || r == 0x7f {
+		return -1
+	}
+	return r
 }
 
 // Summary is the one-line form: tool, classification, and exit status.

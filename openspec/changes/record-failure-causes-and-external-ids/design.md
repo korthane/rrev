@@ -46,7 +46,7 @@ Positional or textual pairing is the inference the identity requirement forbids,
 
 ## Risks / Trade-offs
 
-- **Evaluator ignores the id.** → Degrades to exactly today's double entry; nothing is lost that is not already lost. The end-to-end test scripts both paths.
+- **Evaluator ignores the id.** → Degrades to exactly today's double entry; nothing is lost that is not already lost. The end-to-end test scripts the carry-id path; the phase test covers an evaluator that omits it.
 - **Stdout tail contains a signal marker or report line.** → It is rendered as indented detail under the failure record, which the report parser never reads, and inside the log it is inert; a later prompt expands the ledger, not the raw log.
 - **Bounded tail cuts the useful line.** → The tail is the *last* lines, which is where a crashing tool puts its reason; a tool that reports its error early and then rambles is not a case seen in practice.
 - **`Finding` gaining a return value touches every caller.** → One call site, in `pkg/processor/phase`; the compiler finds it.

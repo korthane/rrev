@@ -109,3 +109,26 @@ func TestFinalizeFailureIsRecordedWithItsCause(t *testing.T) {
 		}
 	}
 }
+
+// A finalize step cut short by the run being cancelled is aborted, not failed,
+// and its record says so: the tool did not break, the user stopped it.
+func TestFinalizeAbortedByCancellationIsRecordedAsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	primary := mock("claude", "")
+	env, _ := newEnv(t, primary, nil, func(c *config.Config) { c.Finalize = true })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := Finalize(ctx, env, Result{Name: NameComprehensive, Reason: ReasonConverged, Iterations: 1})
+
+	if res.Reason != ReasonAborted || res.Err == nil {
+		t.Fatalf("result = %+v, want an aborted step", res)
+	}
+	if got := readFile(t, log.Path()); !strings.Contains(got, "- **failed** cancelled — finalize iteration 1") {
+		t.Errorf("log does not record the cancellation:\n%s", got)
+	}
+}

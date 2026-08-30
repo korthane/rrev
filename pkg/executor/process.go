@@ -193,31 +193,43 @@ func (r *activityReader) Read(p []byte) (int, error) {
 type tailWriter struct {
 	limit int
 	buf   []byte
+	cut   bool
 }
 
 func (w *tailWriter) Write(p []byte) (int, error) {
 	w.buf = append(w.buf, p...)
 	if len(w.buf) > w.limit {
 		w.buf = w.buf[len(w.buf)-w.limit:]
+		w.cut = true
 	}
 	return len(p), nil
 }
 
-func (w *tailWriter) String() string { return strings.TrimSpace(string(w.buf)) }
+func (w *tailWriter) String() string {
+	text := string(w.buf)
+	if w.cut {
+		text = afterCut(text)
+	}
+	return strings.TrimSpace(text)
+}
 
 // tailOf keeps the last limit bytes of text, which is where a crashing tool
 // puts its reason.
 func tailOf(text string, limit int) string {
 	if len(text) > limit {
-		text = strings.TrimRight(text[len(text)-limit:], "\n")
-		// The cut lands mid-line; what precedes the first newline is a
-		// fragment the tool never wrote as a line. A last line longer than
-		// the bound has no such newline and keeps its end, minus any bytes
-		// the cut left mid-rune, rather than leaving nothing.
-		if i := strings.IndexByte(text, '\n'); i >= 0 {
-			text = text[i+1:]
-		}
-		text = strings.ToValidUTF8(text, "")
+		text = afterCut(text[len(text)-limit:])
 	}
 	return strings.TrimSpace(text)
+}
+
+// afterCut tidies text a byte cut opened mid-line: what precedes the first
+// newline is a fragment the tool never wrote as a line. A last line longer
+// than the bound has no such newline and keeps its end, minus any bytes the
+// cut left mid-rune, rather than leaving nothing.
+func afterCut(text string) string {
+	text = strings.TrimRight(text, "\n")
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		text = text[i+1:]
+	}
+	return strings.ToValidUTF8(text, "")
 }

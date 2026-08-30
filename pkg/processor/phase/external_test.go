@@ -259,6 +259,8 @@ func TestRetriedIterationRecordsOneCopyOfItsFindings(t *testing.T) {
 		t.Fatalf("open progress log: %v", err)
 	}
 	env.Log = log
+	var console strings.Builder
+	env.Out = &console
 	evals := 0
 	var retryPrompt string
 	primary.Handler = func(_ context.Context, req executor.Request) (executor.Result, error) {
@@ -297,6 +299,13 @@ func TestRetriedIterationRecordsOneCopyOfItsFindings(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("log missing %q for the retried attempt:\n%s", want, got)
 		}
+	}
+	// The console names the attempt, not the phase: the phase went on to succeed.
+	if !strings.Contains(console.String(), "external review iteration 1 attempt failed: claude: transient failure") {
+		t.Errorf("console does not announce the retried attempt:\n%s", console.String())
+	}
+	if strings.Contains(console.String(), "external review failed:") {
+		t.Errorf("console announces the phase as failed for an attempt that was retried:\n%s", console.String())
 	}
 }
 
@@ -569,6 +578,10 @@ func TestRenderExternalFindingsPairsIdsByPosition(t *testing.T) {
 	}
 	if got := renderExternalFindings(nil, findings[:1]); got != "FINDING: minor | a.go:1 | external | - | one" {
 		t.Errorf("with no ids the lines must render bare, got %q", got)
+	}
+	// A disabled log hands out an empty id per finding, not a short list.
+	if got := renderExternalFindings([]string{""}, findings[:1]); got != "FINDING: minor | a.go:1 | external | - | one" {
+		t.Errorf("an empty id must render the line bare, got %q", got)
 	}
 }
 

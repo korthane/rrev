@@ -424,7 +424,8 @@ logging disabled rather than aborting it. Logging disabled takes the ledger with
 it: with nothing recorded there are no standing rejections to expand, so every
 prompt is told nothing has been rejected yet and no recurrence is counted. The
 review still runs — it just re-argues what it dismissed, as it did before the
-ledger existed.
+ledger existed. The external evaluator is likewise shown the tool's findings
+without ids, since none were assigned, and its dispositions are recorded nowhere.
 
 Every finding the log records carries an identifier — `R1`, `R2`, … — assigned
 when it is first recorded and shown on its entry. They run in one sequence for

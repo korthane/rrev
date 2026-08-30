@@ -226,7 +226,11 @@ func TestExternalFindingsExpandWithTheirIds(t *testing.T) {
 
 	exp, projectDir = expanderFor(t, ExecutorClaude, Vars{})
 	writeAsset(t, projectDir, KindPrompt, "external_eval", "{{EXTERNAL_FINDINGS}}")
-	if got, _ := exp.Prompt("external_eval"); !strings.Contains(got, "reported no findings") {
+	got, err = exp.Prompt("external_eval")
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	if !strings.Contains(got, "reported no findings") {
 		t.Errorf("an empty list must say so explicitly, got %q", got)
 	}
 }
