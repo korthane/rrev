@@ -27,8 +27,10 @@ func External(ctx context.Context, e *Env) Result {
 		name:  NameExternal,
 		limit: e.Config.ExternalMaxIterations,
 		arm:   e.Break,
-		run: func(ctx context.Context, n, limit int) (stepResult, error) {
-			return e.externalRound(ctx, n, limit, state)
+		// The external tool reviews the branch, not the fixes: a second opinion
+		// scoped to what the first one just changed is not one.
+		run: func(ctx context.Context, it iteration) (stepResult, error) {
+			return e.externalRound(ctx, it, state)
 		},
 	})
 }
@@ -66,8 +68,9 @@ type round struct {
 // externalRound runs the external tool and then the primary executor's
 // evaluation of what it reported. The tool reporting nothing converges the loop
 // without spending an evaluation on it.
-func (e *Env) externalRound(ctx context.Context, n, limit int, state *externalState) (stepResult, error) {
-	vars := e.iterVars(n, limit)
+func (e *Env) externalRound(ctx context.Context, it iteration, state *externalState) (stepResult, error) {
+	n := it.n
+	vars := e.iterVars(it)
 	vars.PriorFindings = renderPriorFindings(state.rounds)
 
 	tool := state.pending

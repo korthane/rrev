@@ -20,6 +20,10 @@ import (
 // from outside the process: the stand-in executors record what they were sent.
 var phaseLines = []struct{ line, name string }{
 	{"Comprehensive review of:", "comprehensive"},
+	// Iterations after the first run the repeat prompt, but they are the same
+	// phase: a test scripting "comprehensive:2" means the second iteration of
+	// it, not a phase of its own.
+	{"Repeat comprehensive review of:", "comprehensive"},
 	{"Independent review of:", "external"},
 	{"External review evaluation for:", "external-eval"},
 	{"Final regression review of:", "final"},
@@ -41,6 +45,7 @@ phase=unknown
 %s
 printf '%%s:%%s\n' "$name" "$phase" >> "$run/sequence"
 n=$(grep -c ":$phase$" "$run/sequence")
+cp "$prompt" "$run/prompt-$name-$phase-$n"
 requirement() { sed -n "s/^$1\. \[[A-Z]*\] //p" "$prompt" | head -1; }
 commit() { git add -A >/dev/null && git commit -q --allow-empty -m "$1" >/dev/null; }
 %s
@@ -68,6 +73,18 @@ func scriptExecutors(t *testing.T, bodies map[string]string) *scriptedRun {
 		}
 	}
 	return &scriptedRun{dir: dir}
+}
+
+// prompt returns the text one iteration of a phase was sent, which is where a
+// per-iteration prompt choice and diff scope are observable from outside.
+func (r *scriptedRun) prompt(t *testing.T, tool, phase string, n int) string {
+	t.Helper()
+	path := filepath.Join(r.dir, fmt.Sprintf("prompt-%s-%s-%d", tool, phase, n))
+	body, err := os.ReadFile(path) //nolint:gosec // the path is a test temp file
+	if err != nil {
+		t.Fatalf("read the prompt %s:%s sent in iteration %d: %v", tool, phase, n, err)
+	}
+	return string(body)
 }
 
 // sequence lists every executor call as `tool:phase`, in the order they ran.
@@ -629,5 +646,134 @@ esac`,
 	}
 	if !strings.Contains(log, "- **R1** `auth.go:2`") {
 		t.Errorf("the ledger row must be the reported entry:\n%s", log)
+	}
+}
+
+// The comprehensive phase ends on the severity of what an iteration confirmed,
+// not only on the signal: an iteration that fixed minor findings and said
+// nothing converges the phase. Nothing below the phase package covers the wire
+// from a parsed report to the run's exit status, and a broken one fails the way
+// the dogfooding runs did — by iterating until the limit.
+func TestEndToEndMinorOnlyIterationConvergesTheComprehensivePhase(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	script := scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1)
+    echo "FINDING: minor | auth.go:1 | quality | - | the handler name reads oddly"
+    echo "VALIDATION: pass | make test | -"
+    commit "rename the sign-in handler"
+    ;;
+  external-eval:1) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+  final:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `echo "<<<RREV:EXTERNAL_DONE>>>"`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d, want %d; output:\n%s", code, status.CodeOK, out.String())
+	}
+	if n := strings.Count(strings.Join(script.sequence(t), " "), "claude:comprehensive"); n != 1 {
+		t.Errorf("the comprehensive phase ran %d iterations, want it to converge on the first", n)
+	}
+	log := progressLog(t, repo)
+	// Which mechanism ended the phase is the part a reader needs: convergence
+	// rrev decided reads differently from one the executor declared.
+	if want := "**comprehensive ended:** converged: minor findings only after 1 iteration(s)"; !strings.Contains(log, want) {
+		t.Errorf("log missing %q:\n%s", want, log)
+	}
+	if !strings.Contains(log, "the handler name reads oddly") {
+		t.Errorf("the finding the phase converged over is not recorded:\n%s", log)
+	}
+}
+
+// A repeat iteration is pointed at the fixes the one before it committed. The
+// scoped diff is assembled from a head only the loop observes, so the prompt an
+// iteration actually received is the only place the whole wire is visible.
+func TestEndToEndRepeatIterationIsScopedToTheFixes(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	script := scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1)
+    echo "FINDING: major | auth.go:1 | quality | - | the handler creates no session"
+    commit "fix the sign-in handler"
+    ;;
+  comprehensive:2) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  external-eval:1) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+  final:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `echo "<<<RREV:EXTERNAL_DONE>>>"`,
+	})
+	t.Chdir(repo)
+	reviewed := gitOutput(t, repo, "rev-parse", "HEAD")
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d; output:\n%s", code, out.String())
+	}
+
+	first := script.prompt(t, "claude", "comprehensive", 1)
+	if !strings.Contains(first, "Comprehensive review of:") || strings.Contains(first, "Repeat comprehensive review of:") {
+		t.Errorf("iteration 1 must run the first-sweep prompt:\n%s", first)
+	}
+	if strings.Contains(first, "the fixes made since the last reviewed commit") {
+		t.Errorf("iteration 1 has nothing reviewed yet and must review the whole branch:\n%s", first)
+	}
+	repeat := script.prompt(t, "claude", "comprehensive", 2)
+	if !strings.Contains(repeat, "Repeat comprehensive review of:") {
+		t.Errorf("iteration 2 must run the repeat prompt:\n%s", repeat)
+	}
+	if want := "git diff " + reviewed + "..HEAD"; !strings.Contains(repeat, want) {
+		t.Errorf("iteration 2 is not scoped to %q, the commit iteration 1 reviewed from:\n%s", want, repeat)
+	}
+	// The narrower diff never replaces the branch: a fix can regress code the
+	// scoped diff does not show.
+	if !strings.Contains(repeat, "git diff main...HEAD") {
+		t.Errorf("iteration 2 lost the full branch diff:\n%s", repeat)
+	}
+}
+
+// The gate is an addition, not a replacement. A major keeps the loop alive, and
+// the done signal still converges the phase on its own terms — including for an
+// iteration the gate would also have ended, where the signal must be what the
+// log reports.
+func TestEndToEndMajorFindingIteratesAndTheSignalStillConverges(t *testing.T) {
+	repo := newFixtureRepo(t, "add-user-auth")
+	script := scriptExecutors(t, map[string]string{
+		"claude": `case "$phase:$n" in
+  comprehensive:1)
+    echo "FINDING: major | auth.go:1 | quality | - | the handler creates no session"
+    echo "VALIDATION: pass | make test | -"
+    commit "fix the sign-in handler"
+    ;;
+  comprehensive:2)
+    echo "FINDING: minor | auth.go:2 | quality | - | the comment is stale"
+    commit "refresh the comment"
+    echo "<<<RREV:REVIEW_DONE>>>"
+    ;;
+  external-eval:1) echo "<<<RREV:EXTERNAL_DONE>>>" ;;
+  final:1) echo "<<<RREV:REVIEW_DONE>>>" ;;
+  *) echo "<<<RREV:TASK_FAILED>>>" ;;
+esac`,
+		"codex": `echo "<<<RREV:EXTERNAL_DONE>>>"`,
+	})
+	t.Chdir(repo)
+
+	var out strings.Builder
+	if code := run(context.Background(), nil, &out, io.Discard); code != status.CodeOK {
+		t.Fatalf("code = %d; output:\n%s", code, out.String())
+	}
+	if n := strings.Count(strings.Join(script.sequence(t), " "), "claude:comprehensive"); n != 2 {
+		t.Errorf("the comprehensive phase ran %d iterations, want the major to buy a second", n)
+	}
+	log := progressLog(t, repo)
+	if want := "**comprehensive ended:** converged after 2 iteration(s)"; !strings.Contains(log, want) {
+		t.Errorf("log missing %q:\n%s", want, log)
+	}
+	if strings.Contains(log, "minor findings only") {
+		t.Errorf("an iteration that emitted the signal was reported as rrev's own decision:\n%s", log)
 	}
 }

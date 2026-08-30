@@ -23,10 +23,13 @@ const (
 // Prompt asset names each phase expands.
 const (
 	PromptComprehensive = "review_first"
-	PromptExternal      = "external_review"
-	PromptExternalEval  = "external_eval"
-	PromptFinal         = "review_final"
-	PromptFinalize      = "finalize"
+	// PromptComprehensiveRepeat drives every comprehensive iteration after the
+	// first, which reviews the fixes the one before it made.
+	PromptComprehensiveRepeat = "review_repeat"
+	PromptExternal            = "external_review"
+	PromptExternalEval        = "external_eval"
+	PromptFinal               = "review_final"
+	PromptFinalize            = "finalize"
 )
 
 // Reason is the condition that ended a loop. Every loop reports one.
@@ -34,7 +37,11 @@ type Reason string
 
 // Terminating conditions.
 const (
-	ReasonConverged      Reason = "converged"
+	ReasonConverged Reason = "converged"
+	// ReasonMinorOnly is convergence rrev decided from the iteration's report
+	// rather than from a signal. It is named apart from ReasonConverged so a
+	// reader can tell which of the two mechanisms ended the phase.
+	ReasonMinorOnly      Reason = "converged: minor findings only"
 	ReasonIterationLimit Reason = "iteration limit reached"
 	ReasonStalemate      Reason = "stalemate"
 	ReasonFailure        Reason = "executor failure"
@@ -75,7 +82,7 @@ type Result struct {
 // OK reports whether the phase left nothing outstanding: it converged, was
 // skipped, or ran the single pass report-only mode allows.
 func (r Result) OK() bool {
-	return r.Skipped || r.Reason == ReasonConverged || r.Reason == ReasonSinglePass
+	return r.Skipped || r.Reason == ReasonConverged || r.Reason == ReasonMinorOnly || r.Reason == ReasonSinglePass
 }
 
 // Streamer routes an executor's activity to a destination that attributes it to
