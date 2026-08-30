@@ -2,10 +2,12 @@ package phase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
+	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
 )
 
@@ -20,15 +22,36 @@ func External(ctx context.Context, e *Env) Result {
 		return e.skip(NameExternal, "%s", reason)
 	}
 
-	var rounds []round
+	state := &externalState{}
 	return e.drive(ctx, loopSpec{
 		name:  NameExternal,
 		limit: e.Config.ExternalMaxIterations,
 		arm:   e.Break,
 		run: func(ctx context.Context, n, limit int) (stepResult, error) {
-			return e.externalRound(ctx, n, limit, &rounds)
+			return e.externalRound(ctx, n, limit, state)
 		},
 	})
+}
+
+// externalState is what the loop carries between iterations and between
+// attempts at one iteration.
+type externalState struct {
+	rounds []round
+	// pending is the tool's report for the iteration in progress, kept so an
+	// evaluation re-run after a transient failure answers the same report —
+	// and the same recorded ids — rather than invoking the tool again and
+	// recording its findings a second time.
+	pending *toolReport
+}
+
+// toolReport is one external tool call's outcome, recorded in the log under
+// the ids the evaluator will be shown.
+type toolReport struct {
+	n          int
+	step       stepResult
+	ids        []string
+	failed     error
+	unreadable bool
 }
 
 // round is one alternation, kept so the next iteration can show the external
@@ -43,35 +66,27 @@ type round struct {
 // externalRound runs the external tool and then the primary executor's
 // evaluation of what it reported. The tool reporting nothing converges the loop
 // without spending an evaluation on it.
-func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) (stepResult, error) {
+func (e *Env) externalRound(ctx context.Context, n, limit int, state *externalState) (stepResult, error) {
 	vars := e.iterVars(n, limit)
-	vars.PriorFindings = renderPriorFindings(*rounds)
+	vars.PriorFindings = renderPriorFindings(state.rounds)
 
-	// Recorded before the call, not only after: a run killed mid-review leaves
-	// the same unexplained silence in the log that it leaves on the console,
-	// and the tool's own findings are written by the call itself.
-	e.Log.ExternalTool(e.External.Name(), "invoked", "")
-	report, err := e.review(ctx, reviewCall{
-		phase:    NameExternal,
-		prompt:   PromptExternal,
-		exec:     e.External,
-		model:    executor.PhaseExternal,
-		done:     executor.SignalExternalDone,
-		vars:     vars,
-		renderAs: e.External.Name(),
-	})
-	outcome, detail, unreadable := externalOutcome(report, err)
-	e.Log.ExternalTool(e.External.Name(), outcome, detail)
-
+	tool := state.pending
+	if tool == nil || tool.n != n {
+		tool = e.runExternalTool(ctx, vars)
+		state.pending = tool
+	}
+	report, err := tool.step, tool.failed
 	if err != nil || report.Converged {
 		// A round that ends here was never evaluated, so the tool's own claims
 		// stay out of the phase's result; they are already in the progress log
 		// as reported-only entries.
+		state.pending = nil
 		return stepResult{Converged: report.Converged, output: report.output, writeReport: report.writeReport}, err
 	}
 
 	evalVars := vars
 	evalVars.ExternalOutput = report.output
+	evalVars.ExternalFindings = renderExternalFindings(tool.ids, report.Findings)
 	// The evaluation runs under the primary executor, so it resolves the review
 	// phase's model: external_model names a model of the external tool, which
 	// the primary executor would reject as unknown.
@@ -85,18 +100,18 @@ func (e *Env) externalRound(ctx context.Context, n, limit int, rounds *[]round) 
 		renderAs: e.Config.Executor,
 		verified: true,
 	})
-	*rounds = recordRound(*rounds, round{n: n, reported: report.Findings, confirmed: eval.Findings, rejections: eval.Rejections})
-
-	// Both calls' reports are written together, so a round re-run after a
-	// transient failure in the evaluation records neither the tool's findings
-	// nor the evaluation the retry supersedes.
-	eval.writeReport = writeReports(report.writeReport, eval.writeReport)
+	state.rounds = recordRound(state.rounds, round{n: n, reported: report.Findings, confirmed: eval.Findings, rejections: eval.Rejections})
+	if err == nil || !errors.Is(err, executor.ErrRetryable) {
+		// The report has been answered, or the failure is final either way;
+		// a retry of this iteration would need a fresh one.
+		state.pending = nil
+	}
 
 	// A round whose output could not be read as a review is not this phase
 	// converging on silence, however little the evaluator then found in it:
 	// ending here would file a broken tool as a clean pass, which is the
 	// confusion the recorded outcome above exists to remove.
-	if unreadable {
+	if tool.unreadable {
 		eval.Converged = false
 	}
 
@@ -126,6 +141,50 @@ func externalOutcome(report stepResult, err error) (outcome, detail string, unre
 	default:
 		return "no findings reported", "", false
 	}
+}
+
+// runExternalTool invokes the tool and records its report at once, rather than
+// holding the report for the round's end: the evaluator has to be shown the ids
+// the findings were recorded under, since that is what lets its disposition
+// land on the reported entry instead of opening a second one.
+func (e *Env) runExternalTool(ctx context.Context, vars config.Vars) *toolReport {
+	// Recorded before the call, not only after: a run killed mid-review leaves
+	// the same unexplained silence in the log that it leaves on the console.
+	e.Log.ExternalTool(e.External.Name(), "invoked", "")
+	step, err := e.review(ctx, reviewCall{
+		phase:    NameExternal,
+		prompt:   PromptExternal,
+		exec:     e.External,
+		model:    executor.PhaseExternal,
+		done:     executor.SignalExternalDone,
+		vars:     vars,
+		renderAs: e.External.Name(),
+	})
+	outcome, detail, unreadable := externalOutcome(step, err)
+	// The outcome precedes the findings it summarises, so a reader meets the
+	// summary before its detail.
+	e.Log.ExternalTool(e.External.Name(), outcome, detail)
+	tool := &toolReport{n: vars.Iteration, step: step, failed: err, unreadable: unreadable}
+	if err == nil && !step.Converged {
+		tool.ids = writeReports(step.writeReport)()
+		tool.step.writeReport = nil
+	}
+	return tool
+}
+
+// renderExternalFindings renders the tool's findings as the report lines the
+// evaluator will answer, each opening with the id the log assigned it. When the
+// log handed out no ids — logging disabled — the lines are rendered bare, and
+// the evaluator's dispositions are recorded as new, as any undeclared report is.
+func renderExternalFindings(ids []string, findings []Finding) []string {
+	lines := make([]string, 0, len(findings))
+	for i, f := range findings {
+		if i < len(ids) && ids[i] != "" {
+			f.ReRaises = ids[i]
+		}
+		lines = append(lines, f.String())
+	}
+	return lines
 }
 
 // recordRound keeps one round per iteration: an iteration re-run after a

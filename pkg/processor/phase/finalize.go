@@ -68,9 +68,12 @@ func Finalize(ctx context.Context, e *Env, prior ...Result) Result {
 		}
 	}
 
+	if res.Err != nil {
+		e.recordFailure(NameFinalize, res.Iterations, res.Err)
+	}
 	e.Log.LoopEnd(NameFinalize, string(res.Reason), res.Iterations)
 	if res.Err != nil {
-		e.note("finalize step failed: %v; the run's outcome is unchanged", res.Err)
+		e.note("finalize step failed; the run's outcome is unchanged")
 		return res
 	}
 	e.note("finalize step done")

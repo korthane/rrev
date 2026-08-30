@@ -436,3 +436,98 @@ func TestExternalRoundEndingEarlyStillRecordsWhatTheToolReported(t *testing.T) {
 		})
 	}
 }
+
+// A tool that says why it is dying on stdout and exits silently on stderr must
+// leave that reason in the log, not an exit status alone.
+func TestFailureCauseReachesTheLogAndConsole(t *testing.T) {
+	primary := mock("claude", "")
+	env, _ := newEnv(t, primary, nil, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	var console strings.Builder
+	env.Out = &console
+	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
+		return executor.Result{Output: "Reviewing.\nError: prompt is too long for the context window"},
+			&executor.Error{Tool: "claude", ExitCode: 1, Output: "Reviewing.\nError: prompt is too long for the context window", Err: errors.New("exit status 1")}
+	}
+
+	res := Comprehensive(context.Background(), env)
+
+	if res.Reason != ReasonFailure {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonFailure)
+	}
+	for _, want := range []string{"- **failed** claude: failure (exit 1) — comprehensive iteration 1", "  Error: prompt is too long for the context window"} {
+		if got := readFile(t, log.Path()); !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+	for _, want := range []string{"comprehensive review failed: claude: failure (exit 1)", "  Error: prompt is too long for the context window"} {
+		if !strings.Contains(console.String(), want) {
+			t.Errorf("console missing %q:\n%s", want, console.String())
+		}
+	}
+}
+
+// The evaluator is shown the tool's findings under their recorded ids, and a
+// disposition carrying one lands on that entry: one finding, one ledger row.
+func TestEvaluatorDispositionLandsOnTheReportedEntry(t *testing.T) {
+	external := mock("codex", "FINDING: minor | pkg/a.go:10 | external | - | the loop bound is off by one")
+	primary := mock("claude", "")
+	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	var shown string
+	primary.Handler = func(_ context.Context, req executor.Request) (executor.Result, error) {
+		shown = req.Prompt
+		repo.commit("head-eval")
+		return executor.Result{Output: "REJECTED[R1]: pkg/a.go:10 | external | off by one | the bound is inclusive by design"}, nil
+	}
+
+	External(context.Background(), env)
+
+	if !strings.Contains(shown, "FINDING[R1]: minor | pkg/a.go:10 | external | - | the loop bound is off by one") {
+		t.Errorf("evaluator was not shown the finding under its id:\n%s", shown)
+	}
+	got := readFile(t, log.Path())
+	if strings.Contains(got, "`R2`") {
+		t.Errorf("the disposition opened a second entry:\n%s", got)
+	}
+	if !strings.Contains(got, "- **R1** `pkg/a.go:10`") {
+		t.Errorf("ledger does not hold the reported entry as the rejected one:\n%s", got)
+	}
+	// Invocation and outcome precede the finding they summarise.
+	invoked, reported := strings.Index(got, "external tool `codex`: reported 1 finding(s)"), strings.Index(got, "- **reported** `R1`")
+	if invoked < 0 || reported < 0 || invoked > reported {
+		t.Errorf("the tool's outcome must precede its findings:\n%s", got)
+	}
+}
+
+// An evaluator that drops the id degrades to exactly the old behaviour: its
+// disposition is a new finding, and the reported entry stays as reported.
+func TestEvaluatorOmittingTheIdRecordsANewFinding(t *testing.T) {
+	external := mock("codex", "FINDING: minor | pkg/a.go:10 | external | - | the loop bound is off by one")
+	primary := mock("claude", "REJECTED: pkg/a.go:10 | external | off by one | the bound is inclusive by design")
+	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	primary.Handler = changingHandler(primary, repo)
+
+	External(context.Background(), env)
+
+	got := readFile(t, log.Path())
+	if !strings.Contains(got, "- **rejected** `R2`") {
+		t.Errorf("an undeclared disposition must be a new finding:\n%s", got)
+	}
+	if strings.Contains(got, "**R1** `pkg/a.go:10`") {
+		t.Errorf("the reported entry must not enter the ledger on its own:\n%s", got)
+	}
+}

@@ -317,6 +317,7 @@ naming the file and the variable rather than text passed through to the model.
 | `{{LEDGER}}` | the standing-rejection ledger, most-raised first |
 | `{{PRIOR_FINDINGS}}` | earlier external rounds and their dispositions |
 | `{{EXTERNAL_OUTPUT}}` | the external tool's raw report, for evaluation |
+| `{{EXTERNAL_FINDINGS}}` | the tool's parsed findings, each opening with the id it was recorded under |
 | `{{OPENSPEC_DIR}}`, `{{CHANGE_DIR}}` | the OpenSpec root and the change directory |
 | `{{PROPOSAL}}`, `{{DESIGN}}`, `{{TASKS}}`, `{{SPECS}}`, `{{ARTIFACTS}}` | the change's artifact paths |
 | `{{REQUIREMENTS}}`, `{{REQUIREMENT_COUNT}}` | the requirement checklist and its size |
@@ -428,6 +429,18 @@ run never re-issues one. A finding only ever reported, or confirmed without
 having been rejected first, has an identifier but no ledger row. Every rejection
 gets one, including a rejection that arrived with no reason.
 
+### Failures
+
+When an executor call fails, the log records why, not only that it did: the
+phase and iteration, the tool, its classification — usage limit, transient
+failure, timeout, cancelled, or plain failure — and its exit status, followed by
+a diagnostic tail. The tail is the tool's standard error, or the last lines it
+wrote to standard output when standard error is empty, because a tool that
+reports its own error on stdout and exits silently otherwise leaves an exit
+status and nothing else. The tail keeps the final twenty lines and says so when
+it cut earlier ones. The console prints the same summary and tail as the phase
+ends.
+
 ### Standing rejections
 
 A rejection with a stated reason is a durable decision, not an event, so the log
@@ -450,6 +463,14 @@ questions and told to name an entry's id rather than report it afresh. The
 finalize step is not shown the ledger: it runs after review has converged and
 reports no findings. `ledger_budget` caps what one prompt carries in all, shared
 across the prompt's own expansion and the agents it embeds.
+
+A finding the external tool reports keeps its id through evaluation: the
+evaluator is shown each parsed finding as `FINDING[R197]:` and told to carry
+that id into its own `FINDING[...]:` or `REJECTED[...]:` line, so its
+disposition updates the reported entry rather than opening a second one. rrev
+still infers nothing — an evaluator that drops the id files a new finding, as
+any undeclared report does. An evaluation re-run after a transient failure
+answers the same report and the same ids rather than invoking the tool again.
 
 The ledger spans the whole run rather than resetting per phase, because
 re-litigation crosses phases: a final-phase reviewer will re-raise what the

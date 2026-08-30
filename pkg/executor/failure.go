@@ -161,3 +161,95 @@ func match(lines, patterns []string) (string, bool) {
 	}
 	return "", false
 }
+
+// Cause is what a failed call can tell a reader without being re-run: how the
+// failure was classified, the exit status, and the diagnostic tail. It is the
+// one rendering both the progress log and the console use, so the two agree.
+type Cause struct {
+	Tool string
+	// Kind names the classification: usage limit, transient failure, timeout,
+	// cancelled, or failure.
+	Kind     string
+	ExitCode int
+	// Tail is the diagnostic text: the tool's stderr, or the last lines of its
+	// stdout when stderr is empty.
+	Tail      string
+	Truncated bool
+}
+
+// causeTailLines bounds the rendered tail. A crashing tool puts its reason in
+// its last few lines; anything above that is the review it was giving up on.
+const causeTailLines = 20
+
+// Describe reduces a failed call's error to its cause.
+func Describe(err error) Cause {
+	c := Cause{Kind: "failure", ExitCode: -1}
+	switch {
+	case errors.Is(err, context.Canceled):
+		c.Kind = "cancelled"
+	case errors.Is(err, ErrTimeout):
+		c.Kind = "timeout"
+	case errors.Is(err, ErrRateLimited):
+		c.Kind = "usage limit"
+	case errors.Is(err, ErrRetryable):
+		c.Kind = "transient failure"
+	}
+	if limit, ok := errors.AsType[*LimitError](err); ok {
+		c.Tool = limit.Tool
+	}
+	failure, ok := errors.AsType[*Error](err)
+	if !ok {
+		if c.Tool == "" && err != nil {
+			c.Tail = err.Error()
+		}
+		return c
+	}
+	c.Tool, c.ExitCode = failure.Tool, failure.ExitCode
+	source := failure.Stderr
+	if strings.TrimSpace(source) == "" {
+		source = failure.Output
+	}
+	if strings.TrimSpace(source) == "" && failure.Err != nil {
+		source = failure.Err.Error()
+	}
+	c.Tail, c.Truncated = lastLines(source, causeTailLines)
+	return c
+}
+
+// lastLines keeps the final n non-blank lines of text.
+func lastLines(text string, n int) (string, bool) {
+	var lines []string
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, strings.TrimRight(line, " \t"))
+		}
+	}
+	if len(lines) <= n {
+		return strings.Join(lines, "\n"), false
+	}
+	return strings.Join(lines[len(lines)-n:], "\n"), true
+}
+
+// Summary is the one-line form: tool, classification, and exit status.
+func (c Cause) Summary() string {
+	var b strings.Builder
+	if c.Tool != "" {
+		b.WriteString(c.Tool + ": ")
+	}
+	b.WriteString(c.Kind)
+	if c.ExitCode >= 0 {
+		fmt.Fprintf(&b, " (exit %d)", c.ExitCode)
+	}
+	return b.String()
+}
+
+// Detail is the diagnostic tail, marked when it was cut.
+func (c Cause) Detail() string {
+	if c.Tail == "" {
+		return ""
+	}
+	if c.Truncated {
+		return "[earlier lines omitted]\n" + c.Tail
+	}
+	return c.Tail
+}

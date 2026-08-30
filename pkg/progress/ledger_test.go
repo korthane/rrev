@@ -648,3 +648,48 @@ func TestPromptEntryFlattensMultiLineClaimAndRationale(t *testing.T) {
 		}
 	}
 }
+
+// The id handed back is the one written, so a caller can show it to whoever
+// judges the finding next and the two agree.
+func TestFindingReturnsTheIdentifierItWasRecordedUnder(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+	log.IterationStart("external", 1, 5)
+
+	id := log.Finding(progress.Finding{Reviewer: "external", File: "a.go", Line: 7, Summary: "off by one"})
+
+	if id != "R1" {
+		t.Errorf("id = %q, want R1", id)
+	}
+	if !strings.Contains(readLog(t, log), "- **reported** `R1` `a.go:7`") {
+		t.Errorf("returned id is not the recorded one\n--- log ---\n%s", readLog(t, log))
+	}
+	if progress.Disabled().Finding(progress.Finding{}) != "" {
+		t.Error("a disabled log must hand out no id")
+	}
+}
+
+// An exit status alone leaves a rate limit, a context overflow and a crash
+// indistinguishable, and they call for different responses.
+func TestExecutorFailureRecordsItsCause(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		f    progress.Failure
+		want []string
+	}{
+		{"rate limited", progress.Failure{Phase: "final", Iteration: 1, Summary: "claude: usage limit (exit 1)", Detail: "rate limit exceeded"},
+			[]string{"- **failed** claude: usage limit (exit 1) — final iteration 1", "  rate limit exceeded"}},
+		{"plain exit", progress.Failure{Phase: "comprehensive", Iteration: 3, Summary: "codex: failure (exit 2)", Detail: "[earlier lines omitted]\npanic: nil map"},
+			[]string{"- **failed** codex: failure (exit 2) — comprehensive iteration 3", "  [earlier lines omitted]", "  panic: nil map"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			log := openLog(t, t.TempDir(), "change", progress.Options{})
+			log.ExecutorFailure(tc.f)
+			got := readLog(t, log)
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("log missing %q\n--- log ---\n%s", want, got)
+				}
+			}
+		})
+	}
+}

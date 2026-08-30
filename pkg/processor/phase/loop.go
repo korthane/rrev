@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
+	"github.com/korthane/rrev/pkg/progress"
 )
 
 // stepResult is what one iteration produced.
@@ -22,19 +24,22 @@ type stepResult struct {
 	// held back rather than run inside the call because a transient failure
 	// re-runs the whole iteration, and recording a superseded attempt would
 	// open a second ledger entry for every finding the retry reports again.
-	// Whoever decides the attempt is final runs it.
-	writeReport func()
+	// Whoever decides the attempt is final runs it, and receives the ids the
+	// reported-only findings were recorded under.
+	writeReport func() []string
 }
 
 // writeReports orders held-back reports so the log reads in the order the calls
 // that produced them ran.
-func writeReports(writes ...func()) func() {
-	return func() {
+func writeReports(writes ...func() []string) func() []string {
+	return func() []string {
+		var ids []string
 		for _, write := range writes {
 			if write != nil {
-				write()
+				ids = append(ids, write()...)
 			}
 		}
+		return ids
 	}
 }
 
@@ -161,10 +166,30 @@ func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, n
 // report states the terminating condition and the iteration count, in the
 // terminal and in the progress log.
 func (e *Env) report(res Result) {
+	if res.Err != nil {
+		e.recordFailure(res.Name, res.Iterations, res.Err)
+	}
 	e.Log.LoopEnd(res.Name, string(res.Reason), res.Iterations)
 	e.say("%s ended after %s: %s", Label(res.Name), plural(res.Iterations, "iteration"), res.Reason)
-	if res.Err != nil {
-		e.note("%s error: %v", Label(res.Name), res.Err)
+}
+
+// recordFailure writes a failed call's cause to the log and the console in the
+// same form, so a user watching the run and one reading the log afterwards
+// learn the same thing: what was classified, what exit status, what the tool
+// last said.
+func (e *Env) recordFailure(phase string, iteration int, err error) {
+	cause := executor.Describe(err)
+	e.Log.ExecutorFailure(progress.Failure{
+		Phase:     phase,
+		Iteration: iteration,
+		Summary:   cause.Summary(),
+		Detail:    cause.Detail(),
+	})
+	e.say("%s failed: %s", Label(phase), cause.Summary())
+	for line := range strings.SplitSeq(cause.Detail(), "\n") {
+		if strings.TrimSpace(line) != "" {
+			e.say("  %s", line)
+		}
 	}
 }
 
@@ -197,7 +222,7 @@ func (e *Env) review(ctx context.Context, call reviewCall) (stepResult, error) {
 		Findings:    findings,
 		Rejections:  rejections,
 		output:      out.Output,
-		writeReport: func() { e.record(call, findings, rejections, validations) },
+		writeReport: func() []string { return e.record(call, findings, rejections, validations) },
 	}
 
 	switch {
@@ -235,7 +260,8 @@ type reviewCall struct {
 // the finding itself, and only a verified call may make one. A validation
 // outcome is recorded as reported: rrev does not run the validation command
 // itself.
-func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection, validations []Validation) {
+func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection, validations []Validation) []string {
+	var ids []string
 	// The fallback is written back into the slice, not into a copy: the same
 	// findings become the run's result and the report's Reviewer column.
 	for i := range findings {
@@ -246,7 +272,7 @@ func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection
 			e.Log.Confirmed(findings[i].entry(), e.confirmedAction())
 			continue
 		}
-		e.Log.Finding(findings[i].entry())
+		ids = append(ids, e.Log.Finding(findings[i].entry()))
 	}
 	// Only a verified call may dismiss. A rejection becomes a standing ledger
 	// entry shown to every later reviewer, so accepting one from the unverified
@@ -268,6 +294,7 @@ func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection
 	for _, v := range validations {
 		e.Log.Validation(v.entry())
 	}
+	return ids
 }
 
 // confirmedAction names what became of a confirmed finding. Report-only mode

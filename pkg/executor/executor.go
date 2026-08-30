@@ -52,7 +52,11 @@ type Error struct {
 	Args     []string
 	ExitCode int
 	Stderr   string
-	Err      error
+	// Output is the tail of what the tool wrote to stdout before failing. A
+	// tool that reports its own error there and exits silently on stderr —
+	// claude does — otherwise leaves an exit status and nothing else.
+	Output string
+	Err    error
 }
 
 func (e *Error) Error() string {

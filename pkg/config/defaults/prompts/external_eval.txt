@@ -24,6 +24,11 @@ Change artifacts:
 {{EXTERNAL_OUTPUT}}
 ---
 
+The findings rrev parsed out of that report, each under the id it was recorded
+in the progress log with. These ids are what your report lines must carry:
+
+{{EXTERNAL_FINDINGS}}
+
 ## Standing rejections
 
 These were reported in earlier iterations and dismissed with a reason. They are
@@ -82,10 +87,11 @@ REJECTED: <file>:<line> | external | <what was claimed> | <why it is not a real 
 Re-raising something from the standing-rejection list? Put its id in the opening
 token: `FINDING[R7]:` or `REJECTED[R7]:`. Leave the token bare for anything new.
 
-A finding the tool reported under an id of its own — its line opened with
-`FINDING[R7]:` — is one of these: carry that id into your own opening token
-rather than dropping it. Dropping it files your disposition against a second
-entry for the finding you are disposing of.
+Every finding listed under "The findings rrev parsed" above has an id in its
+opening token. Carry that id into your own opening token when you confirm or
+reject it — `FINDING[R197]:` or `REJECTED[R197]:` — rather than dropping it.
+Dropping it files your disposition against a second entry for the very finding
+you are disposing of, and the ledger then holds both.
 
 
 A rejection with no reason is not a rejection. The reason is what stops the same

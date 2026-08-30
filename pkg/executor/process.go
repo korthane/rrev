@@ -66,22 +66,22 @@ func (c command) run(ctx context.Context, col *collector, onLine func(string) er
 	if err != nil {
 		// Without a process group a cancelled run would orphan the tool's
 		// sub-agents, so the phase fails before anything is started.
-		return c.fail(stderr, err)
+		return c.fail(stderr, col, err)
 	}
 	defer group.close()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return c.fail(stderr, err)
+		return c.fail(stderr, col, err)
 	}
 	if err := cmd.Start(); err != nil {
-		return c.fail(stderr, err)
+		return c.fail(stderr, col, err)
 	}
 	if err := group.started(); err != nil {
 		// The tool is running but not under our control, so it is stopped here
 		// rather than left to finish a review nothing can cancel.
 		group.kill()
 		_ = cmd.Wait()
-		return c.fail(stderr, err)
+		return c.fail(stderr, col, err)
 	}
 
 	go guard.watch(cancel)
@@ -115,13 +115,13 @@ func (c command) run(ctx context.Context, col *collector, onLine func(string) er
 	}
 	switch {
 	case waitErr != nil && ctx.Err() != nil:
-		return c.fail(stderr, ctx.Err())
+		return c.fail(stderr, col, ctx.Err())
 	case waitErr != nil:
-		return c.fail(stderr, waitErr)
+		return c.fail(stderr, col, waitErr)
 	case lineErr != nil:
 		return lineErr
 	case scanErr != nil:
-		return c.fail(stderr, fmt.Errorf("read output: %w", scanErr))
+		return c.fail(stderr, col, fmt.Errorf("read output: %w", scanErr))
 	default:
 		return nil
 	}
@@ -147,8 +147,15 @@ func killOnCancel(ctx context.Context, group *processGroup) func() {
 	}
 }
 
-func (c command) fail(stderr *tailWriter, err error) error {
-	failure := &Error{Tool: c.tool, Args: c.args, ExitCode: -1, Stderr: stderr.String(), Err: err}
+func (c command) fail(stderr *tailWriter, col *collector, err error) error {
+	failure := &Error{
+		Tool:     c.tool,
+		Args:     c.args,
+		ExitCode: -1,
+		Stderr:   stderr.String(),
+		Output:   tailOf(col.text.String(), stderrTailBytes),
+		Err:      err,
+	}
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		failure.ExitCode = exitErr.ExitCode()
 	}
@@ -195,3 +202,12 @@ func (w *tailWriter) Write(p []byte) (int, error) {
 }
 
 func (w *tailWriter) String() string { return strings.TrimSpace(string(w.buf)) }
+
+// tailOf keeps the last limit bytes of text, which is where a crashing tool
+// puts its reason.
+func tailOf(text string, limit int) string {
+	if len(text) > limit {
+		text = text[len(text)-limit:]
+	}
+	return strings.TrimSpace(text)
+}

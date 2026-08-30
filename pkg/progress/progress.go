@@ -211,13 +211,53 @@ func (l *Log) IterationStart(phase string, n, limit int) {
 	l.emit(fmt.Sprintf("\n### %s · iteration %s · %s\n", phase, iterationCount(n, limit), l.stamp()))
 }
 
-// Finding records an issue a reviewer reported, before it has been judged.
-func (l *Log) Finding(f Finding) {
+// Finding records an issue a reviewer reported, before it has been judged, and
+// returns the identifier it was recorded under so the caller can show it to
+// whoever judges the finding next. The record is written before the id is
+// handed out: a caller must never hold an id for something the log does not.
+// A disabled log returns no id, and callers treat that as "nothing to show".
+func (l *Log) Finding(f Finding) string {
 	if !l.Enabled() {
-		return
+		return ""
 	}
 	e, note := l.track(f, reported, "")
 	l.emit(l.bullet(reported, f, e) + "\n" + noteLine(note))
+	return e.ID
+}
+
+// Failure is what a failed executor call can tell a later reader.
+type Failure struct {
+	Phase     string
+	Iteration int
+	// Summary is the tool, its classification, and exit status.
+	Summary string
+	// Detail is the diagnostic tail: stderr, or stdout when stderr is empty.
+	Detail string
+}
+
+// ExecutorFailure records why a phase's executor call failed. An exit status
+// alone leaves a rate limit, a context overflow, and a crash indistinguishable,
+// and they call for different responses.
+func (l *Log) ExecutorFailure(f Failure) {
+	if !l.Enabled() {
+		return
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n- **failed** %s", orUnknown(f.Summary))
+	if f.Phase != "" {
+		fmt.Fprintf(&b, " — %s", f.Phase)
+		if f.Iteration > 0 {
+			fmt.Fprintf(&b, " iteration %d", f.Iteration)
+		}
+	}
+	b.WriteString("\n")
+	for line := range strings.SplitSeq(strings.TrimRight(f.Detail, "\n"), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		b.WriteString(indent + strings.TrimRight(line, " \t") + "\n")
+	}
+	l.emit(b.String())
 }
 
 // Confirmed records a finding the executor verified against real code, with
