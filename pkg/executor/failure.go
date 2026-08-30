@@ -23,6 +23,9 @@ type LimitError struct {
 	// Reason is the tool's own line that identified the failure.
 	Reason    string
 	Retryable bool
+	// Output is what a call that exited zero said before refusing. Such a
+	// call carries no *Error, so this is the only tail its record can have.
+	Output string
 	// Err is the failure the classification was made from, kept so the exit
 	// status, stderr tail, or timeout underneath it stays reachable.
 	Err error
@@ -82,11 +85,17 @@ func classify(tool string, result Result, err error) error {
 		return nil
 	}
 	lines := diagnostics(result, err)
+	// Only for a call that exited zero: a failure carries its own tail on the
+	// *Error beneath, and the two would render the same text twice.
+	var said string
+	if err == nil {
+		said = result.Output
+	}
 	if reason, ok := match(lines, rateLimitPatterns); ok {
-		return &LimitError{Tool: tool, Reason: reason, Err: err}
+		return &LimitError{Tool: tool, Reason: reason, Output: said, Err: err}
 	}
 	if reason, ok := match(lines, retryablePatterns); ok {
-		return &LimitError{Tool: tool, Reason: reason, Retryable: true, Err: err}
+		return &LimitError{Tool: tool, Reason: reason, Retryable: true, Output: said, Err: err}
 	}
 	return err
 }
@@ -216,6 +225,10 @@ func Describe(err error) Cause {
 	}
 	if limit, ok := errors.AsType[*LimitError](err); ok {
 		c.Tool, c.Reason = limit.Tool, limit.Reason
+		// A refusal that exited zero has no *Error beneath it to take a tail
+		// from, and the matched line alone drops the rest of what it said —
+		// the reset time a reader needs to know when to resume.
+		c.Tail, c.Truncated = lastLines(bounded(limit.Output), causeTailLines)
 	}
 	if timeout, ok := errors.AsType[*TimeoutError](err); ok {
 		c.Tool, c.Reason = timeout.Tool, timeout.Error()

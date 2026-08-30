@@ -52,9 +52,10 @@ type Error struct {
 	Args     []string
 	ExitCode int
 	Stderr   string
-	// Output is the tail of what the tool wrote to stdout before failing. A
-	// tool that reports its own error there and exits silently on stderr —
-	// claude does — otherwise leaves an exit status and nothing else.
+	// Output is the tail of what the tool wrote to stdout before failing,
+	// which is the only diagnostic a tool that exits silently on stderr
+	// leaves. An executor with a channel of its own — claude, in its result
+	// event — has that message appended to Stderr instead.
 	Output string
 	Err    error
 }

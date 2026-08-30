@@ -257,3 +257,43 @@ func TestRedrawnProseIsStillNotARefusal(t *testing.T) {
 		t.Fatalf("a reviewer's prose was mistaken for a provider refusal: %v", err)
 	}
 }
+
+// The refusal bound is pinned from below as well as above: a provider's message
+// runs to a few lines, and every case that must be a refusal elsewhere is one
+// line, so a bound trimmed to 4 would leave a real multi-line refusal
+// unclassified and the phase iterating against a throttled provider.
+func TestAMultiLineRefusalIsStillARefusal(t *testing.T) {
+	refusal := strings.Join([]string{
+		"Claude usage limit reached.",
+		"Your limit will reset at 9:40am (America/New_York).",
+		"Upgrade your plan to keep going.",
+		"See https://support.anthropic.com for details.",
+		"Exiting.",
+		"",
+	}, "\n")
+	tool := newFakeTool(t, fakeToolOpts{stdout: refusal})
+
+	_, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Fatalf("error = %v, want a %d-line refusal to still be a usage limit", err, 5)
+	}
+}
+
+// A refusal that exited zero has no *Error to take a tail from, so the whole of
+// what it said is the tail: the matched line alone drops the reset time, which
+// is what a reader needs to know when to resume.
+func TestExitZeroRefusalKeepsWhatTheToolSaid(t *testing.T) {
+	refusal := "Claude usage limit reached.\nYour limit will reset at 9:40am (America/New_York).\nExiting.\n"
+	tool := newFakeTool(t, fakeToolOpts{stdout: refusal})
+
+	_, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"})
+
+	c := executor.Describe(err)
+	if c.Summary() != "custom: usage limit" {
+		t.Fatalf("summary = %q, want the classification without an exit status", c.Summary())
+	}
+	if want := strings.TrimSuffix(refusal, "\n"); c.Detail() != want {
+		t.Errorf("detail = %q, want %q: the matched line alone loses the reset time", c.Detail(), want)
+	}
+}

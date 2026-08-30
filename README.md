@@ -371,7 +371,10 @@ line and wording all drift between
 iterations while the finding stays the same, so a computed match would merge
 distinct findings as readily as it caught real recurrences. An undeclared line
 is recorded as a new finding, and an id the log does not hold is recorded as new
-with a note — neither costs the finding, only the recurrence count.
+with a note. Neither costs the finding: a reviewer's undeclared re-raise costs
+only the recurrence count, and an evaluator's undeclared disposition costs the
+shared identity — a second entry opens beside the reported one, which stays as
+reported.
 
 A reviewer agent writes no report lines of its own: the phase's executor reads
 its report and turns each finding into one. So the shipped agents are asked for

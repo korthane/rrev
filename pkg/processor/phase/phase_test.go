@@ -981,3 +981,28 @@ func TestUnreadableExternalOutputDoesNotEndThePhaseAsConverged(t *testing.T) {
 		t.Errorf("the log records the phase as converged:\n%s", got)
 	}
 }
+
+// The failure record carries the iteration the call failed in, not the one the
+// phase started at. Every other failure test fails in iteration 1, where a
+// hardcoded 1 is indistinguishable from the real value — in both the record the
+// loop writes when it ends and the one runStep writes for a superseded attempt.
+func TestFailureRecordNamesTheIterationItFailedIn(t *testing.T) {
+	transient := &executor.LimitError{Tool: "claude", Reason: "overloaded_error", Retryable: true,
+		Err: &executor.Error{Tool: "claude", ExitCode: 1, Stderr: "overloaded_error"}}
+	primary := mock("claude", "FINDING: major | a.go:12 | quality | - | leaks a file handle", "")
+	primary.Responses[1] = executor.Response{Err: transient}
+	env, repo := newEnv(t, primary, nil, func(c *config.Config) { c.MaxIterations = 3 })
+	primary.Handler = changingHandler(primary, repo)
+	log := openLog(t, env)
+
+	Comprehensive(context.Background(), env)
+
+	got := readFile(t, log.Path())
+	want := "- **failed** claude: transient failure (exit 1) — comprehensive iteration 2"
+	if !strings.Contains(got, want) {
+		t.Errorf("log missing %q:\n%s", want, got)
+	}
+	if strings.Contains(got, "- **failed** claude: transient failure (exit 1) — comprehensive iteration 1") {
+		t.Errorf("a failure in iteration 2 was recorded against iteration 1:\n%s", got)
+	}
+}
