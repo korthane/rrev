@@ -362,8 +362,11 @@ REJECTED: <file>:<line> | <reviewer> | what was claimed | why it is not a real f
 VALIDATION: <pass|fail> | <the command that was run> | what failed, or -
 ```
 
-A line re-raising something the ledger already holds carries that entry's id in
-its opening token, `FINDING[R7]:` or `REJECTED[R7]:`. This is the one thing rrev
+A line naming an entry the log already holds carries that entry's id in its
+opening token, `FINDING[R7]:` or `REJECTED[R7]:` — a standing rejection a
+reviewer is re-raising, or a finding the log holds as reported, which is how the
+external evaluator's disposition lands on the entry the tool's finding was
+recorded under. This is the one thing rrev
 will not work out for itself: file, line and wording all drift between
 iterations while the finding stays the same, so a computed match would merge
 distinct findings as readily as it caught real recurrences. An undeclared line

@@ -216,7 +216,10 @@ func (e Expander) substitute(asset Asset, values map[string]string, body string,
 
 	value, ok := values[name]
 	if !ok {
-		return "", &TemplateError{File: asset.Path, Msg: fmt.Sprintf("unknown template variable %s; known variables are %s",
+		// The known-variable list is reference material, not the diagnosis, so
+		// it goes on its own line: a failure record summarises an error no
+		// tool owns by its first line and indents the rest beneath it.
+		return "", &TemplateError{File: asset.Path, Msg: fmt.Sprintf("unknown template variable %s\nknown variables are %s",
 			ref, strings.Join(slices.Sorted(maps.Keys(values)), ", "))}
 	}
 	return value, nil

@@ -113,10 +113,17 @@ func TestUnexpandablePromptOverrideFailsWithoutPanicking(t *testing.T) {
 	}
 	env := &Env{
 		Dir: t.TempDir(), Repo: &fakeRepo{head: "head0", tree: "tree0"},
-		Log: progress.Disabled(), Config: resolved.Config, Assets: resolved.Assets,
+		Config: resolved.Config, Assets: resolved.Assets,
 		Vars:    config.Vars{Change: "add-user-auth", BaseRef: "main", DiffInstruction: "git diff main...HEAD"},
-		Primary: mock("claude", reviewDone), Out: &bytes.Buffer{},
+		Primary: mock("claude", reviewDone),
 	}
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	var console strings.Builder
+	env.Out = &console
 
 	res := Comprehensive(context.Background(), env)
 	if res.Err == nil {
@@ -127,6 +134,19 @@ func TestUnexpandablePromptOverrideFailsWithoutPanicking(t *testing.T) {
 	}
 	if !strings.Contains(res.Err.Error(), "NOT_A_VARIABLE") {
 		t.Errorf("Err = %v, want it to name the unknown variable", res.Err)
+	}
+	// A failure no tool owns is summarised by its own first line. The
+	// known-variable list belongs in the indented detail: run into the summary
+	// it swallows the phase and iteration the record ends with.
+	summary := "- **failed** " + override + ": unknown template variable {{NOT_A_VARIABLE}} — comprehensive iteration 1\n"
+	if got := readFile(t, log.Path()); !strings.Contains(got, summary) {
+		t.Errorf("log missing %q:\n%s", summary, got)
+	}
+	if got := readFile(t, log.Path()); !strings.Contains(got, "\n  known variables are ARTIFACTS,") {
+		t.Errorf("log missing the indented known-variable list:\n%s", got)
+	}
+	if !strings.Contains(console.String(), "  known variables are ARTIFACTS,") {
+		t.Errorf("console missing the indented known-variable list:\n%s", console.String())
 	}
 }
 

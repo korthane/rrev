@@ -379,3 +379,31 @@ func TestMatchedReasonIsFlattenedLikeTheTail(t *testing.T) {
 		t.Errorf("detail = %q, want %q", executor.Describe(err).Detail(), want)
 	}
 }
+
+// A failure with no exit status has only its wrapped error to explain itself.
+// Suppressing that error because the captured tail happens to occur inside it
+// would leave the record saying nothing about what stopped the call.
+func TestDescribeKeepsAReasonThatSaysMoreThanTheTail(t *testing.T) {
+	err := &executor.Error{Tool: "claude", ExitCode: -1, Output: "Error",
+		Err: errors.New("read output: Error parsing stream")}
+
+	c := executor.Describe(err)
+
+	if want := "read output: Error parsing stream"; c.Reason != want {
+		t.Errorf("reason = %q, want %q", c.Reason, want)
+	}
+	if want := "read output: Error parsing stream\nError"; c.Detail() != want {
+		t.Errorf("detail = %q, want %q", c.Detail(), want)
+	}
+}
+
+// The other direction still holds: a wrapped error that only restates the tail
+// it ends with must not render the same message twice.
+func TestDescribeDropsAReasonTheTailAlreadyEnds(t *testing.T) {
+	err := &executor.Error{Tool: "claude", ExitCode: -1, Stderr: "tool execution failed",
+		Err: errors.New("claude reported an error: tool execution failed")}
+
+	if c := executor.Describe(err); c.Detail() != "tool execution failed" {
+		t.Errorf("detail = %q, want the message once", c.Detail())
+	}
+}

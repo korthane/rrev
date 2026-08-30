@@ -542,6 +542,12 @@ func TestFailureCauseReachesTheLogAndConsole(t *testing.T) {
 			t.Errorf("log missing %q:\n%s", want, got)
 		}
 	}
+	// Two call sites write the record — the retry loop for a superseded
+	// attempt and the phase's result — and a failure nothing supersedes
+	// belongs to exactly one of them.
+	if got := readFile(t, log.Path()); strings.Count(got, "- **failed** ") != 1 {
+		t.Errorf("failure recorded %d times, want once:\n%s", strings.Count(got, "- **failed** "), got)
+	}
 	for _, want := range []string{"comprehensive review failed: claude: failure (exit 1)", "  Error: prompt is too long for the context window"} {
 		if !strings.Contains(console.String(), want) {
 			t.Errorf("console missing %q:\n%s", want, console.String())

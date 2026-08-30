@@ -179,3 +179,42 @@ func TestLimitErrorKeepsTheUnderlyingFailure(t *testing.T) {
 		t.Errorf("exit code = %d, want 7", failure.ExitCode)
 	}
 }
+
+// A tool that redraws a progress line with carriage returns before printing
+// its refusal has still only said a line or two. Counting each repainted frame
+// as a line of its own would put the call over the refusal bound and leave a
+// throttled provider looking like a review that found nothing.
+func TestRedrawnProgressLineDoesNotHideARefusal(t *testing.T) {
+	refusal := strings.Repeat("working...\r", 11) + "You've hit your usage limit. Try again at 3pm.\n"
+	tool := newFakeTool(t, fakeToolOpts{stdout: refusal})
+
+	_, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"})
+
+	if !errors.Is(err, executor.ErrRateLimited) {
+		t.Fatalf("error = %v, want a rate-limit error", err)
+	}
+	// The frames still render as their own lines, so the matched reason is the
+	// refusal alone rather than every repaint run together.
+	if want := "You've hit your usage limit. Try again at 3pm."; executor.Describe(err).Reason != want {
+		t.Errorf("reason = %q, want %q", executor.Describe(err).Reason, want)
+	}
+}
+
+// A review long enough to have reviewed something is not a refusal, however it
+// painted its lines: the redraw bound must not turn prose into a refusal either.
+func TestRedrawnProseIsStillNotARefusal(t *testing.T) {
+	prose := strings.Join([]string{
+		"I read the diff and the surrounding handlers.",
+		"The retry helper now backs off once the provider answers 429 Too Many Requests.",
+		"I applied the fix and committed it on the branch.",
+		"Nothing else in the diff touches throttling.",
+		"The tests pass.",
+		"I am done.",
+		"",
+	}, "\n")
+	tool := newFakeTool(t, fakeToolOpts{stdout: "scanning...\r" + prose})
+
+	if _, err := (executor.Custom{Command: tool.path}).Run(t.Context(), executor.Request{Prompt: "p"}); err != nil {
+		t.Fatalf("a reviewer's prose was mistaken for a provider refusal: %v", err)
+	}
+}

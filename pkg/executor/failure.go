@@ -94,9 +94,12 @@ const refusalLines = 5
 
 // refusal reports whether an exit-zero call looks like a provider refusal
 // rather than a review: it carried no signal, reported nothing, and said too
-// little to have reviewed anything.
+// little to have reviewed anything. The bound counts the lines the tool wrote,
+// not the frames it painted over one of them: a progress bar redrawing with a
+// carriage return says one line's worth, and counting each frame would put a
+// throttled call over the bound and leave its refusal unclassified.
 func refusal(result Result) bool {
-	return !reviewed(result) && len(spoken(result.Output)) <= refusalLines
+	return !reviewed(result) && len(speech(writtenLines(result.Output))) <= refusalLines
 }
 
 // reviewed reports whether the call produced a review rather than a refusal. A
@@ -128,10 +131,15 @@ func diagnostics(result Result, err error) []string {
 // pipe-delimited report lines the prompts mandate: a reviewer citing "rate limit
 // exceeded" from the code under review must not be mistaken for the provider
 // refusing the call.
-func spoken(output string) []string {
-	var lines []string
+func spoken(output string) []string { return speech(flatLines(output)) }
+
+// speech applies that filter to lines already split, so the classifier and the
+// refusal bound can disagree about what counts as a line without disagreeing
+// about which lines are the tool's own voice.
+func speech(lines []string) []string {
+	var kept []string
 	fenced := false
-	for _, line := range flatLines(output) {
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if isFence(line) {
 			fenced = !fenced
@@ -140,9 +148,9 @@ func spoken(output string) []string {
 		if line == "" || fenced || isQuotedLine(line) || isReportLine(line) {
 			continue
 		}
-		lines = append(lines, line)
+		kept = append(kept, line)
 	}
-	return lines
+	return kept
 }
 
 func isQuotedLine(line string) bool {
@@ -223,7 +231,12 @@ func Describe(err error) Cause {
 	// rrev could not read — the wrapped error is what explains the end, and
 	// the tail beneath it is the review the tool was giving up on.
 	if failure.ExitCode < 0 && c.Reason == "" && failure.Err != nil && !errors.Is(failure.Err, context.Canceled) {
-		if reason := flat(failure.Err.Error()); c.Tail == "" || !strings.Contains(reason, c.Tail) {
+		// Suffix, not containment: the wrapped error says nothing more only
+		// when the tail is what it ends with, as "claude reported an error:
+		// <msg>" ends with <msg>. A tail that merely occurs inside a longer
+		// reason is the reason's own word, and dropping it would leave a
+		// failure with no exit status saying nothing about what stopped it.
+		if reason := flat(failure.Err.Error()); c.Tail == "" || !strings.HasSuffix(reason, c.Tail) {
 			c.Reason = reason
 		}
 	}
@@ -264,8 +277,15 @@ func lastLines(text string, n int) (string, bool) {
 // sequences go. The classifier matches and the tails render on these same
 // lines, so the log and the console show what the tool said rather than how
 // it painted it, and the matched reason is found in the tail it came from.
-func flatLines(text string) []string {
-	text = ansiSequence.ReplaceAllString(newlines.Replace(text), "")
+func flatLines(text string) []string { return cleanLines(redraws.Replace(text)) }
+
+// writtenLines splits on the line breaks the tool wrote, leaving a line a
+// progress bar repainted as the one line it is. Only the refusal bound counts
+// these; everything else reads the frames as the separate lines they render as.
+func writtenLines(text string) []string { return cleanLines(crlf.Replace(text)) }
+
+func cleanLines(text string) []string {
+	text = ansiSequence.ReplaceAllString(text, "")
 	var lines []string
 	for line := range strings.SplitSeq(text, "\n") {
 		lines = append(lines, strings.Map(printable, line))
@@ -274,7 +294,9 @@ func flatLines(text string) []string {
 }
 
 var (
-	newlines = strings.NewReplacer("\r\n", "\n", "\r", "\n")
+	redraws = strings.NewReplacer("\r\n", "\n", "\r", "\n")
+	// crlf normalises line endings without breaking a repainted line apart.
+	crlf = strings.NewReplacer("\r\n", "\n")
 	// CSI sequences (colour, cursor) and OSC ones (window title, hyperlinks).
 	ansiSequence = regexp.MustCompile(`\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))`)
 )
