@@ -93,6 +93,42 @@ const (
 	taskFailed   = "<<<RREV:TASK_FAILED>>>"
 )
 
+// A prompt that cannot be expanded returns before an attempt exists, so the
+// held-back report is nil. Every call site runs it through writeReports, and
+// without that helper's nil guard the phase panics on a typo in a user's own
+// prompt override rather than reporting the template error.
+func TestUnexpandablePromptOverrideFailsWithoutPanicking(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectDir, config.KindPrompt), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	override := filepath.Join(projectDir, config.KindPrompt, PromptComprehensive+".txt")
+	if err := os.WriteFile(override, []byte("review {{NOT_A_VARIABLE}}\n"), 0o600); err != nil {
+		t.Fatalf("write override: %v", err)
+	}
+	resolved, err := config.Resolve(config.Options{UserDir: t.TempDir(), ProjectDir: projectDir})
+	if err != nil {
+		t.Fatalf("resolve config: %v", err)
+	}
+	env := &Env{
+		Dir: t.TempDir(), Repo: &fakeRepo{head: "head0", tree: "tree0"},
+		Log: progress.Disabled(), Config: resolved.Config, Assets: resolved.Assets,
+		Vars:    config.Vars{Change: "add-user-auth", BaseRef: "main", DiffInstruction: "git diff main...HEAD"},
+		Primary: mock("claude", reviewDone), Out: &bytes.Buffer{},
+	}
+
+	res := Comprehensive(context.Background(), env)
+	if res.Err == nil {
+		t.Fatalf("res = %+v, want the template error surfaced", res)
+	}
+	if res.Reason != ReasonFailure {
+		t.Errorf("Reason = %q, want %q", res.Reason, ReasonFailure)
+	}
+	if !strings.Contains(res.Err.Error(), "NOT_A_VARIABLE") {
+		t.Errorf("Err = %v, want it to name the unknown variable", res.Err)
+	}
+}
+
 // TestTransientFailureRetriesTheIteration covers the retryable classification:
 // a blip the tool itself calls transient must not end a run that still has
 // iterations left.
@@ -369,8 +405,40 @@ func TestSinglePassLogsFindingsAsNotFixed(t *testing.T) {
 	Comprehensive(context.Background(), env)
 
 	body := readFile(t, log.Path())
-	if !strings.Contains(body, `action="reported; not fixed (report-only)"`) {
+	if !strings.Contains(body, "— reported; not fixed (report-only)") {
 		t.Errorf("progress log claims a fix a report-only run cannot make\n%s", body)
+	}
+}
+
+// A cancelled or throttled call may still have reported before it died. The
+// report is held back so a retry cannot record a superseded attempt, which
+// makes the failure path the one place holding it back could lose it outright.
+func TestFailedCallStillRecordsWhatItReported(t *testing.T) {
+	reported := "FINDING: major | pkg/a.go:9 | quality | - | the handle outlives the request\n" +
+		"REJECTED: pkg/b.go:2 | quality | the cast is unchecked | the type is fixed by the caller"
+	primary := &executor.Mock{Tool: "claude", Responses: []executor.Response{
+		{Output: reported, Err: errors.New("claude exited with status 1")},
+	}}
+	env, _ := newEnv(t, primary, nil, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := Comprehensive(context.Background(), env)
+
+	if res.Reason != ReasonFailure {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonFailure)
+	}
+	body := readFile(t, log.Path())
+	for _, want := range []string{"the handle outlives the request", "the cast is unchecked"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a failed call's report was lost, %q missing:\n%s", want, body)
+		}
+	}
+	if n := strings.Count(body, "the handle outlives the request"); n != 1 {
+		t.Errorf("finding recorded %d times, want exactly one copy", n)
 	}
 }
 
@@ -405,13 +473,13 @@ func TestProgressLogRecordsFindingsAndTermination(t *testing.T) {
 
 	body := readFile(t, log.Path())
 	for _, want := range []string{
-		"phase: name=comprehensive",
-		"iteration: phase=comprehensive n=1/10",
-		"confirmed: reviewer=conformance severity=critical location=pkg/a.go:42",
+		"## Phase: comprehensive",
+		"### comprehensive · iteration 1/10 ·",
+		"- **confirmed** `R1` critical `pkg/a.go:42` (Change selection) — conformance",
 		"the flag is never parsed",
-		"rejected: reviewer=quality location=pkg/b.go:7",
+		"- **rejected** `R2` `pkg/b.go:7` — quality",
 		"the nil check is done by the caller",
-		"end: phase=comprehensive reason=converged iterations=2",
+		"**comprehensive ended:** converged after 2 iteration(s)",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("progress log is missing %q\n%s", want, body)
@@ -419,6 +487,37 @@ func TestProgressLogRecordsFindingsAndTermination(t *testing.T) {
 	}
 	if len(res.Rejections) != 1 || res.Rejections[0].Reason == "" {
 		t.Errorf("rejections = %+v, want one carrying a reason", res.Rejections)
+	}
+}
+
+// rrev never runs the validation command itself, so the reported VALIDATION
+// line is the only record of whether the fixes were validated. The whole wire -
+// parsed report, held-back write, log, iteration summary - has to be exercised
+// end to end or it could stop reaching the log with a green suite.
+func TestReportedValidationOutcomeReachesTheLog(t *testing.T) {
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	primary := mock("claude",
+		"FINDING: major | pkg/a.go:42 | quality | - | the buffer is unbounded\n"+
+			"VALIDATION: fail | make test | TestFoo failed",
+		reviewDone)
+	env, repo := newEnv(t, primary, nil, nil)
+	env.Log = log
+	primary.Handler = changingHandler(primary, repo)
+
+	Comprehensive(context.Background(), env)
+
+	body := readFile(t, log.Path())
+	for _, want := range []string{
+		"- validation **fail** `make test`",
+		"TestFoo failed",
+		"· validation fail ·",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("progress log is missing %q\n%s", want, body)
+		}
 	}
 }
 
@@ -504,7 +603,7 @@ func TestIterationCommitsRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read progress log: %v", err)
 	}
-	if !strings.Contains(string(logged), `commit: hash=head1`) {
+	if !strings.Contains(string(logged), "- commit `head1`") {
 		t.Errorf("progress log does not name the commit the iteration produced:\n%s", logged)
 	}
 }
@@ -523,5 +622,222 @@ func TestFindingWithoutReviewerIsAttributedInTheResult(t *testing.T) {
 	}
 	if res.Findings[0].Reviewer != "claude" {
 		t.Errorf("reviewer = %q, want the reporting executor", res.Findings[0].Reviewer)
+	}
+}
+
+// The ledger only earns its keep if it reaches the next iteration's prompt.
+// Nothing else in the suite covers the wire from the log to the reviewer, and a
+// broken one fails silently: reviewers just keep re-arguing settled questions.
+func TestStandingRejectionsReachTheNextIterationsPrompt(t *testing.T) {
+	primary := mock("claude",
+		"REJECTED: pkg/a.go:7 | quality | the token is echoed | the value is not key material",
+		reviewDone)
+	env, _ := newEnv(t, primary, nil, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	Comprehensive(context.Background(), env)
+
+	calls := primary.Calls()
+	if len(calls) != 2 {
+		t.Fatalf("executor calls = %d, want 2", len(calls))
+	}
+	if strings.Contains(calls[0].Prompt, "R1") {
+		t.Error("the first iteration has nothing settled yet, so its ledger must be empty")
+	}
+	for _, want := range []string{"R1", "pkg/a.go:7", "the value is not key material"} {
+		if !strings.Contains(calls[1].Prompt, want) {
+			t.Errorf("the second iteration's prompt is missing %q from the ledger", want)
+		}
+	}
+}
+
+// A dead or rate-limited external tool that logged as a clean pass is the exact
+// confusion the recorded-activity requirement exists to remove.
+func TestExternalToolFailureIsRecordedWithItsCause(t *testing.T) {
+	external := &executor.Mock{Tool: "codex", Responses: []executor.Response{
+		{Err: errors.New("codex exited with status 1")},
+	}}
+	env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
+	dir := t.TempDir()
+	log, err := progress.Open(dir, "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := External(context.Background(), env)
+
+	if res.Reason != ReasonFailure {
+		t.Errorf("reason = %q, want the phase to fail rather than read as converged", res.Reason)
+	}
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	for _, want := range []string{"external tool `codex`: failed", "codex exited with status 1"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("progress log missing %q:\n%s", want, data)
+		}
+	}
+}
+
+// A rejection becomes a standing ledger entry every later reviewer is shown.
+// The external tool's claims are never checked against the code, so one from it
+// would silence every later reviewer on a claim nobody verified. The prompt
+// tells it not to; the ledger must not depend on it complying.
+func TestUnverifiedRejectionDoesNotEnterTheLedger(t *testing.T) {
+	reported := "REJECTED: pkg/a.go:7 | external | the mutex is held twice | it is not\n" + externalDone
+	external := mock("codex", reported)
+	env, _ := newEnv(t, mock("claude", reviewDone), external, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	External(context.Background(), env)
+
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	if strings.Contains(string(data), "the mutex is held twice") {
+		t.Errorf("an unverified rejection reached the log, and with it the ledger:\n%s", data)
+	}
+	if len(log.PromptEntries()) != 0 {
+		t.Errorf("ledger = %v, want no standing entry from an unverified call", log.PromptEntries())
+	}
+	// Dropping it silently leaves the author of a custom review command with no
+	// sign their REJECTED: lines went nowhere; every other degradation on this
+	// path says so in the log.
+	if want := "1 rejection(s) from codex discarded"; !strings.Contains(string(data), want) {
+		t.Errorf("log missing %q\n--- log ---\n%s", want, data)
+	}
+}
+
+// A run killed mid-review leaves the log as silent as the console was. The
+// invocation is recorded before the call so the log says which tool was running
+// when it stopped, and so a reader meets the tool ahead of its findings.
+func TestExternalToolInvocationIsRecordedBeforeItsFindings(t *testing.T) {
+	const reported = "FINDING: major | pkg/a.go:7 | external | - | the token is echoed"
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	var duringCall bool
+	external := &executor.Mock{Tool: "codex", Handler: func(_ context.Context, _ executor.Request) (executor.Result, error) {
+		body, readErr := os.ReadFile(log.Path())
+		duringCall = readErr == nil && strings.Contains(string(body), "external tool `codex`: invoked")
+		return executor.Result{Output: reported, Signal: executor.Detect(reported)}, nil
+	}}
+	env, _ := newEnv(t, mock("claude", externalDone), external, nil)
+	env.Log = log
+
+	External(context.Background(), env)
+
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	got := string(data)
+	// Ordering in the finished log proves nothing: the report is written by a
+	// deferred call, so the findings land last however late the invocation was
+	// recorded. What the requirement is about is a run that never reaches the
+	// end, so the claim is checked from inside the call itself.
+	if !duringCall {
+		t.Error("the invocation was not in the log while the tool was still running, so a run killed mid-call records nothing")
+	}
+	if !strings.Contains(got, "external tool `codex`: reported 1 finding(s)") {
+		t.Errorf("the ordinary outcome must say what the tool returned:\n%s", got)
+	}
+}
+
+// The two calls' reports are held back and written together, and the order they
+// are written in is the order the log reads and the order identifiers are
+// issued in. The tool's own claims must land ahead of the evaluation disposing
+// of them, or the log answers a question it has not yet asked.
+func TestTheToolsFindingsAreLoggedBeforeTheEvaluationOfThem(t *testing.T) {
+	const reported = "FINDING: major | pkg/a.go:7 | external | - | the token is echoed"
+	const disposed = "REJECTED: pkg/a.go:7 | external | the token is echoed | it is redacted before the log write\n" + externalDone
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env, _ := newEnv(t, mock("claude", disposed), mock("codex", reported), nil)
+	env.Log = log
+
+	External(context.Background(), env)
+
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	got := string(data)
+	tool, eval := strings.Index(got, "**reported**"), strings.Index(got, "**rejected**")
+	if tool < 0 || eval < 0 {
+		t.Fatalf("the log is missing one of the two reports:\n%s", got)
+	}
+	if tool > eval {
+		t.Errorf("the evaluation was logged before the finding it disposes of:\n%s", got)
+	}
+}
+
+// A tool that ran but wrote nothing rrev can read as a review is not the quiet
+// convergence it resembles. Recording both as "no findings reported" is the
+// silence-reads-as-a-clean-pass confusion the recorded-activity requirement
+// exists to remove.
+func TestExternalToolOutputRrevCannotInterpretIsRecordedAsSuch(t *testing.T) {
+	external := mock("codex", "I looked at the diff and it seems fine to me.")
+	env, _ := newEnv(t, mock("claude", externalDone, externalDone), external, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	External(context.Background(), env)
+
+	data, err := os.ReadFile(log.Path())
+	if err != nil {
+		t.Fatalf("read progress log: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "external tool `codex`: output not understood") {
+		t.Errorf("uninterpretable output was not recorded as such:\n%s", got)
+	}
+	if strings.Contains(got, "external tool `codex`: no findings reported") {
+		t.Errorf("uninterpretable output was filed as a clean empty return:\n%s", got)
+	}
+	// The requirement asks for the failure *and its cause*: an outcome word on
+	// its own leaves a reader knowing the round failed but not what about it
+	// rrev could not read.
+	if !strings.Contains(got, "no findings and no completion signal in the tool's output") {
+		t.Errorf("the outcome was recorded without its cause:\n%s", got)
+	}
+}
+
+// Recording the outcome is only half of it: a phase that ends "converged" tells
+// the reader the tool agreed there was nothing left, which is exactly what a
+// tool whose output rrev could not read has not said.
+func TestUnreadableExternalOutputDoesNotEndThePhaseAsConverged(t *testing.T) {
+	external := mock("codex", "I looked at the diff and it seems fine to me.")
+	env, _ := newEnv(t, mock("claude", externalDone, externalDone, externalDone), external, nil)
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+
+	res := External(context.Background(), env)
+
+	if res.Reason == ReasonConverged {
+		t.Errorf("a round rrev could not read ended the phase as converged, which reads as a clean pass")
+	}
+	if got := readFile(t, log.Path()); strings.Contains(got, "ended:** converged") {
+		t.Errorf("the log records the phase as converged:\n%s", got)
 	}
 }

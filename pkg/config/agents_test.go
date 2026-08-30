@@ -35,6 +35,10 @@ func fullVars() Vars {
 		Requirements:      []string{"1. [ADDED] auth: Sign in\n   - Valid password: WHEN ... THEN ...\n"},
 		Iteration:         1,
 		MaxIterations:     10,
+		Ledger:            []string{"- R1  pkg/a.go:1  (raised comprehensive 1)\n    rejected because: it is fine\n"},
+		// A real budget, so expanding an asset that carries no {{LEDGER}}
+		// exercises the division rather than skipping past it.
+		LedgerBudget: 40000,
 	}
 }
 
@@ -81,6 +85,11 @@ func TestShippedAgentsExpandForBothExecutors(t *testing.T) {
 			}
 			if !strings.Contains(got, "git diff main...HEAD") {
 				t.Errorf("%s agent %q never tells the reviewer how to obtain the diff:\n%s", executor, name, got)
+			}
+			// fullVars carries one standing rejection: an agent that expands
+			// without it keeps rediscovering what the run already settled.
+			if !strings.Contains(got, "R1") {
+				t.Errorf("%s agent %q did not expand the ledger:\n%s", executor, name, got)
 			}
 		}
 	}

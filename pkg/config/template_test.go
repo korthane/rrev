@@ -128,9 +128,17 @@ func TestExpandAgentsPerExecutor(t *testing.T) {
 	for _, tc := range []struct {
 		executor string
 		wants    []string
+		// notWants are the instructions this executor must not carry. The
+		// naming clause is claude-only: codex's format offers nothing to read
+		// a name back out of, so asking for one there is an instruction the
+		// tool cannot act on.
+		notWants []string
 	}{
-		{ExecutorClaude, []string{"Task tool", "subagent prompt"}},
-		{ExecutorCodex, []string{"Spawn", "codex sub-agent"}},
+		// The naming instruction is load-bearing, not decoration: rrev reads
+		// the agent's name back out of the call's description, and a launch
+		// that omits it renders every concurrent reviewer alike.
+		{ExecutorClaude, []string{"Task tool", "subagent prompt", "as the call's `description`"}, nil},
+		{ExecutorCodex, []string{"Spawn", "codex sub-agent"}, []string{"as the call's `description`"}},
 	} {
 		t.Run(tc.executor, func(t *testing.T) {
 			exp, projectDir := expanderFor(t, tc.executor, Vars{Change: "add-user-auth"})
@@ -148,6 +156,11 @@ func TestExpandAgentsPerExecutor(t *testing.T) {
 				"Check add-user-auth against every scenario.", "Judge the quality of the diff.") {
 				if !strings.Contains(got, want) {
 					t.Errorf("expansion missing %q:\n%s", want, got)
+				}
+			}
+			for _, unwanted := range tc.notWants {
+				if strings.Contains(got, unwanted) {
+					t.Errorf("expansion carries %q, which %s cannot act on:\n%s", unwanted, tc.executor, got)
 				}
 			}
 		})

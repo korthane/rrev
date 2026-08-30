@@ -38,6 +38,7 @@ type command struct {
 // so the watchdog learns which output actually reached the terminal.
 func (c command) run(ctx context.Context, col *collector, onLine func(string) error) error {
 	stream := col.stream
+	col.debug = c.debug
 	if c.debug && stream != nil {
 		_, _ = fmt.Fprintf(stream, "· exec: %s %s\n· prompt:\n%s\n", c.bin, strings.Join(c.args, " "), c.prompt)
 	}

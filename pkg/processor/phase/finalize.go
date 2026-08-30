@@ -32,6 +32,10 @@ func Finalize(ctx context.Context, e *Env, prior ...Result) Result {
 	}
 
 	e.Log.PhaseStart(NameFinalize)
+	// One pass, but still an iteration: without it the step's findings land in
+	// no section and carry no summary, and a ledger entry raised here records
+	// no phase or iteration at all.
+	e.Log.IterationStart(NameFinalize, 1, 1)
 	before := e.snapshot(ctx)
 	step, err := e.review(ctx, reviewCall{
 		phase:    NameFinalize,
@@ -43,6 +47,10 @@ func Finalize(ctx context.Context, e *Env, prior ...Result) Result {
 		renderAs: e.Config.Executor,
 		verified: true,
 	})
+
+	// Finalize runs once and is never retried, so its report is final as soon
+	// as the call returns.
+	writeReports(step.writeReport)()
 
 	after := e.snapshot(ctx)
 	res := Result{

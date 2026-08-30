@@ -20,6 +20,10 @@ const (
 	directiveAgents = "AGENTS"
 )
 
+// varLedger names the ledger variable, which is budgeted across the whole
+// prompt rather than per expansion.
+const varLedger = "LEDGER"
+
 // Placeholders for values a change does not provide, so a prompt says so
 // instead of showing an empty path the model might try to open.
 const (
@@ -34,6 +38,7 @@ const (
 	defaultReviewerModeRules = "Run mode: review only. Do not edit files, do not commit, and do not run the project's " +
 		"commands: report what you find and let the primary executor verify and fix it."
 	noPriorFindings  = "(first round of this loop: nothing has been reported or dispositioned yet)"
+	noLedger         = "(nothing has been rejected yet in this run)"
 	noExternalOutput = "(the external review tool produced no output)"
 )
 
@@ -75,6 +80,13 @@ type Vars struct {
 	// expand, so a read-only run still constrains them without a normal run
 	// telling an independent reviewer to fix and commit.
 	ReviewerModeRules string
+
+	// Ledger holds the standing rejections, one rendered entry each, most
+	// raised first, so LedgerBudget drops whole entries and always keeps the
+	// ones being re-litigated hardest.
+	Ledger []string
+	// LedgerBudget caps the expanded ledger in characters; zero is unlimited.
+	LedgerBudget int
 
 	// PriorFindings is the external loop's round-to-round memory: earlier
 	// findings and how they were dispositioned, so the external tool does not
@@ -125,12 +137,43 @@ func (e Expander) Prompt(name string) (string, error) {
 
 // Expand substitutes variables and agent references in an already-resolved
 // prompt.
-func (e Expander) Expand(asset Asset) (string, error) { return e.expand(asset, true) }
+//
+// The ledger is expanded last, against a budget divided by the number of sites
+// the finished prompt actually holds. ledger_budget is documented as a cap on
+// what one prompt carries, and a prompt embedding seven reviewer agents expands
+// the ledger eight times, so budgeting each copy separately would let the
+// prompt run to eight times the configured size.
+func (e Expander) Expand(asset Asset) (string, error) {
+	out, err := e.expand(asset, true)
+	if err != nil {
+		return "", err
+	}
+	sites := strings.Count(out, ledgerSentinel)
+	if sites == 0 {
+		return out, nil
+	}
+	budget := e.Vars.LedgerBudget
+	if budget > 0 {
+		budget = max(budget/sites, 1)
+	}
+	return strings.ReplaceAll(out, ledgerSentinel, renderLedger(e.Vars.Ledger, budget, e.Vars.ProgressLog)), nil
+}
+
+// ledgerSentinel stands in for the ledger until every site is expanded and can
+// be counted. The NULs keep it from colliding with template or ledger text.
+const ledgerSentinel = "\x00" + varLedger + "\x00"
+
+// parseRef reads one {{...}} body.
+func parseRef(body string) (name, arg string, isDirective bool) {
+	name, arg, isDirective = strings.Cut(body, ":")
+	return strings.ToUpper(strings.TrimSpace(name)), arg, isDirective
+}
 
 // expand walks the template once. Agent definitions are expanded with
 // allowAgents false: an agent that could reference agents would recurse.
 func (e Expander) expand(asset Asset, allowAgents bool) (string, error) {
 	values := e.Vars.values()
+	values[varLedger] = ledgerSentinel
 	var b strings.Builder
 	rest := asset.Content
 	for {
@@ -154,8 +197,7 @@ func (e Expander) expand(asset Asset, allowAgents bool) (string, error) {
 
 func (e Expander) substitute(asset Asset, values map[string]string, body string, allowAgents bool) (string, error) {
 	ref := varOpen + strings.TrimSpace(body) + varClose
-	name, arg, isDirective := strings.Cut(body, ":")
-	name = strings.ToUpper(strings.TrimSpace(name))
+	name, arg, isDirective := parseRef(body)
 
 	if isDirective {
 		if name != directiveAgent && name != directiveAgents {
@@ -175,13 +217,18 @@ func (e Expander) substitute(asset Asset, values map[string]string, body string,
 	return value, nil
 }
 
-func (e Expander) expandAgents(asset Asset, list string) (string, error) {
+func agentNames(list string) []string {
 	var names []string
 	for field := range strings.SplitSeq(list, ",") {
 		if name := strings.TrimSpace(field); name != "" {
 			names = append(names, name)
 		}
 	}
+	return names
+}
+
+func (e Expander) expandAgents(asset Asset, list string) (string, error) {
+	names := agentNames(list)
 	if len(names) == 0 {
 		return "", &TemplateError{File: asset.Path, Msg: "agent directive names no agents"}
 	}
@@ -225,12 +272,19 @@ func agentPreamble(executor string, n int) string {
 	}
 	launch := "Launch"
 	mechanism := "with claude's Task tool, using the agent definition as the subagent prompt"
+	// The agent's name has to travel in a field rrev can read back, or the
+	// stream identifies no sub-agent and every reviewer's output renders alike.
+	// subagent_type cannot carry it: these definitions are passed as prompt
+	// text, not registered agent types.
+	naming := " Pass the agent's name — the word after <<<AGENT — as the call's `description`," +
+		" so its output can be attributed to it."
 	if executor == ExecutorCodex {
 		launch, mechanism = "Spawn", "as a codex sub-agent, using the agent definition as its instructions"
+		naming = ""
 	}
 
 	preamble := fmt.Sprintf("%s %s below %s. A definition is the text between its <<<AGENT and AGENT>>>"+
-		" markers, which you MUST pass through verbatim.", launch, subject, mechanism)
+		" markers, which you MUST pass through verbatim.%s", launch, subject, mechanism, naming)
 	if n > 1 {
 		preamble += fmt.Sprintf(" Send all %d calls in a single message so the agents run concurrently.", n)
 	}
@@ -249,19 +303,22 @@ func (v Vars) values() map[string]string {
 		"VALIDATION_COMMAND":  orElse(v.ValidationCommand, emptyValue),
 		"MODE_RULES":          orElse(v.ModeRules, defaultModeRules),
 		"REVIEWER_MODE_RULES": orElse(v.ReviewerModeRules, defaultReviewerModeRules),
-		"PRIOR_FINDINGS":      orElse(v.PriorFindings, noPriorFindings),
-		"EXTERNAL_OUTPUT":     orElse(v.ExternalOutput, noExternalOutput),
-		"OPENSPEC_DIR":        orElse(v.OpenSpecDir, missingPath),
-		"CHANGE_DIR":          orElse(v.ChangeDir, missingPath),
-		"PROPOSAL":            orElse(v.Proposal, missingPath),
-		"DESIGN":              orElse(v.Design, missingPath),
-		"TASKS":               orElse(v.Tasks, missingPath),
-		"SPECS":               pathList(v.Specs),
-		"ARTIFACTS":           pathList(artifactPaths(v)),
-		"REQUIREMENTS":        renderChecklist(v.Requirements, v.ChecklistBudget, v.UnparsedSpecs),
-		"REQUIREMENT_COUNT":   strconv.Itoa(len(v.Requirements)),
-		"ITERATION":           strconv.Itoa(v.Iteration),
-		"MAX_ITERATIONS":      strconv.Itoa(v.MaxIterations),
+		// Expand overwrites this: the ledger is fitted to a budget divided by
+		// the number of sites, which is only known once the prompt is whole.
+		varLedger:           "",
+		"PRIOR_FINDINGS":    orElse(v.PriorFindings, noPriorFindings),
+		"EXTERNAL_OUTPUT":   orElse(v.ExternalOutput, noExternalOutput),
+		"OPENSPEC_DIR":      orElse(v.OpenSpecDir, missingPath),
+		"CHANGE_DIR":        orElse(v.ChangeDir, missingPath),
+		"PROPOSAL":          orElse(v.Proposal, missingPath),
+		"DESIGN":            orElse(v.Design, missingPath),
+		"TASKS":             orElse(v.Tasks, missingPath),
+		"SPECS":             pathList(v.Specs),
+		"ARTIFACTS":         pathList(artifactPaths(v)),
+		"REQUIREMENTS":      renderChecklist(v.Requirements, v.ChecklistBudget, v.UnparsedSpecs),
+		"REQUIREMENT_COUNT": strconv.Itoa(len(v.Requirements)),
+		"ITERATION":         strconv.Itoa(v.Iteration),
+		"MAX_ITERATIONS":    strconv.Itoa(v.MaxIterations),
 	}
 	return values
 }
@@ -276,13 +333,32 @@ func artifactPaths(v Vars) []string {
 	return paths
 }
 
-// renderChecklist fits the checklist into budget characters, saying so when it
-// does not fit: a reviewer that knows its checklist was cut can report that,
-// while one silently handed a short list reports false conformance.
-func renderChecklist(entries []string, budget int, unparsed []string) string {
+// renderLedger fits the standing rejections into budget characters. Entries
+// arrive most-raised first, so a cut keeps what is being re-litigated hardest,
+// and says it was cut for the same reason the checklist does: a reviewer told
+// its ledger is partial can say so, one silently handed a short list cannot.
+func renderLedger(entries []string, budget int, logPath string) string {
 	if len(entries) == 0 {
-		return noRequirements + unparsedBanner(unparsed)
+		return noLedger
 	}
+	kept := fitEntries(entries, budget)
+	shown := strings.Join(entries[:kept], "")
+	if kept < len(entries) {
+		// The path is spelled out rather than named: an agent definition
+		// carries the ledger but not {{PROGRESS_LOG}}, and truncation bites
+		// hardest there, since the budget is shared across every site.
+		shown += fmt.Sprintf("[TRUNCATED: this ledger was cut at %d characters. %d of %d standing rejections are"+
+			" shown, most-raised first; %d are missing from this prompt. Read %s for the rest, and say in your"+
+			" report that your ledger was truncated.]\n",
+			budget, kept, len(entries), len(entries)-kept, orElse(logPath, "the progress log"))
+	}
+	return shown
+}
+
+// fitEntries counts how many entries fit in budget characters. A single entry
+// larger than the whole budget is still kept: a section cut to nothing reads as
+// a run with nothing to report, which is the opposite of what it means.
+func fitEntries(entries []string, budget int) int {
 	kept, used := 0, 0
 	for _, entry := range entries {
 		if budget > 0 && kept > 0 && used+len(entry) > budget {
@@ -291,6 +367,17 @@ func renderChecklist(entries []string, budget int, unparsed []string) string {
 		used += len(entry)
 		kept++
 	}
+	return kept
+}
+
+// renderChecklist fits the checklist into budget characters, saying so when it
+// does not fit: a reviewer that knows its checklist was cut can report that,
+// while one silently handed a short list reports false conformance.
+func renderChecklist(entries []string, budget int, unparsed []string) string {
+	if len(entries) == 0 {
+		return noRequirements + unparsedBanner(unparsed)
+	}
+	kept := fitEntries(entries, budget)
 	shown := strings.Join(entries[:kept], "\n")
 	if kept < len(entries) {
 		shown += fmt.Sprintf("\n[TRUNCATED: this checklist was cut at %d characters. %d of %d requirements are shown;"+

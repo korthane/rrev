@@ -8,6 +8,7 @@ import (
 
 	"github.com/korthane/rrev/pkg/config"
 	"github.com/korthane/rrev/pkg/executor"
+	"github.com/korthane/rrev/pkg/progress"
 )
 
 func TestExternalSkippedWhenDisabled(t *testing.T) {
@@ -220,6 +221,11 @@ func TestExternalRetriedIterationRecordsOneRound(t *testing.T) {
 	external := mock("codex", "FINDING: major | pkg/a.go:10 | external | - | the loop bound is off by one")
 	primary := mock("claude", "")
 	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 2 })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
 	evals := 0
 	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
 		evals++
@@ -238,6 +244,42 @@ func TestExternalRetriedIterationRecordsOneRound(t *testing.T) {
 	}
 	if got := strings.Count(calls[len(calls)-1].Prompt, "Round 1"); got != 1 {
 		t.Errorf("the last round's prompt reports round 1 %d times, want once", got)
+	}
+}
+
+// A transient failure re-runs the whole iteration. Recording the attempt it
+// superseded opens a second ledger entry for a finding the retry reports again,
+// so the same argument stands twice in every prompt built from the ledger.
+func TestRetriedIterationRecordsOneCopyOfItsFindings(t *testing.T) {
+	external := mock("codex", "FINDING: major | pkg/a.go:10 | external | - | the loop bound is off by one")
+	primary := mock("claude", "")
+	env, repo := newEnv(t, primary, external, func(c *config.Config) { c.ExternalMaxIterations = 1 })
+	log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	env.Log = log
+	evals := 0
+	primary.Handler = func(_ context.Context, _ executor.Request) (executor.Result, error) {
+		evals++
+		if evals == 1 {
+			return executor.Result{}, &executor.LimitError{Tool: "claude", Reason: "overloaded_error", Retryable: true}
+		}
+		repo.commit("head-eval")
+		return executor.Result{Output: "REJECTED: pkg/a.go:10 | external | the bound is inclusive by design"}, nil
+	}
+
+	External(context.Background(), env)
+
+	got := readFile(t, log.Path())
+	if evals < 2 {
+		t.Fatalf("the iteration was never retried, so nothing was superseded:\n%s", got)
+	}
+	if n := strings.Count(got, "the loop bound is off by one"); n != 1 {
+		t.Errorf("the tool's finding is recorded %d times over one iteration, want once:\n%s", n, got)
+	}
+	if n := strings.Count(got, "the bound is inclusive by design"); n != 2 {
+		t.Errorf("the rejection appears %d times, want its record and its one ledger row:\n%s", n, got)
 	}
 }
 
@@ -362,5 +404,35 @@ func TestExternalEvaluationUsesTheReviewModel(t *testing.T) {
 	}
 	if got := external.Calls()[0].Model; got != "gpt-5-codex" {
 		t.Errorf("external review model = %q, want %q", got, "gpt-5-codex")
+	}
+}
+
+// The external round returns before the evaluation on both a failure and an
+// early convergence, and each carries the tool's own report back so it still
+// reaches the log. A round that drops it loses every finding the tool reported
+// from the log, the ledger, and so from every later reviewer's prompt.
+func TestExternalRoundEndingEarlyStillRecordsWhatTheToolReported(t *testing.T) {
+	const reported = "FINDING: major | pkg/a.go:10 | external | - | the handle outlives the request"
+	for name, response := range map[string]executor.Response{
+		"failed":    {Output: reported, Err: errors.New("codex exited with status 1")},
+		"converged": {Output: reported + "\n" + externalDone},
+	} {
+		t.Run(name, func(t *testing.T) {
+			primary := mock("claude", reviewDone)
+			external := &executor.Mock{Tool: "codex", Responses: []executor.Response{response}}
+			env, _ := newEnv(t, primary, external, nil)
+			log, err := progress.Open(t.TempDir(), "add-user-auth", progress.Options{})
+			if err != nil {
+				t.Fatalf("open progress log: %v", err)
+			}
+			env.Log = log
+
+			External(context.Background(), env)
+
+			body := readFile(t, log.Path())
+			if n := strings.Count(body, "the handle outlives the request"); n != 1 {
+				t.Errorf("the tool's report was recorded %d times, want exactly one copy:\n%s", n, body)
+			}
+		})
 	}
 }

@@ -104,7 +104,12 @@ reporting convergence.
    reported, fixes what it confirms, and records why it rejected the rest. Later
    rounds carry the earlier rounds' dispositions, so a rejected finding does not
    come back unchanged. Skipped when the primary executor and the external tool
-   would be the same model reading its own work.
+   would be the same model reading its own work. A round converges only on what
+   the external tool itself said: a tool that returns neither a finding nor
+   `<<<RREV:EXTERNAL_DONE>>>` wrote nothing rrev can read as a review, and that
+   round does not converge even if the evaluation that followed it signalled
+   done. The loop then runs on to `external_max_iterations` and the run ends
+   unconverged, rather than filing a broken tool as a clean pass.
 3. **Final review** — a narrow regression pass restricted to critical and major
    issues, to catch what the earlier fixes broke. Skipped when nothing was
    changed that could have regressed.
@@ -179,8 +184,9 @@ Each setting has a flag named after it, with underscores written as hyphens.
 | `progress_dir` | `--progress-dir` | `.rrev/progress` | directory the per-change progress log is written to; rrev writes a catch-all ignore rule there, so it must be a directory of its own |
 | `report_file` | `--report-file` | `.rrev/findings.md` | destination of the findings report |
 | `checklist_budget` | `--checklist-budget` | `120000` | maximum characters of requirement checklist expanded into a prompt; 0 is unlimited |
+| `ledger_budget` | `--ledger-budget` | `40000` | maximum characters of standing-rejection ledger expanded into a prompt; 0 is unlimited |
 | `validation_command` | `--validation-command` | *(empty)* | command the executor runs before committing a fix |
-| `debug` | `--debug` | `false` | record resolved command lines and full prompts |
+| `debug` | `--debug` | `false` | record resolved command lines, full prompts, and the full arguments and output of reported tool calls |
 | `no_color` | `--no-color` | `false` | disable coloured terminal output |
 
 Two further flags select no setting: `--version` prints the version and exits,
@@ -202,10 +208,57 @@ external review tool with no `external_review_command` to run.
 through a shell: quotes and shell operators are not interpreted, and preflight
 checks the first field is on `PATH`. Wrap anything needing a shell in a script
 file. rrev writes the review prompt to the script's stdin and treats its stdout
-as the findings.
+as the findings — findings only, since a `REJECTED:` line from an unverified
+second opinion is discarded rather than logged.
 
 Colour is disabled by `no_color`, by a non-empty `NO_COLOR`, by `TERM=dumb`, and
 whenever output is not a terminal.
+
+### What a run prints
+
+While an executor runs, rrev streams its activity rather than leaving an
+unexplained pause. Every line is attributed to the phase that produced it, and a
+line the executor's format attributes to a reviewer agent carries that agent's
+name too, so seven concurrent reviewers are tellable apart; a line the format
+does not attribute carries the phase alone rather than a guess.
+
+A tool call renders the argument that distinguishes it — the command for a
+shell invocation, the path for a read or write, the pattern for a search, the
+agent for a sub-agent launch — followed by its outcome, and its failure detail
+when it failed:
+
+```
+[comprehensive] · agent: conformance
+[comprehensive] [conformance] Scenario 3 is not addressed.
+[comprehensive] · [conformance] tool: Grep func Open → failed: no matches under pkg
+[comprehensive] · tool: Bash go test ./... … → ok
+```
+
+A call is reported once its result arrives, so its line carries the outcome
+rather than appearing twice. Sub-agent launches are the exception: a reviewer
+runs for minutes, so the launch is announced as it happens and its outcome
+follows on a second line. A run cut short still reports the calls that were in
+flight, without an outcome.
+
+The line prefix is the phase. `·` marks rrev's account of what the tool is
+doing, as against the model's own words; `[agent]` names the reviewer when the
+executor's format identified one. Reviewer agents are launched with their name
+in the call's description, which is what rrev reads that attribution from. Only
+a bare token no longer than 32 bytes is taken as a name: a description the
+executor filled with a phrase instead, or an agent whose own name is longer than
+that, contributes no attribution and its lines carry the phase alone.
+
+The tool's own output never appears: a diff or a test run would flood the
+display. An argument spanning several lines or longer than 100 bytes is cut to
+its first line and marked `…`; that bound is fixed rather than read from the
+terminal. Control characters are stripped, so neither a command nor a tool's
+error text can repaint the display. `--debug` is the one place these caps
+come off, recording each reported call's full arguments and output.
+
+How much of this appears depends on the executor: claude's `stream-json` carries
+per-agent attribution and structured tool arguments, while codex reports shell
+commands and their exit status only. A long stretch inside sub-agents with
+nothing to report still produces a heartbeat every `progress_interval`.
 
 ## Prompts and agents
 
@@ -213,6 +266,13 @@ Every phase prompt and every reviewer agent ships embedded in the binary. Any
 one of them can be replaced by placing a file with the same name in
 `.rrev/prompts/` or `.rrev/agents/` (project) or under the user configuration
 directory. Overriding one file leaves every other one on its default.
+
+An override is used exactly as written. One written before the standing-rejection
+ledger existed carries no `{{LEDGER}}`, and a variable a file never mentions is
+not an error — only an unrecognized one is — so that reviewer is shown nothing
+that was settled and names no identifiers, and each of its re-raises opens a
+fresh ledger entry. To bring an override up to date, copy the standing-rejections
+block and the id instruction across from the shipped default.
 
 | Prompt | Phase |
 | --- | --- |
@@ -254,6 +314,7 @@ naming the file and the variable rather than text passed through to the model.
 | `{{VALIDATION_COMMAND}}` | the configured validation command |
 | `{{MODE_RULES}}` | the run mode's rules paragraph |
 | `{{REVIEWER_MODE_RULES}}` | the same paragraph for report-only reviewer prompts |
+| `{{LEDGER}}` | the standing-rejection ledger, most-raised first |
 | `{{PRIOR_FINDINGS}}` | earlier external rounds and their dispositions |
 | `{{EXTERNAL_OUTPUT}}` | the external tool's raw report, for evaluation |
 | `{{OPENSPEC_DIR}}`, `{{CHANGE_DIR}}` | the OpenSpec root and the change directory |
@@ -262,7 +323,11 @@ naming the file and the variable rather than text passed through to the model.
 | `{{ITERATION}}`, `{{MAX_ITERATIONS}}` | the current iteration and its limit |
 
 The checklist is expanded inline and truncated at `checklist_budget`, saying so
-explicitly rather than silently dropping requirements. The diff never is.
+explicitly rather than silently dropping requirements, and each expansion of it
+gets that budget in full. The ledger announces a cut the same way and keeps the
+most-raised entries, but `ledger_budget` is shared across every expansion in one
+prompt rather than applied per copy (see [Standing rejections](#standing-rejections)).
+The diff never is.
 
 ## Signal contract
 
@@ -273,7 +338,7 @@ fence, so a model quoting the protocol does not end a loop.
 | Marker | Meaning |
 | --- | --- |
 | `<<<RREV:REVIEW_DONE>>>` | this review iteration found nothing; the phase converged |
-| `<<<RREV:EXTERNAL_DONE>>>` | the external review loop reached agreement |
+| `<<<RREV:EXTERNAL_DONE>>>` | the external review loop reached agreement (read from both calls: the evaluation's marker cannot end a round whose tool output carried neither a finding nor the marker) |
 | `<<<RREV:TASK_FAILED>>>` | unrecoverable failure; the pipeline stops and reports the phase |
 
 **Emitting no marker is not success.** rrev reads a missing marker as "work was
@@ -288,18 +353,47 @@ of. They are recognised only at the start of a line outside a code fence.
 
 ```
 FINDING:  <critical|major|minor> | <file>:<line> | <reviewer> | <requirement or -> | <summary>
-REJECTED: <file>:<line> | <reviewer> | why it is not a real finding
+REJECTED: <file>:<line> | <reviewer> | what was claimed | why it is not a real finding
 VALIDATION: <pass|fail> | <the command that was run> | what failed, or -
 ```
+
+A line re-raising something the ledger already holds carries that entry's id in
+its opening token, `FINDING[R7]:` or `REJECTED[R7]:`. This is the one thing rrev
+will not work out for itself: file, line and wording all drift between
+iterations while the finding stays the same, so a computed match would merge
+distinct findings as readily as it caught real recurrences. An undeclared line
+is recorded as a new finding, and an id the log does not hold is recorded as new
+with a note — neither costs the finding, only the recurrence count.
+
+A reviewer agent writes no report lines of its own: the phase's executor reads
+its report and turns each finding into one. So the shipped agents are asked for
+the id as its own `Re-raises: R7` field, which the executor carries into the
+opening token; an id buried in an agent's prose does not survive that hop. A
+replacement agent that drops the field costs recurrences, not findings.
+
+For compatibility a three-field `REJECTED:` line still parses, reading its last
+field as the reason and leaving the claim empty. A rejection whose reason is
+missing is recorded with one stating that, rather than dropped from the ledger:
+withheld from later reviewers, it is the finding most certain to come back.
+
+Only a verified report may reject. The comprehensive, final, evaluation and
+finalize calls check each claim against the real code before reporting, so their
+`REJECTED:` lines are recorded and become ledger entries. The external review
+tool is an unverified second opinion, so a `REJECTED:` line in its output is
+discarded rather than logged — accepting one would silence every later
+reviewer on a claim nobody checked. The shipped `external_review.txt` tells the
+tool to report findings only, and a replacement prompt should say the same.
 
 rrev never runs the validation command itself, so the `VALIDATION` line is the
 only record of whether the fixes were validated.
 
 A `-` stands in for a field the finding does not carry. Findings feed the
-findings report and the progress log; rejections are what later external rounds
-are shown, so a dismissed finding does not come back unchanged. A replacement
+findings report and the progress log; a rejection with a stated reason becomes a
+standing ledger entry that every later review phase and every reviewer agent is
+shown, so a dismissed finding does not come back unchanged. A replacement
 prompt or an `external_review_command` script that emits neither produces an
-empty report and an empty log.
+empty report, and the progress log records the round as `output not understood`
+rather than as a converged one.
 
 ## Progress log
 
@@ -307,16 +401,70 @@ Each run appends to `.rrev/progress/progress-<change>.md`, creating the director
 ignore rule so logs are never picked up by the pipeline's own commits. A second
 run against the same change appends to the same file, preserving history.
 
+Each iteration is a titled section carrying its own timestamp — the entries
+inside it carry none — and closes with a one-line summary: findings confirmed by
+severity, rejections split into newly raised and re-raised, the validation
+outcome, and the commit if one was made. A finding reported without a severity or
+a location is counted as unclassified rather than folded into a bucket it does
+not belong to.
+
 The log records the change and goal, the base ref, every phase and iteration
 boundary, the findings reported, which were confirmed and fixed, which were
 rejected and why, the validation outcome each iteration reported, the commits it
-produced, and each loop's termination reason. Every phase prompt is
-given the log's path and told to read it before reporting, so a finding already
-rejected with a stated reason is not re-reported unchanged.
+produced, whether an external review tool ran and what it returned, and each
+loop's termination reason. An external phase that converges in silence and one
+whose tool died quietly are recorded differently, because they call for opposite
+responses. A progress directory that cannot be written degrades the run to
+logging disabled rather than aborting it. Logging disabled takes the ledger with
+it: with nothing recorded there are no standing rejections to expand, so every
+prompt is told nothing has been rejected yet and no recurrence is counted. The
+review still runs — it just re-argues what it dismissed, as it did before the
+ledger existed.
 
-Concurrent runs serialize their appends, so entries interleave whole. A progress
-directory that cannot be written degrades the run to logging disabled rather
-than aborting it.
+Every finding the log records carries an identifier — `R1`, `R2`, … — assigned
+when it is first recorded and shown on its entry. They run in one sequence for
+the whole run and continue past the highest id a log already holds, so a second
+run never re-issues one. A finding only ever reported, or confirmed without
+having been rejected first, has an identifier but no ledger row. Every rejection
+gets one, including a rejection that arrived with no reason.
+
+### Standing rejections
+
+A rejection with a stated reason is a durable decision, not an event, so the log
+keeps a ledger of them at its end: one row per finding, carrying its id, every
+location it was raised at, the claim, the reason it was dismissed, and every
+phase and iteration that raised it. A recurrence updates that row instead of
+restating its rationale, and the rationale it keeps is the one that first
+settled the question rather than whatever the latest re-rejection restated. A
+finding later confirmed and fixed keeps its row marked as resolved, so nobody is
+told a fixed issue is still standing and nobody finds an entry they saw earlier
+silently gone — until it is rejected again, which makes it standing once more.
+Reviewers are shown the standing rows only.
+
+The ledger is expanded into every review phase prompt and every reviewer agent,
+which is what it is for. In the run that motivated it, roughly half of each late
+iteration went to re-arguing a dozen questions the log had already answered —
+one of them re-litigated in ten consecutive iterations — while the executor
+tracked the recurrences by hand in prose. Reviewers are shown the settled
+questions and told to name an entry's id rather than report it afresh. The
+finalize step is not shown the ledger: it runs after review has converged and
+reports no findings. `ledger_budget` caps what one prompt carries in all, shared
+across the prompt's own expansion and the agents it embeds.
+
+The ledger spans the whole run rather than resetting per phase, because
+re-litigation crosses phases: a final-phase reviewer will re-raise what the
+comprehensive phase rejected.
+
+Each run writes its ledger at the end of its own records, so a log holding
+several runs holds one section per run and only the last is live; a later run
+continues the identifiers past the highest one the file already holds rather
+than re-issuing `R1`. Concurrent runs serialize their appends, so entries
+interleave whole; a writer that finds the file grown beneath it appends without
+refreshing the ledger rather than rewinding over another run's records. A log
+written before this format existed is appended to exactly as it stands — never
+rewritten, and never parsed back into a ledger. No ledger is: a second run
+against the same change starts with an empty one and suppresses only what it
+rejects itself, though its reviewers are still pointed at the whole log.
 
 ## Findings report
 

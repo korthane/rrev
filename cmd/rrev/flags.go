@@ -55,8 +55,9 @@ var flagUsage = map[string]string{
 	"progress_dir":            "directory the per-change progress log is written to",
 	"report_file":             "destination of the findings report",
 	"checklist_budget":        "maximum characters of requirement checklist expanded into a prompt",
+	"ledger_budget":           "maximum characters of standing-rejection ledger expanded into a prompt",
 	"validation_command":      "command the executor runs before committing a fix",
-	"debug":                   "record resolved command lines and full prompts",
+	"debug":                   "record resolved command lines, full prompts, and the full arguments and output of reported tool calls",
 	"no_color":                "disable coloured terminal output",
 }
 

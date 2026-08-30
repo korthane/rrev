@@ -1,0 +1,40 @@
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a1", "input": {"subagent_type": "general-purpose", "description": "conformance"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls -la"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "id": "t1", "input": {"file_path": "pkgs/éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé/resolve.go"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": false, "content": "ok"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a2", "input": {"description": "look for defects"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Mystery", "id": "t2", "input": {"whatever": "unlisted"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t2", "is_error": true, "content": ""}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "never-launched", "is_error": false, "content": "orphan result body"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "id": "t3", "input": {"command": "echo \u001b[31mred\u001b[0m\rrewritten"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t3", "is_error": false, "content": "ok"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "id": "t4", "input": {"command": "go\ttest ./..."}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t4", "is_error": false, "content": "ok"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a3", "input": {"subagent_type": "typed-only"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a4", "input": {"subagent_type": "long-named", "description": "review-the-authentication-middleware-changes-in-detail"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a5", "input": {"subagent_type": "general-purpose", "description": "review the tests"}}]}}
+{"type": "assistant", "parent_tool_use_id": "a3", "message": {"content": [{"type": "text", "text": "the unnamed reviewer speaks"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a6", "input": {"subagent_type": "general-purpose", "description": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}]}}
+{"type": "assistant", "parent_tool_use_id": "a6", "message": {"content": [{"type": "text", "text": "spoken at the bound"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a7", "input": {"subagent_type": "general-purpose", "description": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}]}}
+{"type": "assistant", "parent_tool_use_id": "a7", "message": {"content": [{"type": "text", "text": "spoken past the bound"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Write", "input": {"file_path": "pkg/out.go"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Edit", "input": {"file_path": "pkg/edit.go"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "NotebookEdit", "input": {"notebook_path": "notes.ipynb"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "BashOutput", "input": {"bash_id": "bash_42"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "WebFetch", "input": {"url": "https://example.com/spec"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "WebSearch", "input": {"query": "go race detector"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Skill", "input": {"skill": "code-review"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Agent", "input": {"subagent_type": "general-purpose", "description": "hunt for races"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "input": {"subagent_type": "general-purpose", "description": "idless"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "\u001b[2J\u001b[31mSpoofed", "input": {"command": "true"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Task", "id": "a8", "input": {"subagent_type": "general-purpose", "description": "\u001b[31mrogue\rwriter"}}]}}
+{"type": "assistant", "parent_tool_use_id": "a8", "message": {"content": [{"type": "text", "text": "spoken under a rogue name"}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "\u001b", "id": "t5", "input": {"command": "true"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t5", "is_error": false}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "id": "t6", "input": {"command": "make lint", "description": "lint"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t6", "is_error": false, "content": "ok"}]}}
+{"type": "result", "subtype": "success", "is_error": false, "result": "done"}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "echo yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Glob"}]}}

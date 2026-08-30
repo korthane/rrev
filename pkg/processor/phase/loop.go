@@ -18,6 +18,24 @@ type stepResult struct {
 	// output is the executor's raw text, which the external loop hands to the
 	// primary executor to evaluate.
 	output string
+	// writeReport records this attempt's findings in the progress log. It is
+	// held back rather than run inside the call because a transient failure
+	// re-runs the whole iteration, and recording a superseded attempt would
+	// open a second ledger entry for every finding the retry reports again.
+	// Whoever decides the attempt is final runs it.
+	writeReport func()
+}
+
+// writeReports orders held-back reports so the log reads in the order the calls
+// that produced them ran.
+func writeReports(writes ...func()) func() {
+	return func() {
+		for _, write := range writes {
+			if write != nil {
+				write()
+			}
+		}
+	}
 }
 
 // loopSpec describes one review loop: what to call it, how many times it may
@@ -131,6 +149,9 @@ func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, n
 		step, err := spec.run(ctx, n, limit)
 		if err == nil || attempt >= retryBudget || !errors.Is(err, executor.ErrRetryable) ||
 			ctx.Err() != nil || interrupted(brk) {
+			// Nothing supersedes this attempt, so whatever it managed to
+			// report is worth keeping even when the call failed.
+			writeReports(step.writeReport)()
 			return step, err
 		}
 		e.note("%s iteration %d: %v; retrying", Label(spec.name), n, err)
@@ -169,11 +190,15 @@ func (e *Env) review(ctx context.Context, call reviewCall) (stepResult, error) {
 		Stream: e.stream(call.phase),
 	})
 
-	// Record whatever the call produced before judging it: a cancelled or
+	// Parse whatever the call produced before judging it: a cancelled or
 	// throttled call may still have reported findings worth keeping.
 	findings, rejections, validations := ParseReport(out.Output)
-	e.record(call, findings, rejections, validations)
-	step := stepResult{Findings: findings, Rejections: rejections, output: out.Output}
+	step := stepResult{
+		Findings:    findings,
+		Rejections:  rejections,
+		output:      out.Output,
+		writeReport: func() { e.record(call, findings, rejections, validations) },
+	}
 
 	switch {
 	case runErr != nil:
@@ -207,8 +232,9 @@ type reviewCall struct {
 // verified against real code before fixing is recorded as confirmed, while an
 // unverified report from the independent tool is recorded as reported only. A
 // rejection carries its reason, which is what a later round is shown instead of
-// the finding itself, and a validation outcome is recorded as reported: rrev
-// does not run the validation command itself.
+// the finding itself, and only a verified call may make one. A validation
+// outcome is recorded as reported: rrev does not run the validation command
+// itself.
 func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection, validations []Validation) {
 	// The fallback is written back into the slice, not into a copy: the same
 	// findings become the run's result and the report's Reviewer column.
@@ -221,6 +247,17 @@ func (e *Env) record(call reviewCall, findings []Finding, rejections []Rejection
 			continue
 		}
 		e.Log.Finding(findings[i].entry())
+	}
+	// Only a verified call may dismiss. A rejection becomes a standing ledger
+	// entry shown to every later reviewer, so accepting one from the unverified
+	// second opinion would silence them on a claim nobody checked against the
+	// code. Saying so is what tells the author of a custom review command that
+	// their REJECTED: lines went nowhere; every other degradation on this path
+	// announces itself the same way.
+	if !call.verified && len(rejections) > 0 {
+		e.Log.Note(fmt.Sprintf("%d rejection(s) from %s discarded: only a verified call may dismiss a finding",
+			len(rejections), call.exec.Name()))
+		rejections = nil
 	}
 	for i := range rejections {
 		if rejections[i].Reviewer == "" {
@@ -247,6 +284,9 @@ func (e *Env) confirmedAction() string {
 func (e *Env) iterVars(n, limit int) config.Vars {
 	vars := e.Vars
 	vars.Iteration, vars.MaxIterations = n, limit
+	// Read fresh each iteration: the ledger is what the previous iteration
+	// learned, and expanding a stale copy would re-open questions it settled.
+	vars.Ledger = e.Log.PromptEntries()
 	return vars
 }
 

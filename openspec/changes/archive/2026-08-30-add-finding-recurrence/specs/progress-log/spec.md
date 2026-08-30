@@ -1,9 +1,63 @@
-# progress-log Specification
+## ADDED Requirements
 
-## Purpose
-Keeps a per-run journal of what each phase and iteration found, fixed, and rejected, so that a fresh executor session or an independent review tool can pick up the history instead of rediscovering and re-arguing the same findings.
+### Requirement: Finding identity
+Every finding recorded in the progress log SHALL carry an identifier that is stable across iterations, so a later iteration re-raising the same finding can be recognized as a recurrence rather than recorded as a new finding. When a reviewer reports a finding that re-raises one the log already holds, the executor SHALL name the existing entry it re-raises; rrev SHALL NOT infer the match itself.
 
-## Requirements
+#### Scenario: Identifier assigned
+- **WHEN** a finding is recorded for the first time
+- **THEN** the log assigns it an identifier and records that identifier alongside the finding
+
+#### Scenario: Recurrence declared
+- **WHEN** the executor reports a finding as re-raising an entry already in the log
+- **THEN** the log records it against that existing entry's identifier rather than creating a new one
+
+#### Scenario: Undeclared recurrence
+- **WHEN** the executor reports a finding without naming an existing entry
+- **THEN** it is recorded as a new finding, and rrev does not attempt to match it against prior entries
+
+#### Scenario: Unknown identifier named
+- **WHEN** the executor names an identifier that the log does not hold
+- **THEN** rrev records the finding as new, notes the unresolved reference, and continues rather than failing the iteration
+
+### Requirement: Standing rejection ledger
+The progress log SHALL maintain a ledger of rejected findings in which each distinct finding appears once, carrying its identifier, location, claim, the rationale for rejecting it, and every phase and iteration in which it was raised. The ledger SHALL span the whole run rather than resetting per phase, since a later phase's reviewers re-raise findings an earlier phase rejected. A recurrence MUST update the existing ledger entry rather than appending a restatement of its rationale.
+
+#### Scenario: Entry created on first rejection
+- **WHEN** a finding is rejected for the first time
+- **THEN** the ledger gains an entry recording its identifier, location, claim, rationale, and the phase and iteration that raised it
+
+#### Scenario: Recurrence updates the entry
+- **WHEN** a rejected finding is raised again in a later iteration
+- **THEN** the existing ledger entry gains that phase and iteration, and its rationale is not restated
+
+#### Scenario: Recurrence across phases
+- **WHEN** a finding rejected during one phase is raised again during a later phase
+- **THEN** it updates the same ledger entry rather than creating a new one, and the entry records both phases
+
+#### Scenario: Ledger is readable as a whole
+- **WHEN** a reader opens the log
+- **THEN** the ledger appears as one section listing every standing rejection, rather than requiring the reader to reconstruct it from chronological entries
+
+#### Scenario: Confirmed finding is marked resolved in the ledger
+- **WHEN** a finding previously rejected is later confirmed and fixed
+- **THEN** its ledger entry records that it was subsequently confirmed, so a reader is not told a fixed issue is still standing
+
+### Requirement: External tool activity recorded
+The progress log SHALL record that an external review tool was invoked and what it returned, including when it returns no findings, so that a phase converging on silence is distinguishable from one whose tool failed or produced nothing usable.
+
+#### Scenario: Invocation recorded
+- **WHEN** a phase invokes an external review tool
+- **THEN** the log records the invocation and which tool was used
+
+#### Scenario: Tool reports no findings
+- **WHEN** the external tool completes and reports nothing
+- **THEN** the log records that it returned no findings, rather than leaving the iteration empty
+
+#### Scenario: Tool fails
+- **WHEN** the external tool errors, times out, or returns output the executor cannot interpret
+- **THEN** the log records the failure and its cause, and the phase's termination reason distinguishes it from convergence
+
+## MODIFIED Requirements
 
 ### Requirement: Progress log lifecycle
 rrev SHALL maintain one progress log per run, stored under the project's `.rrev/progress/` directory and named so that concurrent runs against different changes do not collide. The directory MUST be created when missing, and its contents MUST be excluded from version control by default. A log already written in an earlier, unstructured format MUST be appended to as it stands; rrev MUST NOT rewrite or retire it.
@@ -77,71 +131,3 @@ rrev SHALL make the progress log path available to every phase prompt and MUST i
 #### Scenario: Ledger too large for the prompt
 - **WHEN** the ledger exceeds the configured prompt budget
 - **THEN** rrev includes the most frequently raised entries, states in the prompt that the ledger was truncated, and does not silently drop the remainder
-
-### Requirement: Concurrent write safety
-rrev SHALL serialize writes to a progress log so that concurrent rrev processes appending to the same file produce interleaved-but-intact entries rather than corrupted ones.
-
-#### Scenario: Two runs append
-- **WHEN** two rrev processes append to the same progress log
-- **THEN** each entry is written whole, with no entry partially overwriting another
-
-#### Scenario: Lock unavailable
-- **WHEN** a write lock cannot be acquired within a bounded wait
-- **THEN** rrev reports the contention and continues the review rather than blocking the pipeline indefinitely
-
-### Requirement: Finding identity
-Every finding recorded in the progress log SHALL carry an identifier that is stable across iterations, so a later iteration re-raising the same finding can be recognized as a recurrence rather than recorded as a new finding. When a reviewer reports a finding that re-raises one the log already holds, the executor SHALL name the existing entry it re-raises; rrev SHALL NOT infer the match itself.
-
-#### Scenario: Identifier assigned
-- **WHEN** a finding is recorded for the first time
-- **THEN** the log assigns it an identifier and records that identifier alongside the finding
-
-#### Scenario: Recurrence declared
-- **WHEN** the executor reports a finding as re-raising an entry already in the log
-- **THEN** the log records it against that existing entry's identifier rather than creating a new one
-
-#### Scenario: Undeclared recurrence
-- **WHEN** the executor reports a finding without naming an existing entry
-- **THEN** it is recorded as a new finding, and rrev does not attempt to match it against prior entries
-
-#### Scenario: Unknown identifier named
-- **WHEN** the executor names an identifier that the log does not hold
-- **THEN** rrev records the finding as new, notes the unresolved reference, and continues rather than failing the iteration
-
-### Requirement: Standing rejection ledger
-The progress log SHALL maintain a ledger of rejected findings in which each distinct finding appears once, carrying its identifier, location, claim, the rationale for rejecting it, and every phase and iteration in which it was raised. The ledger SHALL span the whole run rather than resetting per phase, since a later phase's reviewers re-raise findings an earlier phase rejected. A recurrence MUST update the existing ledger entry rather than appending a restatement of its rationale.
-
-#### Scenario: Entry created on first rejection
-- **WHEN** a finding is rejected for the first time
-- **THEN** the ledger gains an entry recording its identifier, location, claim, rationale, and the phase and iteration that raised it
-
-#### Scenario: Recurrence updates the entry
-- **WHEN** a rejected finding is raised again in a later iteration
-- **THEN** the existing ledger entry gains that phase and iteration, and its rationale is not restated
-
-#### Scenario: Recurrence across phases
-- **WHEN** a finding rejected during one phase is raised again during a later phase
-- **THEN** it updates the same ledger entry rather than creating a new one, and the entry records both phases
-
-#### Scenario: Ledger is readable as a whole
-- **WHEN** a reader opens the log
-- **THEN** the ledger appears as one section listing every standing rejection, rather than requiring the reader to reconstruct it from chronological entries
-
-#### Scenario: Confirmed finding is marked resolved in the ledger
-- **WHEN** a finding previously rejected is later confirmed and fixed
-- **THEN** its ledger entry records that it was subsequently confirmed, so a reader is not told a fixed issue is still standing
-
-### Requirement: External tool activity recorded
-The progress log SHALL record that an external review tool was invoked and what it returned, including when it returns no findings, so that a phase converging on silence is distinguishable from one whose tool failed or produced nothing usable.
-
-#### Scenario: Invocation recorded
-- **WHEN** a phase invokes an external review tool
-- **THEN** the log records the invocation and which tool was used
-
-#### Scenario: Tool reports no findings
-- **WHEN** the external tool completes and reports nothing
-- **THEN** the log records that it returned no findings, rather than leaving the iteration empty
-
-#### Scenario: Tool fails
-- **WHEN** the external tool errors, times out, or returns output the executor cannot interpret
-- **THEN** the log records the failure and its cause, and the phase's termination reason distinguishes it from convergence

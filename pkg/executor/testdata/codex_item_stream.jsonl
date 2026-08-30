@@ -3,4 +3,8 @@
 {"type":"item.completed","item":{"type":"command_execution","command":"git log main..HEAD"}}
 {"type":"item.started","item":{"type":"agent_message","text":"partial"}}
 {"type":"item.completed","item":{"type":"agent_message","text":"No issues found.\n<<<RREV:EXTERNAL_DONE>>>"}}
+{"type":"item.completed","item":{"type":"command_execution","command":"go test ./...\nsecond line","exit_code":0}}
+{"type":"item.completed","item":{"type":"command_execution","command":"golangci-lint run","exit_code":1}}
+{"type":"item.completed","item":{"type":"local_shell_call","command":"gofmt -l .","exit_code":0}}
+{"type":"item.completed","item":{"type":"command_execution","text":"the command's output, which must never be echoed","exit_code":0}}
 {"type":"turn.completed","usage":{"input_tokens":10}}

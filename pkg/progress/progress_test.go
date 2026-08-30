@@ -13,13 +13,17 @@ import (
 	"github.com/korthane/rrev/pkg/progress"
 )
 
-// entryStart matches the first line of an entry; continuation lines are
-// indented, so a whole-entry check is a check on how lines start.
-var entryStart = regexp.MustCompile(`^\[\d{4}-\d{2}-\d{2}T[0-9:+\-Z]+\] [a-z]+:`)
+// wholeRecord is the exact line the concurrent writers emit for a rejection, so
+// a line that starts like one but does not match it is a torn write rather than
+// a formatting difference.
+var wholeRecord = regexp.MustCompile("^- \\*\\*rejected\\*\\* `R\\d+` major `pkg/a\\.go(:\\d+)?` — reviewer$")
 
-// wholeHeader is the exact header the concurrent writers emit, so a header
-// missing its tail is a torn write rather than a formatting difference.
-var wholeHeader = regexp.MustCompile(`^\[[^\]]+\] rejected: reviewer=reviewer severity=major location=pkg/a\.go(:\d+)?$`)
+// startsLikeRecord catches a rejection line whether or not it survived whole.
+var startsLikeRecord = regexp.MustCompile(`^- \*\*rejected\*\* `)
+
+// ledgerRow is a whole line of a rendered ledger entry: its heading row, or one
+// of the indented claim and rationale lines beneath it.
+var ledgerRow = regexp.MustCompile("^(- \\*\\*R\\d+\\*\\* `[^`]*` — raised .+|  (claim|rejected): .+|Since confirmed, no longer standing:)$")
 
 func openLog(t *testing.T, dir, change string, opts progress.Options) *progress.Log {
 	t.Helper()
@@ -144,20 +148,24 @@ func TestEntriesRecordEveryReconstructableEvent(t *testing.T) {
 	log.Finding(finding)
 	log.Confirmed(finding, "fixed")
 	log.Rejected(progress.Finding{Reviewer: "testing", Severity: "minor", File: "a.go"}, "covered by TestResolve")
-	log.Commit("deadbee", "Fix the flag layer")
+	log.Commit("deadbeef0123456789abcdef0123456789abcdef", "Fix the flag layer")
 	log.LoopEnd("comprehensive review", "review-done signal", 3)
 
 	got := readLog(t, log)
 	for _, want := range []string{
-		`run: change=change goal="review the branch" base=main head=abc1234 mode=full`,
-		`phase: name="comprehensive review"`,
-		`iteration: phase="comprehensive review" n=1/10`,
-		`finding: reviewer=conformance severity=major location=pkg/config/resolve.go:42 requirement="Layered resolution"`,
-		`confirmed: reviewer=conformance severity=major location=pkg/config/resolve.go:42 requirement="Layered resolution" action=fixed`,
-		`rejected: reviewer=testing severity=minor location=a.go`,
+		"# Run: change",
+		"review the branch",
+		"- base `main` … head `abc1234`",
+		"- mode full",
+		"## Phase: comprehensive review",
+		"### comprehensive review · iteration 1/10 ·",
+		"- **reported** `R1` major `pkg/config/resolve.go:42` (Layered resolution) — conformance",
+		"- **confirmed** `R2` major `pkg/config/resolve.go:42` (Layered resolution) — conformance",
+		"- **rejected** `R3` minor `a.go` — testing",
 		"  covered by TestResolve",
-		`commit: hash=deadbee subject="Fix the flag layer"`,
-		`end: phase="comprehensive review" reason="review-done signal" iterations=3`,
+		"- commit `deadbee` Fix the flag layer",
+		"_confirmed 1 (1 major) · rejected 1 (1 new, 0 repeat) · commit deadbee_",
+		"**comprehensive review ended:** review-done signal after 3 iteration(s)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("log missing %q\n--- log ---\n%s", want, got)
@@ -165,21 +173,71 @@ func TestEntriesRecordEveryReconstructableEvent(t *testing.T) {
 	}
 }
 
-func TestMultiLineDetailStaysInsideOneEntry(t *testing.T) {
-	dir := t.TempDir()
-	log := openLog(t, dir, "change", progress.Options{})
-	log.Rejected(progress.Finding{Reviewer: "quality"}, "first line\n\nsecond line\n")
+// The iteration boundary carries the run's only timestamp for everything inside
+// it; a stamp on each of twenty entries is noise a reader has to look past.
+func TestIterationCarriesOneTimestampForAllItsEntries(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
 
-	lines := strings.Split(strings.TrimRight(readLog(t, log), "\n"), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("lines = %q, want a header plus two detail lines", lines)
+	log.IterationStart("comprehensive", 1, 10)
+	for i := range 5 {
+		log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: i}, "out of scope")
 	}
-	if !entryStart.MatchString(lines[0]) {
-		t.Errorf("header = %q", lines[0])
+
+	stamps := regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`).FindAllString(readLog(t, log), -1)
+	if len(stamps) != 1 {
+		t.Errorf("timestamps = %d, want exactly one at the iteration boundary", len(stamps))
 	}
-	for _, line := range lines[1:] {
-		if !strings.HasPrefix(line, "  ") {
-			t.Errorf("detail line %q should be indented so it cannot be read as a new entry", line)
+}
+
+// A finding that arrives with no severity or no location must not be folded
+// into a severity bucket it does not belong to, nor vanish from the totals.
+func TestUnclassifiedFindingIsCountedSeparately(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Confirmed(progress.Finding{Reviewer: "quality", Severity: "major", File: "a.go", Line: 3}, "fixed")
+	log.Confirmed(progress.Finding{Reviewer: "claude"}, "fixed")
+	log.LoopEnd("comprehensive", "converged", 1)
+
+	if want := "_confirmed 2 (1 major, 1 unclassified)"; !strings.Contains(readLog(t, log), want) {
+		t.Errorf("summary missing %q\n--- log ---\n%s", want, readLog(t, log))
+	}
+}
+
+// A phase that converges in silence and one whose tool died quietly look
+// identical otherwise, and they call for opposite responses.
+func TestExternalToolActivityIsRecorded(t *testing.T) {
+	for _, tc := range []struct{ name, outcome, detail, want string }{
+		{"no findings", "no findings reported", "", "- external tool `codex`: no findings reported"},
+		{"failure", "failed", "exit status 1", "- external tool `codex`: failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			log := openLog(t, t.TempDir(), "change", progress.Options{})
+			log.ExternalTool("codex", tc.outcome, tc.detail)
+			got := readLog(t, log)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("log missing %q\n--- log ---\n%s", tc.want, got)
+			}
+			// The outcome alone does not say why: a reader deciding whether a
+			// phase failed or converged needs the cause beside it.
+			if tc.detail != "" && !strings.Contains(got, "\n  "+tc.detail+"\n") {
+				t.Errorf("log missing the cause %q\n--- log ---\n%s", tc.detail, got)
+			}
+		})
+	}
+}
+
+func TestMultiLineDetailStaysInsideOneEntry(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go"}, "first line\n\nsecond line\n")
+
+	got := readLog(t, log)
+	if !strings.Contains(got, "  first line second line\n") {
+		t.Errorf("a reason spanning lines must flatten into one indented line\n--- log ---\n%s", got)
+	}
+	for line := range strings.SplitSeq(strings.TrimRight(got, "\n"), "\n") {
+		if strings.HasPrefix(line, "second line") {
+			t.Errorf("detail line %q escaped its entry and reads as a new one", line)
 		}
 	}
 }
@@ -267,25 +325,32 @@ func TestConcurrentWritersProduceWholeEntries(t *testing.T) {
 	shared := openLog(t, dir, "change", progress.Options{})
 	lines := strings.Split(strings.TrimRight(readLog(t, shared), "\n"), "\n")
 
-	headers, details := 0, 0
+	records, details := 0, 0
 	for _, line := range lines {
 		switch {
-		case entryStart.MatchString(line):
-			headers++
-			if !wholeHeader.MatchString(line) {
-				t.Fatalf("truncated or interleaved header: %q", line)
+		case startsLikeRecord.MatchString(line):
+			records++
+			if !wholeRecord.MatchString(line) {
+				t.Fatalf("truncated or interleaved record: %q", line)
 			}
-		case strings.HasPrefix(line, "  "):
+		case strings.TrimSpace(line) == strings.TrimSpace(strings.Repeat("reason ", 40)):
 			details++
-			if strings.TrimSpace(line) != strings.TrimSpace(strings.Repeat("reason ", 40)) {
-				t.Fatalf("truncated or interleaved detail: %q", line)
-			}
+		case strings.TrimSpace(line) == "", strings.HasPrefix(line, "#"),
+			strings.HasPrefix(line, "Already raised"), strings.HasPrefix(line, "id, and either"),
+			ledgerRow.MatchString(line):
 		default:
-			t.Fatalf("line is neither a whole header nor a detail line: %q", line)
+			// Every byte in the file has to be one of the shapes above. A
+			// ledger torn or doubled under contention shows up here and
+			// nowhere else, since the counts only measure records.
+			t.Fatalf("line is neither a whole record, a reason, nor a well-formed ledger line: %q", line)
 		}
 	}
-	if want := writers * entries; headers != want || details != want {
-		t.Errorf("headers = %d, details = %d, want %d of each", headers, details, want)
+	// Every record and its reason must survive whole, exactly once each: a
+	// ledger row renders the rationale as `rejected: …`, so only a record's own
+	// reason line is counted here however many ledger sections the contention
+	// left behind.
+	if want := writers * entries; records != want || details != want {
+		t.Errorf("records = %d, whole reasons = %d, want %d of each", records, details, want)
 	}
 }
 
@@ -297,7 +362,7 @@ func TestValidationOutcomeRecorded(t *testing.T) {
 	log.Validation(progress.Validation{Outcome: "fail", Command: "make test", Detail: "TestFoo failed"})
 
 	body := readLog(t, log)
-	for _, want := range []string{"validation:", "outcome=fail", `command="make test"`, "TestFoo failed"} {
+	for _, want := range []string{"- validation **fail**", "`make test`", "TestFoo failed"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("log %q does not contain %q", body, want)
 		}
@@ -360,5 +425,89 @@ func TestHeldLockIsReportedOnlyOnce(t *testing.T) {
 		if !strings.Contains(readLog(t, log), "entry "+strconv.Itoa(i)) {
 			t.Errorf("entry %d was dropped", i)
 		}
+	}
+}
+
+// A finding that names a severity but no location is as unclassifiable as one
+// naming neither: the summary must not file it under that severity.
+func TestFindingWithoutALocationIsUnclassified(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Confirmed(progress.Finding{Reviewer: "quality", Severity: "major"}, "fixed")
+	log.LoopEnd("comprehensive", "converged", 1)
+
+	if want := "_confirmed 1 (1 unclassified)"; !strings.Contains(readLog(t, log), want) {
+		t.Errorf("summary missing %q\n--- log ---\n%s", want, readLog(t, log))
+	}
+}
+
+// The iteration summary is what a reader skims; a validation outcome recorded
+// inside the iteration has to reach it, not only the entry it was written as.
+func TestIterationSummaryCarriesTheValidationOutcome(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Confirmed(progress.Finding{Reviewer: "quality", Severity: "major", File: "a.go", Line: 3}, "fixed")
+	log.Validation(progress.Validation{Outcome: "fail", Command: "go test ./...", Detail: "one test failed"})
+	log.LoopEnd("comprehensive", "converged", 1)
+
+	if want := "· validation fail_"; !strings.Contains(readLog(t, log), want) {
+		t.Errorf("summary missing %q\n--- log ---\n%s", want, readLog(t, log))
+	}
+}
+
+// A writer that finds the file grown beneath it appends rather than rewinding
+// over the ledger it last wrote: by then those bytes belong to another run's
+// records, and truncating back to them destroys history the reader needs.
+func TestForeignRecordSurvivesTheNextLedgerRewrite(t *testing.T) {
+	log := openLog(t, t.TempDir(), "change", progress.Options{})
+
+	log.IterationStart("comprehensive", 1, 10)
+	log.Rejected(progress.Finding{Reviewer: "quality", File: "a.go", Line: 7}, "out of scope")
+
+	const foreign = "- **rejected** `R9` `other.go:1` — a concurrent run's record\n"
+	f, err := os.OpenFile(log.Path(), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open progress log: %v", err)
+	}
+	if _, err := f.WriteString(foreign); err != nil {
+		t.Fatalf("append foreign record: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close progress log: %v", err)
+	}
+
+	log.Rejected(progress.Finding{Reviewer: "testing", File: "b.go", Line: 3}, "already handled upstream")
+
+	got := readLog(t, log)
+	if !strings.Contains(got, foreign) {
+		t.Errorf("a concurrent writer's record was rewound over\n--- log ---\n%s", got)
+	}
+	if !strings.Contains(got, "already handled upstream") {
+		t.Errorf("the later record was lost\n--- log ---\n%s", got)
+	}
+}
+
+// Losing the log is the one failure the user has to hear about: silently
+// swallowing it leaves a run whose history stops mid-way and no reason why.
+func TestAWriteThatCannotLandIsReported(t *testing.T) {
+	dir := t.TempDir()
+	var warnings []string
+	log := openLog(t, dir, "change", progress.Options{Warn: func(msg string) { warnings = append(warnings, msg) }})
+
+	// A directory where the log file was fails the open every write goes
+	// through, whatever the user's permissions are.
+	if err := os.Remove(log.Path()); err != nil {
+		t.Fatalf("remove log: %v", err)
+	}
+	if err := os.Mkdir(log.Path(), 0o700); err != nil {
+		t.Fatalf("replace log with a directory: %v", err)
+	}
+
+	log.Note("this cannot land")
+
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "write progress log") {
+		t.Errorf("warnings = %q, want one report that the write failed", warnings)
 	}
 }

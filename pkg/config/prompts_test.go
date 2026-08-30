@@ -270,3 +270,95 @@ func expandPrompt(t *testing.T, name string) string {
 	}
 	return got
 }
+
+// ledgerPrompts are the prompts whose reviewers report findings and so must be
+// shown what is already settled. finalize is deliberately absent: it runs after
+// review has converged and reports nothing.
+var ledgerPrompts = map[string]bool{
+	"review_first":    true,
+	"external_review": true,
+	"external_eval":   true,
+	"review_final":    true,
+	"finalize":        false,
+}
+
+// A prompt that shows the ledger but never says how to name an entry leaves the
+// reviewer with the same prose-only escape hatch the ledger exists to replace.
+// Which prompts carry it is asserted in both directions: a prompt that silently
+// loses {{LEDGER}} goes on re-arguing settled questions with nothing to fail.
+func TestPromptsShowingTheLedgerAlsoSayHowToNameAnEntry(t *testing.T) {
+	assets := embeddedPrompts(t)
+	for _, name := range assets.PromptNames() {
+		prompt, err := assets.Prompt(name)
+		if err != nil {
+			t.Fatalf("prompt %q: %v", name, err)
+		}
+		want, known := ledgerPrompts[name]
+		if !known {
+			t.Errorf("prompt %q is not listed in ledgerPrompts, so nothing decides whether it carries the ledger", name)
+			continue
+		}
+		if got := strings.Contains(prompt.Content, "{{LEDGER}}"); got != want {
+			t.Errorf("prompt %q expands the ledger = %v, want %v", name, got, want)
+		}
+		if !want {
+			continue
+		}
+		// The literal token, not the prose around it: a reflow that keeps the
+		// paragraph but loses the form the parser reads reverts the feature
+		// silently, which is the drift this assertion exists to catch.
+		if !strings.Contains(prompt.Content, "`FINDING[R7]:`") {
+			t.Errorf("prompt %q expands the ledger but never shows the FINDING[R7]: form that declares a re-raise", name)
+		}
+	}
+}
+
+// The agents declare a re-raise in a `Re-raises:` field, but an agent writes no
+// report line: the prompt that embeds it does. A prompt that never mentions the
+// field leaves that declaration to be dropped in the merge and the match
+// re-derived from prose, which is the inference the declaration replaces.
+func TestPromptsEmbeddingAgentsCarryTheReRaisesField(t *testing.T) {
+	assets := embeddedPrompts(t)
+	var embedding int
+	for _, name := range assets.PromptNames() {
+		prompt, err := assets.Prompt(name)
+		if err != nil {
+			t.Fatalf("prompt %q: %v", name, err)
+		}
+		if !strings.Contains(prompt.Content, "{{AGENTS:") {
+			continue
+		}
+		embedding++
+		if !strings.Contains(prompt.Content, "`Re-raises: R7`") {
+			t.Errorf("prompt %q embeds agents but never says what to do with the Re-raises: field they emit", name)
+		}
+	}
+	if embedding == 0 {
+		t.Fatal("no shipped prompt embeds agents, so nothing consumes a Re-raises: declaration")
+	}
+}
+
+// The agents are where re-raises originate, so each has to be shown what is
+// already settled and told to name it rather than report it afresh.
+func TestShippedAgentsAreShownTheStandingRejections(t *testing.T) {
+	assets := embeddedPrompts(t)
+	names := assets.AgentNames()
+	if len(names) == 0 {
+		t.Fatal("no shipped agents found")
+	}
+	for _, name := range names {
+		agent, err := assets.Agent(name)
+		if err != nil {
+			t.Fatalf("agent %q: %v", name, err)
+		}
+		if !strings.Contains(agent.Content, "{{LEDGER}}") {
+			t.Errorf("agent %q is never shown the standing rejections, so it keeps rediscovering them", name)
+		}
+		// The field, not the prose: an agent writes no report lines itself, so
+		// `Re-raises:` is the only form in which its declaration survives the
+		// hop to the executor that does.
+		if !strings.Contains(agent.Content, "`Re-raises: R7`") {
+			t.Errorf("agent %q is not told to name the entry it re-raises as a Re-raises: field", name)
+		}
+	}
+}
