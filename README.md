@@ -14,11 +14,20 @@ regression pass — iterating until nothing serious is left.
 
 ## Installation
 
+On macOS, with [Homebrew](https://brew.sh) — no Go toolchain of your own
+needed, since the formula brings one for the build and leaves none behind:
+
+```sh
+brew install korthane/tap/rrev
+```
+
+Anywhere, with Go 1.27 or newer:
+
 ```sh
 go install github.com/korthane/rrev/cmd/rrev@latest
 ```
 
-Or from a clone:
+Or from a clone, which also needs Go:
 
 ```sh
 make build    # build ./rrev
@@ -27,9 +36,13 @@ make lint     # run golangci-lint
 make coverage # test with coverage report
 ```
 
+Whichever path you take, `rrev --version` reports the release it came from.
+[docs/releasing.md](docs/releasing.md) covers how a release is cut.
+
 ## Prerequisites
 
-- Go 1.27 or newer to build or `go install` rrev.
+- Go 1.27 or newer for `go install` or a build from a clone. Homebrew installs
+  need it only during the build, and install it for you.
 - `git`, and a working directory inside a git repository.
 - An OpenSpec-driven repository: an `openspec/` directory with the change under
   `openspec/changes/<change>/`.

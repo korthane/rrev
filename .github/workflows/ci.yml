@@ -35,3 +35,19 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.13.1
+
+  # A version tag becomes a release only after the checks above pass on it,
+  # which is why this needs the build job rather than restating its steps.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes

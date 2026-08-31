@@ -13,9 +13,6 @@ import (
 	"github.com/korthane/rrev/pkg/status"
 )
 
-// version is overridden at build time via -ldflags "-X main.version=...".
-var version = "dev"
-
 func main() {
 	os.Exit(int(run(context.Background(), os.Args[1:], os.Stdout, os.Stderr)))
 }
@@ -41,7 +38,7 @@ func execute(ctx context.Context, args []string, out, errOut io.Writer) (status.
 		return status.CodeFailed, err
 	}
 	if opts.Version {
-		_, _ = fmt.Fprintf(out, "rrev %s\n", version)
+		_, _ = fmt.Fprintf(out, "rrev %s\n", buildVersion(version, moduleVersion()))
 		return status.CodeOK, nil
 	}
 
