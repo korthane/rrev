@@ -39,30 +39,30 @@
 
 ## 4. First release
 
-- [ ] 4.1 Cut `v0.1.0`: annotated tag on a green default-branch commit, pushed;
+- [x] 4.1 Cut `v0.1.0`: annotated tag on a green default-branch commit, pushed;
       verify the `release` job succeeds and the GitHub Release exists with its
       source archive
-- [ ] 4.2 Verify the released module reports its own version by running `go
+- [x] 4.2 Verify the released module reports its own version by running `go
       install github.com/korthane/rrev/cmd/rrev@v0.1.0` into a scratch `GOBIN`
       and checking `rrev --version` prints `rrev v0.1.0`
 
 ## 5. Homebrew tap
 
-- [ ] 5.1 Create the public `korthane/homebrew-tap` repository with a README
+- [x] 5.1 Create the public `korthane/homebrew-tap` repository with a README
       naming the install command; verify `brew tap korthane/tap` succeeds
-- [ ] 5.2 Write `Formula/rrev.rb` — desc, homepage, the `v0.1.0` source archive
+- [x] 5.2 Write `Formula/rrev.rb` — desc, homepage, the `v0.1.0` source archive
       url with its sha256, MIT license, `depends_on "go" => :build`, a build
       that stamps `main.version` with the formula's version, and a test
       asserting `rrev --version` reports it; verify `brew audit --strict --new
       korthane/tap/rrev` passes
-- [ ] 5.3 Verify the formula end to end: `brew install korthane/tap/rrev`
+- [x] 5.3 Verify the formula end to end: `brew install korthane/tap/rrev`
       followed by `brew test korthane/tap/rrev`, then `rrev --version` printing
       `rrev v0.1.0` from the installed binary
-- [ ] 5.4 Verify the test actually fails when the version is not stamped in, by
+- [x] 5.4 Verify the test actually fails when the version is not stamped in, by
       dropping the ldflag locally and confirming `brew test` reports it; restore
       the formula afterwards
 
 ## 6. Close out
 
-- [ ] 6.1 Remove the Homebrew entry from `TODO.md` now that it is delivered;
+- [x] 6.1 Remove the Homebrew entry from `TODO.md` now that it is delivered;
       verify the file is left with a valid list or removed entirely if empty
