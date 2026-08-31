@@ -17,14 +17,14 @@ func Final(ctx context.Context, e *Env, prior ...Result) Result {
 	return e.drive(ctx, loopSpec{
 		name:  NameFinal,
 		limit: e.Config.FinalMaxIterations,
-		run: func(ctx context.Context, n, limit int) (stepResult, error) {
+		run: func(ctx context.Context, it iteration) (stepResult, error) {
 			return e.review(ctx, reviewCall{
 				phase:    NameFinal,
 				prompt:   PromptFinal,
 				exec:     e.Primary,
 				model:    executor.PhaseFinal,
 				done:     executor.SignalReviewDone,
-				vars:     e.iterVars(n, limit),
+				vars:     e.iterVars(it),
 				renderAs: e.Config.Executor,
 				verified: true,
 			})

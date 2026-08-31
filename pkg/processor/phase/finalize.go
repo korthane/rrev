@@ -43,7 +43,7 @@ func Finalize(ctx context.Context, e *Env, prior ...Result) Result {
 		exec:     e.Primary,
 		model:    executor.PhaseFinalize,
 		done:     executor.SignalNone,
-		vars:     e.iterVars(1, 1),
+		vars:     e.iterVars(iteration{n: 1, limit: 1}),
 		renderAs: e.Config.Executor,
 		verified: true,
 	})

@@ -10,7 +10,7 @@ conformance criteria for the diff that followed.
 
 A run alternates independent reviewer agents with a fixing executor across three
 phases — comprehensive review, cross-model external review, and a final
-regression pass — iterating until the reviewers go quiet.
+regression pass — iterating until nothing serious is left.
 
 ## Installation
 
@@ -98,7 +98,27 @@ reporting convergence.
 1. **Comprehensive review** — launches every reviewer agent concurrently against
    the branch diff, then deduplicates their findings, verifies each against the
    real code, fixes the confirmed ones, runs the validation command, and commits.
-   Repeats until an iteration finds nothing.
+   It converges on the first iteration that confirms nothing critical or major:
+   the minor findings are still fixed and committed, but hunting the last one is
+   what runs a review to its iteration limit, since every fix is itself
+   reviewable. The final regression pass looks at the branch again afterwards,
+   whenever those fixes changed anything. The executor is asked to signal that
+   itself, and rrev enforces the same rule from the iteration's report — an
+   iteration that confirmed findings, all of them minor, and no validation
+   reported as failed ends the phase as `converged: minor findings only`.
+   Anything rrev cannot read that way keeps the loop going: a report with no
+   findings at all cannot be told apart from an executor that died before
+   writing one, and a severity outside `critical|major|minor` is a line it could
+   not parse rather than a clean one, so a replacement prompt has to keep that
+   vocabulary for the rule to hold. A review that truly found nothing has
+   `<<<RREV:REVIEW_DONE>>>` to say so.
+
+   Iterations after the first are driven by `review_repeat.txt` instead, and are
+   pointed primarily at the fixes the previous iteration committed — `git diff
+   <last reviewed commit>..HEAD` — with the full branch diff still in the
+   instruction for regressions those fixes may have caused elsewhere. An
+   iteration that follows one which committed nothing reviews the full branch,
+   the same scope as the first.
 2. **External review loop** — an independent tool reviews the same diff against
    the same requirement checklist; the primary executor then evaluates what it
    reported, fixes what it confirms, and records why it rejected the rest. Later
@@ -119,8 +139,9 @@ reporting convergence.
    ran is no basis for that. Its failure never changes the run's outcome.
 
 Every phase reviews `git diff <base ref>...HEAD` together with the branch's
-commit log. The diff is never expanded into a prompt: reviewers are told the
-commands that produce it.
+commit log; repeat comprehensive iterations add the narrower diff described
+above and keep the full one. The diff is never expanded into a prompt: reviewers
+are told the commands that produce it.
 
 ## Exit status
 
@@ -129,6 +150,9 @@ commands that produce it.
 | 0 | the pipeline converged, or report-only found nothing |
 | 1 | the run failed to start, aborted, or a phase could not complete |
 | 2 | the run ended with findings outstanding — a loop hit its iteration limit, ended on a stalemate, or a report-only run reported findings |
+
+A phase that ended `converged: minor findings only` converged: it counts towards
+status 0 exactly as one that ended on the signal does.
 
 ## Interrupting a run
 
@@ -278,9 +302,15 @@ is shown the tool's findings without their ids, so each confirmation or rejectio
 opens a second entry beside the reported one. Copy the parsed-findings block and
 the carry-the-id paragraph from the shipped default.
 
+The comprehensive phase runs two prompts, so a `review_first.txt` override
+written before `review_repeat.txt` existed now covers the first iteration only
+and every iteration after it runs the shipped repeat prompt. A project that
+wants its own wording throughout the phase has to override both.
+
 | Prompt | Phase |
 | --- | --- |
-| `review_first.txt` | comprehensive review |
+| `review_first.txt` | comprehensive review, first iteration |
+| `review_repeat.txt` | comprehensive review, every iteration after the first |
 | `external_review.txt` | the external tool's review |
 | `external_eval.txt` | the primary executor's evaluation of external findings |
 | `review_final.txt` | final regression review |
@@ -312,7 +342,7 @@ naming the file and the variable rather than text passed through to the model.
 | `{{CHANGE}}` | the selected change's name |
 | `{{GOAL}}`, `{{GOAL_LINE}}` | the derived one-line review goal |
 | `{{BASE_REF}}` | the resolved base ref |
-| `{{DIFF_INSTRUCTION}}` | the command that produces the diff under review |
+| `{{DIFF_INSTRUCTION}}` | the command(s) producing the diff under review, expanded identically in every reviewer agent; a comprehensive iteration following one that committed gets two, per [What a phase does](#what-a-phase-does) |
 | `{{PROGRESS_LOG}}` | path of this run's progress log |
 | `{{REPORT_FILE}}` | path of the findings report |
 | `{{VALIDATION_COMMAND}}` | the configured validation command |
@@ -342,14 +372,15 @@ fence, so a model quoting the protocol does not end a loop.
 
 | Marker | Meaning |
 | --- | --- |
-| `<<<RREV:REVIEW_DONE>>>` | this review iteration found nothing; the phase converged |
+| `<<<RREV:REVIEW_DONE>>>` | this iteration confirmed nothing critical or major; the phase converged |
 | `<<<RREV:EXTERNAL_DONE>>>` | the external review loop reached agreement (read from both calls: the evaluation's marker cannot end a round whose tool output carried neither a finding nor the marker) |
 | `<<<RREV:TASK_FAILED>>>` | unrecoverable failure; the pipeline stops and reports the phase |
 
 **Emitting no marker is not success.** rrev reads a missing marker as "work was
-done, iterate again" and runs another iteration, up to the phase's limit. This
-is the load-bearing property of the protocol: silence never ends a loop as
-converged.
+done, iterate again" and runs another iteration, up to the phase's limit. Silence
+ends a loop as converged in exactly one place: the comprehensive phase's severity
+gate, described under [What a phase does](#what-a-phase-does). Everywhere else —
+the external loop, the final pass — silence iterates.
 
 ### Report lines
 
@@ -553,9 +584,9 @@ in their own headers:
 
 - Reviewer agents: `agents/quality.txt`, `agents/implementation.txt`,
   `agents/testing.txt`, `agents/simplification.txt`, `agents/documentation.txt`
-- Phase prompts: `prompts/review_first.txt`, `prompts/external_review.txt`,
-  `prompts/external_eval.txt`, `prompts/review_final.txt`,
-  `prompts/finalize.txt`
+- Phase prompts: `prompts/review_first.txt`, `prompts/review_repeat.txt`,
+  `prompts/external_review.txt`, `prompts/external_eval.txt`,
+  `prompts/review_final.txt`, `prompts/finalize.txt`
 
 rrev's own `agents/conformance.txt` and `agents/tasks.txt` are not derived from
 ralphex — they exist because rrev has a spec to check against.

@@ -10,6 +10,7 @@ import (
 // expected to launch. A prompt with no agents is sent to a tool that has none.
 var shippedPrompts = map[string][]string{
 	"review_first":    {"conformance", "tasks", "quality", "implementation", "testing", "simplification", "documentation"},
+	"review_repeat":   {"conformance", "tasks", "quality", "implementation", "testing", "simplification", "documentation"},
 	"external_review": nil,
 	"external_eval":   nil,
 	"review_final":    {"quality", "implementation", "conformance"},
@@ -129,6 +130,71 @@ func TestComprehensivePromptVerifiesFixesValidatesAndCommits(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("review_first prompt missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// The comprehensive prompts converge on severity, not on an empty report: a
+// review that had to confirm nothing at all before it could stop is what ran
+// the loop to its iteration limit hunting the last minor. Both prompts have to
+// say so — the phase runs the first on iteration 1 and the repeat after it —
+// and the token-level assertion is what a copy-edit has to survive.
+func TestComprehensivePromptsConvergeOnSeverityNotOnAnEmptyReport(t *testing.T) {
+	for _, name := range []string{"review_first", "review_repeat"} {
+		got := expandPrompt(t, name)
+		// Compared with the wrapping collapsed: the rule has to survive a
+		// reflow of the paragraph it lives in, which is what a copy-edit does.
+		flat := strings.Join(strings.Fields(got), " ")
+		for _, want := range []string{
+			"emit when nothing you confirmed this iteration is critical or major",
+			"fixed, validated, and committed the minor",
+		} {
+			if !strings.Contains(flat, want) {
+				t.Errorf("%s prompt missing %q:\n%s", name, want, got)
+			}
+		}
+		// The rule it replaced. Left in place it contradicts the new one, and
+		// the executor is the half of the gate rrev cannot enforce.
+		if strings.Contains(flat, "confirmed zero findings") {
+			t.Errorf("%s prompt still asks for a zero-finding iteration:\n%s", name, got)
+		}
+	}
+}
+
+// The repeat prompt is a sibling of the first sweep, not a narrower phase: same
+// reviewers, same report shape, same signal contract, and only the scope
+// differs. A drift between the two is a drift between iteration 1 and 2 of one
+// phase, which is why the shared parts are asserted rather than described.
+func TestRepeatPromptIsASiblingOfTheFirstSweep(t *testing.T) {
+	if !slices.Equal(shippedPrompts["review_repeat"], shippedPrompts["review_first"]) {
+		t.Errorf("the repeat prompt launches %v, want the first sweep's %v",
+			shippedPrompts["review_repeat"], shippedPrompts["review_first"])
+	}
+	got := expandPrompt(t, "review_repeat")
+	for _, want := range []string{
+		"make test",  // the validation command, expanded rather than described
+		"git commit", // fixes are committed inside the phase, as in iteration 1
+		"FINDING:",
+		"REJECTED:",
+		"VALIDATION:",
+		"<<<RREV:REVIEW_DONE>>>",
+		signalContract,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("review_repeat prompt missing %q:\n%s", want, got)
+		}
+	}
+	// What it does not share: the repeat pass is about the fixes the iteration
+	// before it made, which is the whole reason it is a separate prompt. The
+	// same iteration may follow one that committed nothing, so the framing has
+	// to hold when the scope falls back to the whole branch.
+	flat := strings.Join(strings.Fields(got), " ")
+	for _, want := range []string{
+		"This pass is about the fixes it made since",
+		"if that iteration committed nothing, it is the whole branch again",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("review_repeat prompt missing %q:\n%s", want, got)
 		}
 	}
 }
@@ -276,6 +342,7 @@ func expandPrompt(t *testing.T, name string) string {
 // review has converged and reports nothing.
 var ledgerPrompts = map[string]bool{
 	"review_first":    true,
+	"review_repeat":   true,
 	"external_review": true,
 	"external_eval":   true,
 	"review_final":    true,

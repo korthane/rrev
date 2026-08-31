@@ -1,6 +1,13 @@
 [Adapted from ralphex (https://github.com/umputun/ralphex) by Umputun, MIT licensed.]
 
-Comprehensive review of: {{GOAL_LINE}}
+Repeat comprehensive review of: {{GOAL_LINE}}
+
+An earlier iteration swept this branch. This pass is about the fixes it made
+since: whether each one is correct, complete, and did not break something else.
+The diff instruction below says what that covers - if that iteration committed
+nothing, it is the whole branch again. Either way the branch stays in scope for
+regressions, but re-auditing code no fix has touched is what runs a review to
+its iteration limit without ending it.
 
 Iteration {{ITERATION}} of at most {{MAX_ITERATIONS}} for this phase.
 
@@ -16,13 +23,14 @@ Progress log: {{PROGRESS_LOG}}
 
 ## Step 1: Read the context
 
-Read the progress log at {{PROGRESS_LOG}} before anything else. It records earlier
-iterations: which findings were confirmed and fixed, and which were rejected and
-why. The rejections are also listed below, so you need not reconstruct them.
+Read the progress log at {{PROGRESS_LOG}} before anything else. It records what
+the earlier iterations confirmed and fixed, and what they rejected and why. On a
+repeat pass it matters more, not less: most of what a late iteration is tempted
+to report has already been answered there.
 
 Then get the branch context:
 - `git log {{BASE_REF}}..HEAD --oneline` - the commits under review
-- {{DIFF_INSTRUCTION}} - the code under review
+- {{DIFF_INSTRUCTION}}
 
 ## Standing rejections
 

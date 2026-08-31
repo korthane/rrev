@@ -174,7 +174,7 @@ func writeUsage(out io.Writer, fs *flag.FlagSet) {
 	_, _ = fmt.Fprint(out, `usage: rrev [flags] [change]
 
 Reviews the current branch against an OpenSpec change, alternating independent
-reviewers with a fixing executor until the reviewers go quiet. With no change
+reviewers with a fixing executor until nothing serious is left. With no change
 name rrev reviews the single active change and refuses to guess between several.
 
 flags:

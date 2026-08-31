@@ -17,6 +17,11 @@ type stepResult struct {
 	Converged  bool
 	Findings   []Finding
 	Rejections []Rejection
+	// Validations are the outcomes the executor reported for the validation
+	// command. They are kept on the result, not only inside writeReport, so a
+	// loop deciding whether the iteration may end can see whether the fixes it
+	// would converge on were validated.
+	Validations []Validation
 	// output is the executor's raw text, which the external loop hands to the
 	// primary executor to evaluate.
 	output string
@@ -38,6 +43,16 @@ func (s stepResult) recordReport() []string {
 	return s.writeReport()
 }
 
+// iteration is what one pass of a loop is told about its place in it.
+type iteration struct {
+	n, limit int
+	// reviewedBase is the commit the previous iteration reviewed from, so this
+	// one can scope itself to the fixes made since. It is empty on the first
+	// iteration and whenever the branch has not moved, which leaves the
+	// iteration on the full branch diff.
+	reviewedBase string
+}
+
 // loopSpec describes one review loop: what to call it, how many times it may
 // run, and what a single iteration does.
 type loopSpec struct {
@@ -46,12 +61,16 @@ type loopSpec struct {
 	// arm is called once when the loop starts and returns the channel a user
 	// break closes; nil means this loop cannot be broken.
 	arm func() <-chan struct{}
-	run func(ctx context.Context, iteration, limit int) (stepResult, error)
+	run func(ctx context.Context, it iteration) (stepResult, error)
+	// converged lets a loop end on what an iteration reported rather than on
+	// the done signal alone; nil means only the signal converges it.
+	converged func(stepResult) bool
 }
 
 // drive runs a review loop to one of its terminating conditions and reports
 // which one ended it. An iteration that emits no done signal means "work was
-// done, iterate again": convergence is only ever stated explicitly.
+// done, iterate again", unless the loop supplied a converged rule that reads
+// convergence off the iteration's own report.
 func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 	limit := max(spec.limit, 1)
 	if e.SinglePass {
@@ -85,6 +104,10 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 
 	before := e.snapshot(ctx)
 	stale := 0
+	// reviewedBase carries what the previous iteration reviewed from into the
+	// next one; the loop is where it belongs, since the heads it is taken from
+	// are the ones the loop already snapshots.
+	var reviewedBase string
 	for n := 1; n <= limit; n++ {
 		if interrupted(brk) {
 			res.Reason = ReasonUserBreak
@@ -93,7 +116,7 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 		e.Log.IterationStart(spec.name, n, limit)
 		res.Iterations = n
 
-		step, err := e.runStep(runCtx, spec, brk, n, limit)
+		step, err := e.runStep(runCtx, spec, brk, iteration{n: n, limit: limit, reviewedBase: reviewedBase})
 		res.Findings = append(res.Findings, step.Findings...)
 		res.Rejections = append(res.Rejections, step.Rejections...)
 		if err != nil {
@@ -116,6 +139,9 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 		} else {
 			res.Changed, stale = true, 0
 		}
+		// before is still the head this iteration started reviewing from; the
+		// next iteration is scoped against it.
+		reviewedBase = movedFrom(before, after)
 		before = after
 
 		switch {
@@ -123,6 +149,8 @@ func (e *Env) drive(ctx context.Context, spec loopSpec) Result {
 			res.Reason = ReasonConverged
 		case e.SinglePass:
 			res.Reason = ReasonSinglePass
+		case spec.converged != nil && spec.converged(step):
+			res.Reason = ReasonMinorOnly
 		case e.Config.StalematePatience > 0 && stale >= e.Config.StalematePatience:
 			res.Reason = ReasonStalemate
 		case n == limit:
@@ -144,9 +172,9 @@ const retryBudget = 2
 
 // runStep runs one iteration, re-running it when the executor reports a
 // transient failure rather than ending the whole pipeline on a flaky call.
-func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, n, limit int) (stepResult, error) {
+func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, it iteration) (stepResult, error) {
 	for attempt := 0; ; attempt++ {
-		step, err := spec.run(ctx, n, limit)
+		step, err := spec.run(ctx, it)
 		if err == nil || attempt >= retryBudget || !errors.Is(err, executor.ErrRetryable) ||
 			ctx.Err() != nil || interrupted(brk) {
 			// Nothing supersedes this attempt, so whatever it managed to
@@ -156,8 +184,8 @@ func (e *Env) runStep(ctx context.Context, spec loopSpec, brk <-chan struct{}, n
 		}
 		// A superseded attempt still failed: its cause is recorded like any
 		// other, so a flaky provider is diagnosable from the log afterwards.
-		e.recordFailure(spec.name, n, err, fmt.Sprintf("%s iteration %d attempt failed", Label(spec.name), n))
-		e.note("%s iteration %d: retrying", Label(spec.name), n)
+		e.recordFailure(spec.name, it.n, err, fmt.Sprintf("%s iteration %d attempt failed", Label(spec.name), it.n))
+		e.note("%s iteration %d: retrying", Label(spec.name), it.n)
 	}
 }
 
@@ -220,6 +248,7 @@ func (e *Env) review(ctx context.Context, call reviewCall) (stepResult, error) {
 	step := stepResult{
 		Findings:    findings,
 		Rejections:  rejections,
+		Validations: validations,
 		output:      out.Output,
 		writeReport: func() []string { return e.record(call, findings, rejections, validations) },
 	}
@@ -314,9 +343,9 @@ func (e *Env) confirmedAction() string {
 }
 
 // iterVars overlays the per-iteration values on the run-wide ones.
-func (e *Env) iterVars(n, limit int) config.Vars {
+func (e *Env) iterVars(it iteration) config.Vars {
 	vars := e.Vars
-	vars.Iteration, vars.MaxIterations = n, limit
+	vars.Iteration, vars.MaxIterations = it.n, it.limit
 	// Read fresh each iteration: the ledger is what the previous iteration
 	// learned, and expanding a stale copy would re-open questions it settled.
 	vars.Ledger = e.Log.PromptEntries()
@@ -336,6 +365,17 @@ type treeState struct {
 // produces a false stalemate.
 func (s treeState) same(o treeState) bool {
 	return s.known && o.known && s.head == o.head && s.tree == o.tree
+}
+
+// movedFrom names the commit an iteration reviewed from, for the next iteration
+// to scope itself against — but only when that iteration went on to commit
+// something. With nothing new to look at, a scoped diff would be empty, so the
+// next iteration is put back on the full branch instead.
+func movedFrom(startedFrom, after treeState) string {
+	if !startedFrom.known || !after.known || startedFrom.head == after.head {
+		return ""
+	}
+	return startedFrom.head
 }
 
 // recordCommits logs the commits an iteration produced. It is the only part of

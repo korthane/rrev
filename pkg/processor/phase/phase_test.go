@@ -56,6 +56,14 @@ func (r *fakeRepo) commit(hash string) {
 	r.head = hash
 }
 
+// edit dirties the working tree without moving the branch, which is what an
+// executor that fixed something but never committed it leaves behind.
+func (r *fakeRepo) edit(fingerprint string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tree = fingerprint
+}
+
 func newEnv(t *testing.T, primary, external executor.Executor, tune func(*config.Config)) (*Env, *fakeRepo) {
 	t.Helper()
 	resolved, err := config.Resolve(config.Options{UserDir: t.TempDir(), ProjectDir: t.TempDir()})
@@ -592,10 +600,16 @@ func changingHandler(m *executor.Mock, repo *fakeRepo) func(context.Context, exe
 	return func(_ context.Context, _ executor.Request) (executor.Result, error) {
 		n := m.CallCount()
 		repo.commit("head" + strings.Repeat("x", n))
-		outputs := m.Responses
-		out := outputs[min(n, len(outputs))-1]
-		return executor.Result{Output: out.Output, Signal: executor.Detect(out.Output)}, out.Err
+		return respond(m, n)
 	}
+}
+
+// respond replays the mock's scripted response for call n, holding the last one
+// once the script runs out. It is the half every handler shares, so a handler
+// that only wants to move the repository differently does not restate it.
+func respond(m *executor.Mock, n int) (executor.Result, error) {
+	out := m.Responses[min(n, len(m.Responses))-1]
+	return executor.Result{Output: out.Output, Signal: executor.Detect(out.Output)}, out.Err
 }
 
 func TestProgressLogRecordsFindingsAndTermination(t *testing.T) {
